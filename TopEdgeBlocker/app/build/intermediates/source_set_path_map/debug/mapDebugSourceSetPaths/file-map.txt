@@ -1,0 +1,7 @@
+com.example.topedgeblocker.app-pngs-0 /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/build/generated/res/pngs/debug
+com.example.topedgeblocker.app-resValues-1 /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/build/generated/res/resValues/debug
+com.example.topedgeblocker.app-packageDebugResources-2 /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.example.topedgeblocker.app-packageDebugResources-3 /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.example.topedgeblocker.app-debug-4 /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/build/intermediates/merged_res/debug/mergeDebugResources
+com.example.topedgeblocker.app-debug-5 /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/debug/res
+com.example.topedgeblocker.app-main-6 /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/res

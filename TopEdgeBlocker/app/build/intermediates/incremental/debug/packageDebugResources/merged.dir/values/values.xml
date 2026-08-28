@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_description">Blocks accidental touches at the top edge of the screen to reduce unwanted notification-panel swipes.</string>
+    <string name="app_name">Top Edge Blocker</string>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#3F51B5</item>
+    </style>
+</resources>

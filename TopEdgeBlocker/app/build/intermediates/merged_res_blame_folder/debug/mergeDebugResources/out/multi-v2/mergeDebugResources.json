@@ -1,0 +1,45 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.topedgeblocker.app-debug-4:/values_values.arsc.flat",
+            "map": [
+                {
+                    "source": "/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/res/values/styles.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "5",
+                        "endColumns": "12",
+                        "endOffsets": "255"
+                    },
+                    "to": {
+                        "startLines": "4",
+                        "startColumns": "4",
+                        "startOffsets": "265",
+                        "endLines": "7",
+                        "endColumns": "12",
+                        "endOffsets": "465"
+                    }
+                },
+                {
+                    "source": "/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/res/values/strings.xml",
+                    "from": {
+                        "startLines": "3,2",
+                        "startColumns": "4,4",
+                        "startOffsets": "109,55",
+                        "endColumns": "155,53",
+                        "endOffsets": "260,104"
+                    },
+                    "to": {
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,211",
+                        "endColumns": "155,53",
+                        "endOffsets": "206,260"
+                    }
+                }
+            ]
+        }
+    ]
+}

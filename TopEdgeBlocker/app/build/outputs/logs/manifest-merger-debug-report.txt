@@ -1,0 +1,71 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:2:1-33:12
+INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:2:1-33:12
+INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:2:1-33:12
+INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:2:1-33:12
+	package
+		INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml
+	android:versionName
+		INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml
+	android:versionCode
+		INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:2:11-69
+application
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:4:5-32:19
+INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:4:5-32:19
+	android:extractNativeLibs
+		INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml
+	android:supportsRtl
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:8:9-35
+	android:label
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:6:9-41
+	android:allowBackup
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:7:9-36
+	android:theme
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:5:9-40
+activity#com.example.topedgeblocker.MainActivity
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:10:9-17:20
+	android:exported
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:12:13-36
+	android:name
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:11:13-41
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:13:13-16:29
+action#android.intent.action.MAIN
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:14:17-69
+	android:name
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:14:25-66
+category#android.intent.category.LAUNCHER
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:15:17-77
+	android:name
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:15:27-74
+service#com.example.topedgeblocker.TopEdgeAccessibilityService
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:19:9-30:19
+	android:exported
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:21:13-37
+	android:permission
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:22:13-79
+	android:name
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:20:13-56
+intent-filter#action:name:android.accessibilityservice.AccessibilityService
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:23:13-25:29
+action#android.accessibilityservice.AccessibilityService
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:24:17-92
+	android:name
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:24:25-89
+meta-data#android.accessibilityservice
+ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:27:13-29:72
+	android:resource
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:29:17-69
+	android:name
+		ADDED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:28:17-60
+uses-sdk
+INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml
+INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml

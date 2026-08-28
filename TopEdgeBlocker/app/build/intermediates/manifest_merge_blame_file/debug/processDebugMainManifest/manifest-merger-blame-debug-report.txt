@@ -1,0 +1,66 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.example.topedgeblocker"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="35" />
+10
+11    <application
+11-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:4:5-32:19
+12        android:allowBackup="false"
+12-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:7:9-36
+13        android:debuggable="true"
+14        android:extractNativeLibs="false"
+15        android:label="Top Edge Blocker"
+15-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:6:9-41
+16        android:supportsRtl="true"
+16-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:8:9-35
+17        android:testOnly="true"
+18        android:theme="@style/AppTheme" >
+18-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:5:9-40
+19        <activity
+19-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:10:9-17:20
+20            android:name="com.example.topedgeblocker.MainActivity"
+20-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:11:13-41
+21            android:exported="true" >
+21-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:12:13-36
+22            <intent-filter>
+22-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:13:13-16:29
+23                <action android:name="android.intent.action.MAIN" />
+23-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:14:17-69
+23-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:14:25-66
+24
+25                <category android:name="android.intent.category.LAUNCHER" />
+25-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:15:17-77
+25-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:15:27-74
+26            </intent-filter>
+27        </activity>
+28
+29        <service
+29-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:19:9-30:19
+30            android:name="com.example.topedgeblocker.TopEdgeAccessibilityService"
+30-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:20:13-56
+31            android:exported="false"
+31-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:21:13-37
+32            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" >
+32-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:22:13-79
+33            <intent-filter>
+33-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:23:13-25:29
+34                <action android:name="android.accessibilityservice.AccessibilityService" />
+34-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:24:17-92
+34-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:24:25-89
+35            </intent-filter>
+36
+37            <meta-data
+37-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:27:13-29:72
+38                android:name="android.accessibilityservice"
+38-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:28:17-60
+39                android:resource="@xml/accessibility_service_config" />
+39-->/Users/e-vuong.vuv/Documents/Code/MyRepo/TopEdgeBlocker/app/src/main/AndroidManifest.xml:29:17-69
+40        </service>
+41    </application>
+42
+43</manifest>

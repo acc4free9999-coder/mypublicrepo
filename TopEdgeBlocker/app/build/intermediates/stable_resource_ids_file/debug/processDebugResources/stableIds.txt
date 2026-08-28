@@ -1,0 +1,4 @@
+com.example.topedgeblocker:xml/accessibility_service_config = 0x7f030000
+com.example.topedgeblocker:style/AppTheme = 0x7f020000
+com.example.topedgeblocker:string/app_name = 0x7f010001
+com.example.topedgeblocker:string/accessibility_description = 0x7f010000

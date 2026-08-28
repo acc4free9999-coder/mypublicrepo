@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Top Edge Blocker</string>
+    <string name="accessibility_description">Blocks accidental touches at the top edge of the screen to reduce unwanted notification-panel swipes.</string>
+</resources>
