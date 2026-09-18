@@ -33,7 +33,8 @@ input group "=== Trade / Behavior Settings ==="
 input ulong           InpMagicNumber     = 20240918; // Magic number for trades opened by the panel
 input ulong           InpSlippage        = 20;        // Max slippage (points)
 input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on ANY position on this symbol
-input bool            InpOneTradeOnly    = false;      // Only allow one open position/pending order at a time on this symbol
+input bool            InpOneTradeOnly    = false;      // Only allow one open position at a time on this symbol; pending orders do not block new entries
+input int             InpCooldownMinutes = 0;          // Block new market entry for N minutes after the latest close on this symbol (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
 
 input group "=== Panel Settings ==="
@@ -48,6 +49,8 @@ input int             InpPanelFontSize   = 11;         // Panel font size
 CTrade         trade;
 string         g_prefix = "RM_EA_";
 string         g_gv_prefix = "RM_EA_TICKET_";   // GlobalVariable prefix to mark tickets already processed
+ulong          g_cooldownForcedCloseTicket = 0;
+string        g_cooldownForcedCloseSymbol = "";
 
 //+------------------------------------------------------------------+
 //| Utility: pip size (handles 3/5 digit brokers)                    |
@@ -294,9 +297,9 @@ void CorrectLotSize(ulong ticket)
   }
 
 //+------------------------------------------------------------------+
-//| When one-trade-only mode is on, close/delete every extra          |
-//| position and pending order on this symbol, keeping only the      |
-//| oldest one (by open/setup time).                                  |
+//| When one-trade-only mode is on, keep only the oldest open        |
+//| position on this symbol and ignore pending orders for new entry   |
+//| blocking.                                                         |
 //+------------------------------------------------------------------+
 void EnforceOneTradeOnly()
   {
@@ -305,10 +308,8 @@ void EnforceOneTradeOnly()
 
    string symbol = Symbol();
 
-   // Collect candidate tickets with their open time, tagging position vs order
    ulong  tickets[];
    datetime times[];
-   bool   isPosition[];
    int    count = 0;
 
    int totalPos = PositionsTotal();
@@ -321,34 +322,14 @@ void EnforceOneTradeOnly()
          continue;
       ArrayResize(tickets, count + 1);
       ArrayResize(times, count + 1);
-      ArrayResize(isPosition, count + 1);
-      tickets[count]    = ticket;
-      times[count]      = (datetime)PositionGetInteger(POSITION_TIME);
-      isPosition[count] = true;
-      count++;
-     }
-
-   int totalOrd = OrdersTotal();
-   for(int i = 0; i < totalOrd; i++)
-     {
-      ulong ticket = OrderGetTicket(i);
-      if(ticket == 0 || !OrderSelect(ticket))
-         continue;
-      if(OrderGetString(ORDER_SYMBOL) != symbol)
-         continue;
-      ArrayResize(tickets, count + 1);
-      ArrayResize(times, count + 1);
-      ArrayResize(isPosition, count + 1);
-      tickets[count]    = ticket;
-      times[count]      = (datetime)OrderGetInteger(ORDER_TIME_SETUP);
-      isPosition[count] = false;
+      tickets[count] = ticket;
+      times[count]   = (datetime)PositionGetInteger(POSITION_TIME);
       count++;
      }
 
    if(count <= 1)
       return; // nothing to enforce
 
-   // Find the oldest entry to keep
    int keepIdx = 0;
    for(int i = 1; i < count; i++)
       if(times[i] < times[keepIdx])
@@ -361,16 +342,8 @@ void EnforceOneTradeOnly()
      {
       if(i == keepIdx)
          continue;
-      if(isPosition[i])
-        {
-         if(!trade.PositionClose(tickets[i]))
-            Print("RiskManagerEA: one-trade-only failed to close extra position ", tickets[i], " err=", GetLastError());
-        }
-      else
-        {
-         if(!trade.OrderDelete(tickets[i]))
-            Print("RiskManagerEA: one-trade-only failed to delete extra pending order ", tickets[i], " err=", GetLastError());
-        }
+      if(!trade.PositionClose(tickets[i]))
+         Print("RiskManagerEA: one-trade-only failed to close extra position ", tickets[i], " err=", GetLastError());
      }
   }
 
@@ -710,7 +683,23 @@ void GetPanelInfoLines(string &lines[])
          posCount++;
      }
 
-   ArrayResize(lines, 10);
+   string cooldownText = "Cooldown: Off";
+   if(InpCooldownMinutes > 0)
+     {
+      datetime latestClose = GetLastCloseTime(symbol);
+      if(latestClose == 0)
+         cooldownText = "Cooldown: Ready";
+      else
+        {
+         long remainingSeconds = (long)(InpCooldownMinutes * 60) - (long)(TimeCurrent() - latestClose);
+         if(remainingSeconds <= 0)
+            cooldownText = "Cooldown: Ready";
+         else
+            cooldownText = StringFormat("Cooldown: %02d:%02d", remainingSeconds / 60, remainingSeconds % 60);
+        }
+     }
+
+   ArrayResize(lines, 11);
    lines[0] = StringFormat("Symbol: %s", symbol);
    lines[1] = StringFormat("Fixed Lot: %.2f", lots);
    string slModeStr = (InpSLMode == SL_MODE_PERCENT) ? "% Equity" :
@@ -727,7 +716,8 @@ void GetPanelInfoLines(string &lines[])
    lines[6] = StringFormat("Risk / Reward: $%.2f / $%.2f", riskMoney, rewardMoney);
    lines[7] = StringFormat("Equity: %.2f | Balance: %.2f", equity, balance);
    lines[8] = StringFormat("Open Positions (%s): %d", symbol, posCount);
-   lines[9] = StringFormat("Magic: %I64u", InpMagicNumber);
+   lines[9] = cooldownText;
+   lines[10] = StringFormat("Magic: %I64u", InpMagicNumber);
   }
 
 //+------------------------------------------------------------------+
@@ -827,7 +817,7 @@ void UpdatePanelInfo()
   }
 
 //+------------------------------------------------------------------+
-//| Count open positions + pending orders on the chart symbol        |
+//| Count currently open positions on the chart symbol               |
 //+------------------------------------------------------------------+
 int CountOpenTradesOnSymbol()
   {
@@ -842,15 +832,49 @@ int CountOpenTradesOnSymbol()
          count++;
      }
 
-   int totalOrd = OrdersTotal();
-   for(int i = 0; i < totalOrd; i++)
-     {
-      ulong ticket = OrderGetTicket(i);
-      if(ticket != 0 && OrderSelect(ticket) && OrderGetString(ORDER_SYMBOL) == symbol)
-         count++;
-     }
-
    return count;
+  }
+
+//+------------------------------------------------------------------+
+//| Cooldown helper: remember the latest close time for each symbol   |
+//| using trade transactions, which is immediate and accurate even for |
+//| manual closes.                                                   |
+//+------------------------------------------------------------------+
+string GetCooldownKey(const string symbol)
+  {
+   return g_prefix + "LAST_CLOSE_" + symbol;
+  }
+
+void UpdateLastCloseTime(const string symbol)
+  {
+   string key = GetCooldownKey(symbol);
+   GlobalVariableSet(key, (double)TimeCurrent());
+  }
+
+datetime GetLastCloseTime(const string symbol)
+  {
+   string key = GetCooldownKey(symbol);
+   if(!GlobalVariableCheck(key))
+      return 0;
+   return (datetime)GlobalVariableGet(key);
+  }
+
+bool IsCooldownActiveForSymbol(const string symbol)
+  {
+   if(InpCooldownMinutes <= 0)
+      return false;
+
+   datetime latestClose = GetLastCloseTime(symbol);
+   if(latestClose == 0)
+      return false;
+
+   datetime waitSeconds = (datetime)(InpCooldownMinutes * 60);
+   return (TimeCurrent() - latestClose) < waitSeconds;
+  }
+
+bool IsPositionCooldownActive()
+  {
+   return IsCooldownActiveForSymbol(Symbol());
   }
 
 //+------------------------------------------------------------------+
@@ -864,6 +888,13 @@ void OpenTrade(bool isBuy)
      {
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
             " - one-trade-only mode is on and a trade already exists on ", symbol);
+      return;
+     }
+
+   if(IsPositionCooldownActive())
+     {
+      Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
+            " - cooldown is active for ", InpCooldownMinutes, " minutes after the latest close on ", symbol);
       return;
      }
 
@@ -890,6 +921,62 @@ void OpenTrade(bool isBuy)
       MarkProcessed(posTicket);
 
    UpdatePanelInfo();
+  }
+
+//+------------------------------------------------------------------+
+//| Trade event hook: update last close timestamp immediately on any  |
+//| close deal, including manual closes.                              |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                       const MqlTradeRequest &request,
+                       const MqlTradeResult &result)
+  {
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD || trans.deal == 0)
+      return;
+
+   if(!HistoryDealSelect(trans.deal))
+      return;
+
+   string symbol = HistoryDealGetString(trans.deal, DEAL_SYMBOL);
+   long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   if(symbol == "")
+      return;
+
+   if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT)
+     {
+      ulong posTicket = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
+      if(posTicket == g_cooldownForcedCloseTicket && symbol == g_cooldownForcedCloseSymbol)
+        {
+         g_cooldownForcedCloseTicket = 0;
+         g_cooldownForcedCloseSymbol = "";
+         return; // keep the original cooldown timestamp; do not reset it
+        }
+      UpdateLastCloseTime(symbol);
+      return;
+     }
+
+   if(entry == DEAL_ENTRY_IN)
+     {
+      if(IsCooldownActiveForSymbol(symbol))
+        {
+         ulong posTicket = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
+         if(posTicket != 0)
+           {
+            g_cooldownForcedCloseTicket = posTicket;
+            g_cooldownForcedCloseSymbol = symbol;
+            trade.SetExpertMagicNumber((int)InpMagicNumber);
+            trade.SetDeviationInPoints((int)InpSlippage);
+            if(!trade.PositionClose(posTicket))
+               {
+                Print("RiskManagerEA: failed to close trade entered during cooldown, ticket=", posTicket, " err=", GetLastError());
+                g_cooldownForcedCloseTicket = 0;
+                g_cooldownForcedCloseSymbol = "";
+               }
+            else
+               Print("RiskManagerEA: closed trade entered during cooldown, ticket=", posTicket);
+           }
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
