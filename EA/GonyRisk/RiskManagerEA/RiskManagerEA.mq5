@@ -588,7 +588,7 @@ void ManagePendingOrders()
   }
 
 //+------------------------------------------------------------------+
-//| Panel: create Buy/Sell/CloseAll buttons                          |
+//| Panel: create Buy/Sell/Test Notification buttons                  |
 //+------------------------------------------------------------------+
 void CreateButton(const string name, const string text, int x, int y, int w, int h, color bgClr, int fontSize = 12)
   {
@@ -683,6 +683,13 @@ void GetPanelInfoLines(string &lines[])
          posCount++;
      }
 
+   double remainingBalance = balance;
+   int remainingTrades = 0;
+   if(riskMoney > 0.0)
+     {
+      remainingBalance = MathMax(0.0, balance - riskMoney * posCount);
+      remainingTrades = (int)MathFloor((remainingBalance / riskMoney) + 0.0000001);
+     }
    string cooldownText = "Cooldown: Off";
    if(InpCooldownMinutes > 0)
      {
@@ -699,7 +706,7 @@ void GetPanelInfoLines(string &lines[])
         }
      }
 
-   ArrayResize(lines, 11);
+   ArrayResize(lines, 12);
    lines[0] = StringFormat("Symbol: %s", symbol);
    lines[1] = StringFormat("Fixed Lot: %.2f", lots);
    string slModeStr = (InpSLMode == SL_MODE_PERCENT) ? "% Equity" :
@@ -715,9 +722,10 @@ void GetPanelInfoLines(string &lines[])
    lines[5] = StringFormat("TP Distance: %.1f pips (R:R 1:%.1f)", tpPips, InpRiskReward);
    lines[6] = StringFormat("Risk / Reward: $%.2f / $%.2f", riskMoney, rewardMoney);
    lines[7] = StringFormat("Equity: %.2f | Balance: %.2f", equity, balance);
-   lines[8] = StringFormat("Open Positions (%s): %d", symbol, posCount);
-   lines[9] = cooldownText;
-   lines[10] = StringFormat("Magic: %I64u", InpMagicNumber);
+   lines[8] = StringFormat("Remaining Balance: $%.2f | Trades Left: %d", remainingBalance, remainingTrades);
+   lines[9] = StringFormat("Open Positions (%s): %d", symbol, posCount);
+   lines[10] = cooldownText;
+   lines[11] = StringFormat("Magic: %I64u", InpMagicNumber);
   }
 
 //+------------------------------------------------------------------+
@@ -739,7 +747,9 @@ void CreatePanel()
 
    int x = InpPanelX;
    int y = InpPanelY;
-   int btnH = InpShowTradeButtons ? 40 : 0;
+   int btnH = 40;
+   if(InpShowTradeButtons)
+      btnH += 8 + 40;
    int headerH = 44;
 
    string lines[];
@@ -776,8 +786,8 @@ void CreatePanel()
    if(InpShowTradeButtons)
      {
       int halfW = (w - RM_PANEL_PADDING * 3) / 2;
-      CreateButton(g_prefix + "BUY",  "BUY",  x + RM_PANEL_PADDING, btnY, halfW, btnH, clrForestGreen, InpPanelFontSize + 3);
-      CreateButton(g_prefix + "SELL", "SELL", x + RM_PANEL_PADDING * 2 + halfW, btnY, halfW, btnH, clrCrimson, InpPanelFontSize + 3);
+      CreateButton(g_prefix + "BUY",  "BUY", x + RM_PANEL_PADDING, btnY, halfW, 40, clrForestGreen, InpPanelFontSize + 3);
+      CreateButton(g_prefix + "SELL", "SELL", x + RM_PANEL_PADDING * 2 + halfW, btnY, halfW, 40, clrCrimson, InpPanelFontSize + 3);
      }
    else
      {
@@ -785,9 +795,14 @@ void CreatePanel()
       ObjectDelete(0, g_prefix + "SELL");
      }
 
+   int testBtnY = btnY + (InpShowTradeButtons ? 48 : 0);
+   CreateButton(g_prefix + "TEST_NOTIFY", "TEST NOTIFY",
+                x + RM_PANEL_PADDING, testBtnY, w - RM_PANEL_PADDING * 2, 40,
+                clrDarkOrange, InpPanelFontSize + 2);
+
    // Resize background to fit actual content precisely
-   int bottomPad = InpShowTradeButtons ? RM_PANEL_PADDING : (RM_PANEL_PADDING / 2);
-   ObjectSetInteger(0, g_prefix + "BG", OBJPROP_YSIZE, (btnY + btnH + bottomPad) - y);
+   ObjectSetInteger(0, g_prefix + "BG", OBJPROP_YSIZE,
+                   (testBtnY + 40 + RM_PANEL_PADDING) - y);
   }
 
 void RemovePanel()
@@ -796,6 +811,7 @@ void RemovePanel()
    ObjectDelete(0, g_prefix + "TITLE");
    ObjectDelete(0, g_prefix + "BUY");
    ObjectDelete(0, g_prefix + "SELL");
+   ObjectDelete(0, g_prefix + "TEST_NOTIFY");
    string lines[];
    GetPanelInfoLines(lines);
    for(int i = 0; i < ArraySize(lines); i++)
@@ -833,6 +849,48 @@ int CountOpenTradesOnSymbol()
      }
 
    return count;
+  }
+
+//+------------------------------------------------------------------+
+//| Build the account status shown after a non-EA position close      |
+//+------------------------------------------------------------------+
+void GetTradeStatus(double &remainingBalance, int &remainingTrades, double &riskMoney)
+  {
+   string symbol = Symbol();
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double lots = NormalizeLot(symbol, InpFixedLot);
+   double slDist = ComputeSLDistance(symbol, lots);
+   double valuePerUnit = ValuePerPriceUnitPerLot(symbol);
+   riskMoney = valuePerUnit * lots * slDist;
+
+   int posCount = CountOpenTradesOnSymbol();
+   remainingBalance = balance;
+   remainingTrades = 0;
+   if(riskMoney > 0.0)
+     {
+      remainingBalance = MathMax(0.0, balance - riskMoney * posCount);
+      remainingTrades = (int)MathFloor((remainingBalance / riskMoney) + 0.0000001);
+     }
+  }
+
+void NotifyPositionClosed(const string symbol, const long reason)
+  {
+   double remainingBalance;
+   double riskMoney;
+   int remainingTrades;
+   GetTradeStatus(remainingBalance, remainingTrades, riskMoney);
+
+   string closeType = "Manual";
+   if(reason == DEAL_REASON_SL)
+      closeType = "Stop Loss";
+   else if(reason == DEAL_REASON_TP)
+      closeType = "Take Profit";
+
+   string message = StringFormat("Trades left: %d | Balance: %.2f | Risk: %.2f | %s %s closed",
+                                 remainingTrades,
+                                 AccountInfoDouble(ACCOUNT_BALANCE), riskMoney,symbol, closeType);
+   if(!SendNotification(message))
+      Print("RiskManagerEA: failed to send close notification. Error=", GetLastError());
   }
 
 //+------------------------------------------------------------------+
@@ -945,6 +1003,13 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT)
      {
       ulong posTicket = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
+      long reason = HistoryDealGetInteger(trans.deal, DEAL_REASON);
+      if(symbol == Symbol() &&
+         (reason == DEAL_REASON_CLIENT || reason == DEAL_REASON_MOBILE ||
+          reason == DEAL_REASON_WEB || reason == DEAL_REASON_SL ||
+          reason == DEAL_REASON_TP || reason == DEAL_REASON_SO))
+         NotifyPositionClosed(symbol, reason);
+
       if(posTicket == g_cooldownForcedCloseTicket && symbol == g_cooldownForcedCloseSymbol)
         {
          g_cooldownForcedCloseTicket = 0;
@@ -1047,6 +1112,11 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
      {
       ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
       OpenTrade(false);
+     }
+   else if(sparam == g_prefix + "TEST_NOTIFY")
+     {
+      ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
+      NotifyPositionClosed(Symbol(), DEAL_REASON_CLIENT);
      }
   }
 //+------------------------------------------------------------------+
