@@ -37,12 +37,28 @@ input string  InpIgnoredNamePrefix  = "STD_";  // Ignore trendlines starting wit
 input bool    InpIgnoreHiddenObjects= true;    // Ignore hidden trendline objects
 input int     InpTimerSeconds       = 1;       // Chart scan interval in seconds
 
+input group "=== Panel ==="
+input bool    InpShowPanel          = true;     // Show top-left control panel
+input int     InpPanelX             = 20;       // Panel X position
+input int     InpPanelY             = 20;       // Panel Y position
+
+input group "=== Auto Draw Trendlines ==="
+input int     InpAutoTrendlineBars  = 200;      // Bars to search for last buy/sell trendlines
+input int     InpAutoSwingLeftBars  = 3;        // Swing bars on older side
+input int     InpAutoSwingRightBars = 3;        // Swing bars on newer side
+input int     InpAutoLineFutureBars = 5;        // Auto line visual extension after latest swing
+input color   InpAutoBuyLineColor   = clrLimeGreen; // Auto buy trendline color
+input color   InpAutoSellLineColor  = clrTomato;    // Auto sell trendline color
+
 CTrade trade;
 
 string g_comment_prefix = "GTL:";
 string g_memory_prefix = "GTL_USED_";
+string g_panel_prefix = "GTL_PANEL_";
+string g_auto_line_prefix = "GTL_AUTO_TL_";
 datetime g_last_scan = 0;
 datetime g_last_bar_time = 0;
+int g_auto_draw_sequence = 0;
 
 struct TrendlineSetup
   {
@@ -60,6 +76,7 @@ int OnInit()
    trade.SetExpertMagicNumber((int)InpMagicNumber);
    trade.SetDeviationInPoints((int)InpDeviationPoints);
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
+   DrawPanel(0, 0, 0, 0, 0, 0);
 
    if(InpTimerSeconds > 0)
       EventSetTimer(InpTimerSeconds);
@@ -73,6 +90,7 @@ void OnDeinit(const int reason)
   {
    EventKillTimer();
    Comment("");
+   DeletePanelObjects();
   }
 
 //+------------------------------------------------------------------+
@@ -92,6 +110,28 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
   {
    if(sparam == "")
       return;
+
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == PanelButtonName())
+     {
+      ObjectSetInteger(0, PanelButtonName(), OBJPROP_STATE, false);
+      int removed = ClearCurrentTrendlines();
+      Print("GonyTrendLineEA: clear trendlines button removed ", removed, " trendline(s)");
+      g_last_scan = 0;
+      ManageTrendlines();
+      ChartRedraw();
+      return;
+     }
+
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == PanelAutoDrawButtonName())
+     {
+      ObjectSetInteger(0, PanelAutoDrawButtonName(), OBJPROP_STATE, false);
+      int drawn = DrawLastBuySellTrendlines();
+      Print("GonyTrendLineEA: auto trendline button drew ", drawn, " trendline(s)");
+      g_last_scan = 0;
+      ManageTrendlines();
+      ChartRedraw();
+      return;
+     }
 
    if(id == CHARTEVENT_OBJECT_DELETE)
      {
@@ -118,7 +158,7 @@ void ManageTrendlines()
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) ||
       !MQLInfoInteger(MQL_TRADE_ALLOWED))
      {
-      Comment("GonyTrendLineEA: trading is not allowed by terminal or EA settings.");
+      Comment("");
       return;
      }
 
@@ -154,6 +194,7 @@ void ManageTrendlines()
          continue;
 
       duplicate_orders_removed += EnforceSingleOrderForTrendline(setup.comment);
+      duplicate_orders_removed += DeleteWrongSideAutoOrder(name, setup.comment);
 
       if(HasTrendlineBeenUsed(setup.comment))
         {
@@ -191,14 +232,10 @@ void ManageTrendlines()
 
    int removed_orders = DeleteOrdersForRemovedTrendlines(active_comments);
 
-   Comment("GonyTrendLineEA\n",
-           "Manual trendlines: ", total, "\n",
-           "Valid setups: ", valid_setups, "\n",
-           "Already used trendlines: ", used_trendlines, "\n",
-           "Orders updated on candle close: ", updated_orders, "\n",
-           "Duplicate orders removed: ", duplicate_orders_removed, "\n",
-           "Orders removed for deleted trendlines: ", removed_orders, "\n",
-           "EA pending limit orders: ", CountManagedPendingOrders());
+   int pending_orders = CountManagedPendingOrders();
+   DrawPanel(total, valid_setups, used_trendlines, updated_orders,
+             duplicate_orders_removed + removed_orders, pending_orders);
+   Comment("");
   }
 
 //+------------------------------------------------------------------+
@@ -286,6 +323,23 @@ int EnforceSingleOrderForTrendline(const string comment)
   }
 
 //+------------------------------------------------------------------+
+int DeleteWrongSideAutoOrder(const string trendline_name, const string comment)
+  {
+   ulong ticket = 0;
+   ENUM_ORDER_TYPE type = ORDER_TYPE_BUY_LIMIT;
+   double price = 0.0;
+   if(!FindManagedOrder(comment, ticket, type, price))
+      return 0;
+
+   bool wrong_buy_line_order = IsAutoBuyTrendline(trendline_name) && type != ORDER_TYPE_BUY_LIMIT;
+   bool wrong_sell_line_order = IsAutoSellTrendline(trendline_name) && type != ORDER_TYPE_SELL_LIMIT;
+   if(!wrong_buy_line_order && !wrong_sell_line_order)
+      return 0;
+
+   return DeleteOrder(ticket) ? 1 : 0;
+  }
+
+//+------------------------------------------------------------------+
 int DeleteOrdersForRemovedTrendlines(const string &active_comments[])
   {
    int removed = 0;
@@ -303,6 +357,403 @@ int DeleteOrdersForRemovedTrendlines(const string &active_comments[])
          removed++;
      }
    return removed;
+  }
+
+//+------------------------------------------------------------------+
+int ClearCurrentTrendlines()
+  {
+   int removed = 0;
+   for(int i = ObjectsTotal(0, 0, OBJ_TREND) - 1; i >= 0; i--)
+     {
+      string name = ObjectName(0, i, 0, OBJ_TREND);
+      if(name == "" || !ShouldUseTrendline(name))
+         continue;
+
+      DeleteManagedOrder(BuildOrderComment(name));
+      if(ObjectDelete(0, name))
+         removed++;
+      else
+         Print("GonyTrendLineEA: failed to delete trendline '", name, "'");
+     }
+   return removed;
+  }
+
+//+------------------------------------------------------------------+
+int DrawLastBuySellTrendlines()
+  {
+   DeleteAutoDrawnTrendlines();
+
+   int bars_to_scan = MathMax(InpAutoTrendlineBars,
+                              InpAutoSwingLeftBars + InpAutoSwingRightBars + 10);
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   int copied = CopyRates(_Symbol, _Period, 0, bars_to_scan, rates);
+   if(copied <= InpAutoSwingLeftBars + InpAutoSwingRightBars + 2)
+     {
+      Print("GonyTrendLineEA: not enough bars to draw auto trendlines");
+      return 0;
+     }
+
+   int low_newer = -1;
+   int low_older = -1;
+   int high_newer = -1;
+   int high_older = -1;
+
+   FindLastRisingLowPair(rates, copied, low_newer, low_older);
+   FindLastFallingHighPair(rates, copied, high_newer, high_older);
+
+   int drawn = 0;
+   g_auto_draw_sequence++;
+   string suffix = IntegerToString((long)TimeCurrent()) + "_" + IntegerToString(g_auto_draw_sequence);
+
+   if(low_newer >= 0 && low_older >= 0 &&
+      CreateAutoTrendline(AutoTrendlineName("BUY", suffix),
+                          rates[low_older].time, rates[low_older].low,
+                          rates[low_newer].time, rates[low_newer].low,
+                          InpAutoBuyLineColor))
+      drawn++;
+
+   if(high_newer >= 0 && high_older >= 0 &&
+      CreateAutoTrendline(AutoTrendlineName("SELL", suffix),
+                          rates[high_older].time, rates[high_older].high,
+                          rates[high_newer].time, rates[high_newer].high,
+                          InpAutoSellLineColor))
+      drawn++;
+
+   if(drawn == 0)
+      Print("GonyTrendLineEA: could not find rising swing lows or falling swing highs to draw trendlines");
+
+   return drawn;
+  }
+
+//+------------------------------------------------------------------+
+bool FindLastRisingLowPair(const MqlRates &rates[], const int count,
+                           int &newer_index, int &older_index)
+  {
+   newer_index = -1;
+   older_index = -1;
+   int first = MathMax(1, InpAutoSwingRightBars);
+   int last = count - MathMax(1, InpAutoSwingLeftBars) - 1;
+
+   for(int newer = first; newer <= last; newer++)
+     {
+      if(!IsSwingLow(rates, count, newer))
+         continue;
+
+      for(int older = newer + 1; older <= last; older++)
+        {
+         if(!IsSwingLow(rates, count, older))
+            continue;
+
+         if(rates[newer].low > rates[older].low)
+           {
+            newer_index = newer;
+            older_index = older;
+            return true;
+           }
+        }
+     }
+
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+bool FindLastFallingHighPair(const MqlRates &rates[], const int count,
+                             int &newer_index, int &older_index)
+  {
+   newer_index = -1;
+   older_index = -1;
+   int first = MathMax(1, InpAutoSwingRightBars);
+   int last = count - MathMax(1, InpAutoSwingLeftBars) - 1;
+
+   for(int newer = first; newer <= last; newer++)
+     {
+      if(!IsSwingHigh(rates, count, newer))
+         continue;
+
+      for(int older = newer + 1; older <= last; older++)
+        {
+         if(!IsSwingHigh(rates, count, older))
+            continue;
+
+         if(rates[newer].high < rates[older].high)
+           {
+            newer_index = newer;
+            older_index = older;
+            return true;
+           }
+        }
+     }
+
+   return false;
+  }
+
+//+------------------------------------------------------------------+
+bool IsSwingLow(const MqlRates &rates[], const int count, const int index)
+  {
+   int left = MathMax(1, InpAutoSwingLeftBars);
+   int right = MathMax(1, InpAutoSwingRightBars);
+   if(index - right < 0 || index + left >= count)
+      return false;
+
+   for(int i = 1; i <= left; i++)
+      if(rates[index].low >= rates[index + i].low)
+         return false;
+   for(int i = 1; i <= right; i++)
+      if(rates[index].low >= rates[index - i].low)
+         return false;
+
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+bool IsSwingHigh(const MqlRates &rates[], const int count, const int index)
+  {
+   int left = MathMax(1, InpAutoSwingLeftBars);
+   int right = MathMax(1, InpAutoSwingRightBars);
+   if(index - right < 0 || index + left >= count)
+      return false;
+
+   for(int i = 1; i <= left; i++)
+      if(rates[index].high <= rates[index + i].high)
+         return false;
+   for(int i = 1; i <= right; i++)
+      if(rates[index].high <= rates[index - i].high)
+         return false;
+
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+bool CreateAutoTrendline(const string name,
+                         const datetime older_time, const double older_price,
+                         const datetime newer_time, const double newer_price,
+                         const color line_color)
+  {
+   if(ObjectFind(0, name) >= 0)
+      ObjectDelete(0, name);
+
+   datetime end_time = newer_time;
+   double end_price = newer_price;
+   int seconds = PeriodSeconds(_Period);
+   if(seconds <= 0)
+      seconds = 60;
+
+   int future_bars = MathMax(0, InpAutoLineFutureBars);
+   datetime current_bar_time = iTime(_Symbol, _Period, 0);
+   if(current_bar_time <= 0)
+      current_bar_time = TimeCurrent();
+
+   if(newer_time != older_time)
+     {
+      end_time = current_bar_time + (datetime)(future_bars * seconds);
+      end_price = newer_price + (newer_price - older_price) *
+                  ((double)(end_time - newer_time) / (double)(newer_time - older_time));
+     }
+
+   if(!ObjectCreate(0, name, OBJ_TREND, 0, older_time, older_price, end_time, end_price))
+     {
+      Print("GonyTrendLineEA: failed to create auto trendline '", name, "'");
+      return false;
+     }
+
+   ObjectSetInteger(0, name, OBJPROP_COLOR, line_color);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+void DeleteAutoDrawnTrendlines()
+  {
+   for(int i = ObjectsTotal(0, 0, OBJ_TREND) - 1; i >= 0; i--)
+     {
+      string name = ObjectName(0, i, 0, OBJ_TREND);
+      if(name == "" || StringFind(name, g_auto_line_prefix) < 0)
+         continue;
+
+      DeleteManagedOrder(BuildOrderComment(name));
+      ObjectDelete(0, name);
+     }
+  }
+
+//+------------------------------------------------------------------+
+string AutoTrendlineName(const string side, const string suffix)
+  {
+   return AutoTrendlinePrefix() + side + "_" + suffix;
+  }
+
+//+------------------------------------------------------------------+
+string AutoTrendlinePrefix()
+  {
+   string filter_prefix = "";
+   if(InpNameContains != "")
+      filter_prefix = InpNameContains + "_";
+   return filter_prefix + g_auto_line_prefix;
+  }
+
+//+------------------------------------------------------------------+
+bool IsAutoBuyTrendline(const string name)
+  {
+   return StringFind(name, g_auto_line_prefix + "BUY_") >= 0;
+  }
+
+//+------------------------------------------------------------------+
+bool IsAutoSellTrendline(const string name)
+  {
+   return StringFind(name, g_auto_line_prefix + "SELL_") >= 0;
+  }
+
+//+------------------------------------------------------------------+
+void DrawPanel(const int total_trendlines, const int valid_setups,
+               const int used_trendlines, const int updated_orders,
+               const int cleaned_orders, const int pending_orders)
+  {
+   if(!InpShowPanel)
+     {
+      DeletePanelObjects();
+      return;
+     }
+
+   string bg = PanelBackgroundName();
+   string title = PanelTitleName();
+   string button = PanelButtonName();
+   string auto_button = PanelAutoDrawButtonName();
+   int hSpacer = 15;
+   if(ObjectFind(0, bg) < 0)
+      ObjectCreate(0, bg, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, bg, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, InpPanelX);
+   ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, InpPanelY);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 350);
+   ObjectSetInteger(0, bg, OBJPROP_YSIZE, 305);
+   ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, C'24,24,24');
+   ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, bg, OBJPROP_COLOR, clrDimGray);
+   SetPanelObjectFlags(bg);
+
+   if(ObjectFind(0, title) < 0)
+      ObjectCreate(0, title, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, title, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, title, OBJPROP_XDISTANCE, InpPanelX + 10);
+   ObjectSetInteger(0, title, OBJPROP_YDISTANCE, InpPanelY + hSpacer);
+   ObjectSetInteger(0, title, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, title, OBJPROP_FONTSIZE, 10);
+   ObjectSetString(0, title, OBJPROP_FONT, "Arial Bold");
+   ObjectSetString(0, title, OBJPROP_TEXT, "Gony TrendLine EA");
+   SetPanelObjectFlags(title);
+
+   DrawPanelText(0, "Trendlines: " + IntegerToString(total_trendlines),
+                 InpPanelX + 10, InpPanelY + 36 + hSpacer, clrLightGray);
+   DrawPanelText(1, "Valid: " + IntegerToString(valid_setups) +
+                 "   Used: " + IntegerToString(used_trendlines),
+                 InpPanelX + 10, InpPanelY + 60 + hSpacer, clrLightGray);
+   DrawPanelText(2, "Pending orders: " + IntegerToString(pending_orders),
+                 InpPanelX + 10, InpPanelY + 84 + hSpacer, clrLightGray);
+   DrawPanelText(3, "Updated: " + IntegerToString(updated_orders),
+                 InpPanelX + 10, InpPanelY + 108 + hSpacer, clrLightGray);
+   DrawPanelText(4, "Cleaned/removed: " + IntegerToString(cleaned_orders),
+                 InpPanelX + 10, InpPanelY + 132 + hSpacer, clrLightGray);
+
+   if(ObjectFind(0, auto_button) < 0)
+      ObjectCreate(0, auto_button, OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, auto_button, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, auto_button, OBJPROP_XDISTANCE, InpPanelX + 10);
+   ObjectSetInteger(0, auto_button, OBJPROP_YDISTANCE, InpPanelY + 186);
+   ObjectSetInteger(0, auto_button, OBJPROP_XSIZE, 300);
+   ObjectSetInteger(0, auto_button, OBJPROP_YSIZE, 35);
+   ObjectSetInteger(0, auto_button, OBJPROP_BGCOLOR, clrDarkSlateGray);
+   ObjectSetInteger(0, auto_button, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, auto_button, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, auto_button, OBJPROP_FONT, "Arial");
+   ObjectSetString(0, auto_button, OBJPROP_TEXT, "Draw Buy/Sell Trendlines");
+   SetPanelObjectFlags(auto_button);
+
+   if(ObjectFind(0, button) < 0)
+      ObjectCreate(0, button, OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, button, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, button, OBJPROP_XDISTANCE, InpPanelX + 10);
+   ObjectSetInteger(0, button, OBJPROP_YDISTANCE, InpPanelY + 248);
+   ObjectSetInteger(0, button, OBJPROP_XSIZE, 300);
+   ObjectSetInteger(0, button, OBJPROP_YSIZE, 35);
+   ObjectSetInteger(0, button, OBJPROP_BGCOLOR, clrFireBrick);
+   ObjectSetInteger(0, button, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, button, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, button, OBJPROP_FONT, "Arial");
+   ObjectSetString(0, button, OBJPROP_TEXT, "Clear Trendlines");
+   SetPanelObjectFlags(button);
+  }
+
+//+------------------------------------------------------------------+
+void SetPanelObjectFlags(const string name)
+  {
+   ObjectSetInteger(0, name, OBJPROP_BACK, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, 100);
+  }
+
+//+------------------------------------------------------------------+
+void DrawPanelText(const int row, const string text, const int x, const int y, const color text_color)
+  {
+   string name = PanelStatsName(row);
+   if(ObjectFind(0, name) < 0)
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, text_color);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, name, OBJPROP_FONT, "Arial");
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   SetPanelObjectFlags(name);
+  }
+
+//+------------------------------------------------------------------+
+void DeletePanelObjects()
+  {
+   ObjectDelete(0, PanelBackgroundName());
+   ObjectDelete(0, PanelTitleName());
+   ObjectDelete(0, g_panel_prefix + IntegerToString((long)ChartID()) + "_STATS");
+   for(int i = 0; i < 5; i++)
+      ObjectDelete(0, PanelStatsName(i));
+   ObjectDelete(0, PanelAutoDrawButtonName());
+   ObjectDelete(0, PanelButtonName());
+  }
+
+//+------------------------------------------------------------------+
+string PanelBackgroundName()
+  {
+   return g_panel_prefix + IntegerToString((long)ChartID()) + "_BG";
+  }
+
+//+------------------------------------------------------------------+
+string PanelTitleName()
+  {
+   return g_panel_prefix + IntegerToString((long)ChartID()) + "_TITLE";
+  }
+
+//+------------------------------------------------------------------+
+string PanelStatsName(const int row)
+  {
+   return g_panel_prefix + IntegerToString((long)ChartID()) + "_STATS_" + IntegerToString(row);
+  }
+
+//+------------------------------------------------------------------+
+string PanelButtonName()
+  {
+   return g_panel_prefix + IntegerToString((long)ChartID()) + "_CLEAR_BTN";
+  }
+
+//+------------------------------------------------------------------+
+string PanelAutoDrawButtonName()
+  {
+   return g_panel_prefix + IntegerToString((long)ChartID()) + "_AUTO_DRAW_BTN";
   }
 
 //+------------------------------------------------------------------+
@@ -337,6 +788,13 @@ bool BuildSetup(const string name, TrendlineSetup &setup)
    double max_distance = MathMax(0.0, InpMaxPredictionDistancePoints) * _Point;
    double min_stop_distance = MinPendingDistance();
    double early_entry_distance = MathMax(0.0, InpEarlyEntryPips) * PipSize();
+   bool allow_buy_limit = InpOrderMode != TRENDLINE_ORDER_SELL_LIMIT_ONLY;
+   bool allow_sell_limit = InpOrderMode != TRENDLINE_ORDER_BUY_LIMIT_ONLY;
+
+   if(IsAutoBuyTrendline(name))
+      allow_sell_limit = false;
+   else if(IsAutoSellTrendline(name))
+      allow_buy_limit = false;
 
    int look_ahead = MathMax(0, InpLookAheadBars);
    for(int bar = 0; bar <= look_ahead; bar++)
@@ -353,8 +811,7 @@ bool BuildSetup(const string name, TrendlineSetup &setup)
       if(max_distance > 0.0 && MathAbs(mid - line_price) > max_distance)
          continue;
 
-      if(line_price < ask - min_stop_distance &&
-         InpOrderMode != TRENDLINE_ORDER_SELL_LIMIT_ONLY)
+      if(line_price < ask - min_stop_distance && allow_buy_limit)
         {
          double entry_price = NormalizePrice(line_price + early_entry_distance);
          double highest_allowed = NormalizePrice(ask - min_stop_distance);
@@ -370,8 +827,7 @@ bool BuildSetup(const string name, TrendlineSetup &setup)
          return true;
         }
 
-      if(line_price > bid + min_stop_distance &&
-         InpOrderMode != TRENDLINE_ORDER_BUY_LIMIT_ONLY)
+      if(line_price > bid + min_stop_distance && allow_sell_limit)
         {
          double entry_price = NormalizePrice(line_price - early_entry_distance);
          double lowest_allowed = NormalizePrice(bid + min_stop_distance);
