@@ -59,6 +59,12 @@ string g_auto_line_prefix = "GTL_AUTO_TL_";
 datetime g_last_scan = 0;
 datetime g_last_bar_time = 0;
 int g_auto_draw_sequence = 0;
+int g_panel_total_trendlines = 0;
+int g_panel_valid_setups = 0;
+int g_panel_used_trendlines = 0;
+int g_panel_updated_orders = 0;
+int g_panel_cleaned_orders = 0;
+int g_panel_pending_orders = 0;
 
 struct TrendlineSetup
   {
@@ -77,6 +83,7 @@ int OnInit()
    trade.SetDeviationInPoints((int)InpDeviationPoints);
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
    DrawPanel(0, 0, 0, 0, 0, 0);
+   ChartRedraw();
 
    if(InpTimerSeconds > 0)
       EventSetTimer(InpTimerSeconds);
@@ -108,8 +115,14 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
-   if(sparam == "")
+   if(id == CHARTEVENT_CHART_CHANGE)
+     {
+      g_last_scan = 0;
+      DrawLastPanelState();
+      ManageTrendlines();
+      ChartRedraw();
       return;
+     }
 
    if(id == CHARTEVENT_OBJECT_CLICK && sparam == PanelButtonName())
      {
@@ -132,6 +145,9 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       ChartRedraw();
       return;
      }
+
+   if(sparam == "")
+      return;
 
    if(id == CHARTEVENT_OBJECT_DELETE)
      {
@@ -158,13 +174,18 @@ void ManageTrendlines()
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) ||
       !MQLInfoInteger(MQL_TRADE_ALLOWED))
      {
+      DrawClearTrendlinesButton(InpShowPanel ? InpPanelY + 248 : InpPanelY);
       Comment("");
       return;
      }
 
    datetime now = TimeCurrent();
    if(now == g_last_scan)
+     {
+      DrawLastPanelState();
+      ChartRedraw();
       return;
+     }
    g_last_scan = now;
 
    int managed_orders = CountManagedPendingOrders();
@@ -233,9 +254,32 @@ void ManageTrendlines()
    int removed_orders = DeleteOrdersForRemovedTrendlines(active_comments);
 
    int pending_orders = CountManagedPendingOrders();
-   DrawPanel(total, valid_setups, used_trendlines, updated_orders,
-             duplicate_orders_removed + removed_orders, pending_orders);
+   SavePanelState(total, valid_setups, used_trendlines, updated_orders,
+                  duplicate_orders_removed + removed_orders, pending_orders);
+   DrawLastPanelState();
+   ChartRedraw();
    Comment("");
+  }
+
+//+------------------------------------------------------------------+
+void SavePanelState(const int total_trendlines, const int valid_setups,
+                    const int used_trendlines, const int updated_orders,
+                    const int cleaned_orders, const int pending_orders)
+  {
+   g_panel_total_trendlines = total_trendlines;
+   g_panel_valid_setups = valid_setups;
+   g_panel_used_trendlines = used_trendlines;
+   g_panel_updated_orders = updated_orders;
+   g_panel_cleaned_orders = cleaned_orders;
+   g_panel_pending_orders = pending_orders;
+  }
+
+//+------------------------------------------------------------------+
+void DrawLastPanelState()
+  {
+   DrawPanel(g_panel_total_trendlines, g_panel_valid_setups,
+             g_panel_used_trendlines, g_panel_updated_orders,
+             g_panel_cleaned_orders, g_panel_pending_orders);
   }
 
 //+------------------------------------------------------------------+
@@ -615,13 +659,13 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
   {
    if(!InpShowPanel)
      {
-      DeletePanelObjects();
+      DeletePanelObjectsExceptClearButton();
+      DrawClearTrendlinesButton(InpPanelY);
       return;
      }
 
    string bg = PanelBackgroundName();
    string title = PanelTitleName();
-   string button = PanelButtonName();
    string auto_button = PanelAutoDrawButtonName();
    int hSpacer = 15;
    if(ObjectFind(0, bg) < 0)
@@ -634,7 +678,7 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, C'24,24,24');
    ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, bg, OBJPROP_COLOR, clrDimGray);
-   SetPanelObjectFlags(bg);
+   SetPanelObjectFlags(bg, 10);
 
    if(ObjectFind(0, title) < 0)
       ObjectCreate(0, title, OBJ_LABEL, 0, 0, 0);
@@ -645,7 +689,7 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
    ObjectSetInteger(0, title, OBJPROP_FONTSIZE, 10);
    ObjectSetString(0, title, OBJPROP_FONT, "Arial Bold");
    ObjectSetString(0, title, OBJPROP_TEXT, "Gony TrendLine EA");
-   SetPanelObjectFlags(title);
+   SetPanelObjectFlags(title, 1000);
 
    DrawPanelText(0, "Trendlines: " + IntegerToString(total_trendlines),
                  InpPanelX + 10, InpPanelY + 36 + hSpacer, clrLightGray);
@@ -671,31 +715,19 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
    ObjectSetInteger(0, auto_button, OBJPROP_FONTSIZE, 9);
    ObjectSetString(0, auto_button, OBJPROP_FONT, "Arial");
    ObjectSetString(0, auto_button, OBJPROP_TEXT, "Draw Buy/Sell Trendlines");
-   SetPanelObjectFlags(auto_button);
+   SetPanelObjectFlags(auto_button, 1000);
 
-   if(ObjectFind(0, button) < 0)
-      ObjectCreate(0, button, OBJ_BUTTON, 0, 0, 0);
-   ObjectSetInteger(0, button, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, button, OBJPROP_XDISTANCE, InpPanelX + 10);
-   ObjectSetInteger(0, button, OBJPROP_YDISTANCE, InpPanelY + 248);
-   ObjectSetInteger(0, button, OBJPROP_XSIZE, 300);
-   ObjectSetInteger(0, button, OBJPROP_YSIZE, 35);
-   ObjectSetInteger(0, button, OBJPROP_BGCOLOR, clrFireBrick);
-   ObjectSetInteger(0, button, OBJPROP_COLOR, clrWhite);
-   ObjectSetInteger(0, button, OBJPROP_FONTSIZE, 9);
-   ObjectSetString(0, button, OBJPROP_FONT, "Arial");
-   ObjectSetString(0, button, OBJPROP_TEXT, "Clear Trendlines");
-   SetPanelObjectFlags(button);
+   DrawClearTrendlinesButton(InpPanelY + 248);
   }
 
 //+------------------------------------------------------------------+
-void SetPanelObjectFlags(const string name)
+void SetPanelObjectFlags(const string name, const long z_order = 1000)
   {
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
-   ObjectSetInteger(0, name, OBJPROP_ZORDER, 100);
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, z_order);
   }
 
 //+------------------------------------------------------------------+
@@ -711,11 +743,30 @@ void DrawPanelText(const int row, const string text, const int x, const int y, c
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
    ObjectSetString(0, name, OBJPROP_FONT, "Arial");
    ObjectSetString(0, name, OBJPROP_TEXT, text);
-   SetPanelObjectFlags(name);
+   SetPanelObjectFlags(name, 1000);
   }
 
 //+------------------------------------------------------------------+
-void DeletePanelObjects()
+void DrawClearTrendlinesButton(const int y)
+  {
+   string button = PanelButtonName();
+   if(ObjectFind(0, button) < 0)
+      ObjectCreate(0, button, OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, button, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, button, OBJPROP_XDISTANCE, InpPanelX + 10);
+   ObjectSetInteger(0, button, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, button, OBJPROP_XSIZE, 300);
+   ObjectSetInteger(0, button, OBJPROP_YSIZE, 35);
+   ObjectSetInteger(0, button, OBJPROP_BGCOLOR, clrFireBrick);
+   ObjectSetInteger(0, button, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, button, OBJPROP_FONTSIZE, 9);
+   ObjectSetString(0, button, OBJPROP_FONT, "Arial");
+   ObjectSetString(0, button, OBJPROP_TEXT, "Clear Trendlines");
+   SetPanelObjectFlags(button, 1000);
+  }
+
+//+------------------------------------------------------------------+
+void DeletePanelObjectsExceptClearButton()
   {
    ObjectDelete(0, PanelBackgroundName());
    ObjectDelete(0, PanelTitleName());
@@ -723,6 +774,12 @@ void DeletePanelObjects()
    for(int i = 0; i < 5; i++)
       ObjectDelete(0, PanelStatsName(i));
    ObjectDelete(0, PanelAutoDrawButtonName());
+  }
+
+//+------------------------------------------------------------------+
+void DeletePanelObjects()
+  {
+   DeletePanelObjectsExceptClearButton();
    ObjectDelete(0, PanelButtonName());
   }
 
