@@ -57,12 +57,10 @@ string g_memory_prefix = "GTL_USED_";
 string g_panel_prefix = "GTL_PANEL_";
 string g_auto_line_prefix = "GTL_AUTO_TL_";
 datetime g_last_scan = 0;
-datetime g_last_bar_time = 0;
 int g_auto_draw_sequence = 0;
 int g_panel_total_trendlines = 0;
 int g_panel_valid_setups = 0;
 int g_panel_used_trendlines = 0;
-int g_panel_updated_orders = 0;
 int g_panel_cleaned_orders = 0;
 int g_panel_pending_orders = 0;
 
@@ -82,7 +80,7 @@ int OnInit()
    trade.SetExpertMagicNumber((int)InpMagicNumber);
    trade.SetDeviationInPoints((int)InpDeviationPoints);
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
-   DrawPanel(0, 0, 0, 0, 0, 0);
+   DrawPanel(0, 0, 0, 0, 0);
    ChartRedraw();
 
    if(InpTimerSeconds > 0)
@@ -190,13 +188,11 @@ void ManageTrendlines()
 
    int managed_orders = CountManagedPendingOrders();
    bool position_blocks_entries = InpOnePositionOnly && HasManagedPositionForSymbol();
-   bool candle_closed = HasCurrentCandleClosed();
 
    int total = ObjectsTotal(0, 0, OBJ_TREND);
    string active_comments[];
    int valid_setups = 0;
    int used_trendlines = 0;
-   int updated_orders = 0;
    int duplicate_orders_removed = 0;
 
    for(int i = 0; i < total; i++)
@@ -220,8 +216,6 @@ void ManageTrendlines()
       if(HasTrendlineBeenUsed(setup.comment))
         {
          used_trendlines++;
-         if(candle_closed && UpdateExistingOrder(name, setup.comment))
-            updated_orders++;
          continue;
         }
 
@@ -254,7 +248,7 @@ void ManageTrendlines()
    int removed_orders = DeleteOrdersForRemovedTrendlines(active_comments);
 
    int pending_orders = CountManagedPendingOrders();
-   SavePanelState(total, valid_setups, used_trendlines, updated_orders,
+   SavePanelState(total, valid_setups, used_trendlines,
                   duplicate_orders_removed + removed_orders, pending_orders);
    DrawLastPanelState();
    ChartRedraw();
@@ -263,13 +257,12 @@ void ManageTrendlines()
 
 //+------------------------------------------------------------------+
 void SavePanelState(const int total_trendlines, const int valid_setups,
-                    const int used_trendlines, const int updated_orders,
+                    const int used_trendlines,
                     const int cleaned_orders, const int pending_orders)
   {
    g_panel_total_trendlines = total_trendlines;
    g_panel_valid_setups = valid_setups;
    g_panel_used_trendlines = used_trendlines;
-   g_panel_updated_orders = updated_orders;
    g_panel_cleaned_orders = cleaned_orders;
    g_panel_pending_orders = pending_orders;
   }
@@ -278,28 +271,8 @@ void SavePanelState(const int total_trendlines, const int valid_setups,
 void DrawLastPanelState()
   {
    DrawPanel(g_panel_total_trendlines, g_panel_valid_setups,
-             g_panel_used_trendlines, g_panel_updated_orders,
+             g_panel_used_trendlines,
              g_panel_cleaned_orders, g_panel_pending_orders);
-  }
-
-//+------------------------------------------------------------------+
-bool HasCurrentCandleClosed()
-  {
-   datetime current_bar_time = iTime(_Symbol, _Period, 0);
-   if(current_bar_time == 0)
-      return false;
-
-   if(g_last_bar_time == 0)
-     {
-      g_last_bar_time = current_bar_time;
-      return false;
-     }
-
-   if(current_bar_time == g_last_bar_time)
-      return false;
-
-   g_last_bar_time = current_bar_time;
-   return true;
   }
 
 //+------------------------------------------------------------------+
@@ -654,7 +627,7 @@ bool IsAutoSellTrendline(const string name)
 
 //+------------------------------------------------------------------+
 void DrawPanel(const int total_trendlines, const int valid_setups,
-               const int used_trendlines, const int updated_orders,
+               const int used_trendlines,
                const int cleaned_orders, const int pending_orders)
   {
    if(!InpShowPanel)
@@ -698,10 +671,8 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
                  InpPanelX + 10, InpPanelY + 60 + hSpacer, clrLightGray);
    DrawPanelText(2, "Pending orders: " + IntegerToString(pending_orders),
                  InpPanelX + 10, InpPanelY + 84 + hSpacer, clrLightGray);
-   DrawPanelText(3, "Updated: " + IntegerToString(updated_orders),
+   DrawPanelText(3, "Cleaned/removed: " + IntegerToString(cleaned_orders),
                  InpPanelX + 10, InpPanelY + 108 + hSpacer, clrLightGray);
-   DrawPanelText(4, "Cleaned/removed: " + IntegerToString(cleaned_orders),
-                 InpPanelX + 10, InpPanelY + 132 + hSpacer, clrLightGray);
 
    if(ObjectFind(0, auto_button) < 0)
       ObjectCreate(0, auto_button, OBJ_BUTTON, 0, 0, 0);
