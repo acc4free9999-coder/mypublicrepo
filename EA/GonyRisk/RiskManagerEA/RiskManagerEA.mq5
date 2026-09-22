@@ -37,6 +37,11 @@ input bool            InpOneTradeOnly    = false;      // Only allow one open po
 input int             InpCooldownMinutes = 0;          // Block new market entry for N minutes after the latest close on this symbol (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
 
+input group "=== Trading Hours ==="
+input bool            InpUseTradingHours = false;      // Restrict new entries to a time-of-day window (server time)
+input string          InpTradingStartTime= "08:00";    // Start of allowed trading window (HH:MM, server time)
+input string          InpTradingEndTime  = "20:00";    // End of allowed trading window (HH:MM, server time); if before start, window wraps past midnight
+
 input group "=== Panel Settings ==="
 input bool            InpShowPanel       = true;      // Show on-chart info panel
 input bool            InpShowTradeButtons= false;      // Show Buy/Sell buttons on panel
@@ -706,7 +711,7 @@ void GetPanelInfoLines(string &lines[])
         }
      }
 
-   ArrayResize(lines, 12);
+   ArrayResize(lines, 13);
    lines[0] = StringFormat("Symbol: %s", symbol);
    lines[1] = StringFormat("Fixed Lot: %.2f", lots);
    string slModeStr = (InpSLMode == SL_MODE_PERCENT) ? "% Equity" :
@@ -725,7 +730,13 @@ void GetPanelInfoLines(string &lines[])
    lines[8] = StringFormat("Remaining Balance: $%.2f | Trades Left: %d", remainingBalance, remainingTrades);
    lines[9] = StringFormat("Open Positions (%s): %d", symbol, posCount);
    lines[10] = cooldownText;
-   lines[11] = StringFormat("Magic: %I64u", InpMagicNumber);
+   if(InpUseTradingHours)
+      lines[11] = StringFormat("Trading Hours: %s (%s - %s)",
+                                IsWithinTradingHours() ? "Open" : "Closed",
+                                InpTradingStartTime, InpTradingEndTime);
+   else
+      lines[11] = "Trading Hours: Off (24h)";
+   lines[12] = StringFormat("Magic: %I64u", InpMagicNumber);
   }
 
 //+------------------------------------------------------------------+
@@ -936,6 +947,54 @@ bool IsPositionCooldownActive()
   }
 
 //+------------------------------------------------------------------+
+//| Trading hours: parse "HH:MM" into minutes-since-midnight         |
+//+------------------------------------------------------------------+
+bool ParseTimeOfDay(const string text, int &minutesOfDay)
+  {
+   string parts[];
+   int n = StringSplit(text, ':', parts);
+   if(n < 2)
+      return false;
+   int hh = (int)StringToInteger(parts[0]);
+   int mm = (int)StringToInteger(parts[1]);
+   if(hh < 0 || hh > 23 || mm < 0 || mm > 59)
+      return false;
+   minutesOfDay = hh * 60 + mm;
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Trading hours: is the current server time inside the allowed     |
+//| window? Supports overnight windows where end < start (e.g.       |
+//| 22:00 -> 06:00 wraps past midnight).                              |
+//+------------------------------------------------------------------+
+bool IsWithinTradingHours()
+  {
+   if(!InpUseTradingHours)
+      return true;
+
+   int startMin, endMin;
+   if(!ParseTimeOfDay(InpTradingStartTime, startMin) || !ParseTimeOfDay(InpTradingEndTime, endMin))
+     {
+      Print("RiskManagerEA: invalid trading hours input, expected HH:MM - allowing trade");
+      return true;
+     }
+
+   MqlDateTime now;
+   TimeToStruct(TimeCurrent(), now);
+   int nowMin = now.hour * 60 + now.min;
+
+   if(startMin == endMin)
+      return true; // zero-width window means "always allowed"
+
+   if(startMin < endMin)
+      return (nowMin >= startMin && nowMin < endMin);
+
+   // Overnight window wraps past midnight
+   return (nowMin >= startMin || nowMin < endMin);
+  }
+
+//+------------------------------------------------------------------+
 //| Open a new trade at the fixed lot size and apply SL/TP           |
 //+------------------------------------------------------------------+
 void OpenTrade(bool isBuy)
@@ -953,6 +1012,13 @@ void OpenTrade(bool isBuy)
      {
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
             " - cooldown is active for ", InpCooldownMinutes, " minutes after the latest close on ", symbol);
+      return;
+     }
+
+   if(!IsWithinTradingHours())
+     {
+      Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
+            " - outside allowed trading hours (", InpTradingStartTime, " - ", InpTradingEndTime, ")");
       return;
      }
 
