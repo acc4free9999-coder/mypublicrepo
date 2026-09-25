@@ -46,9 +46,12 @@ input group "=== Auto Draw Trendlines ==="
 input int     InpAutoTrendlineBars  = 200;      // Bars to search for last buy/sell trendlines
 input int     InpAutoSwingLeftBars  = 3;        // Swing bars on older side
 input int     InpAutoSwingRightBars = 3;        // Swing bars on newer side
+input int     InpAutoRecentSwings   = 6;        // Newest swing points used for inner/outer lines
 input int     InpAutoLineFutureBars = 5;        // Auto line visual extension after latest swing
+input double  InpAutoMaxSlopeAtrMultiplier = 3.0; // Max line slope = avg bar range x this (0 = no limit)
 input color   InpAutoBuyLineColor   = clrLimeGreen; // Auto buy trendline color
 input color   InpAutoSellLineColor  = clrTomato;    // Auto sell trendline color
+input color   InpAutoInnerLineColor = clrBlue;      // Auto inner trendline color
 
 CTrade trade;
 
@@ -411,98 +414,256 @@ int DrawLastBuySellTrendlines()
       return 0;
      }
 
-   int low_newer = -1;
-   int low_older = -1;
-   int high_newer = -1;
-   int high_older = -1;
+   int low_inner_newer = -1;
+   int low_inner_older = -1;
+   int low_outer_newer = -1;
+   int low_outer_older = -1;
+   int high_inner_newer = -1;
+   int high_inner_older = -1;
+   int high_outer_newer = -1;
+   int high_outer_older = -1;
 
-   FindLastRisingLowPair(rates, copied, low_newer, low_older);
-   FindLastFallingHighPair(rates, copied, high_newer, high_older);
+   double avg_bar_range = AverageBarRange(rates, copied);
+   double max_slope_per_bar = (InpAutoMaxSlopeAtrMultiplier <= 0.0)
+                              ? DBL_MAX
+                              : avg_bar_range * InpAutoMaxSlopeAtrMultiplier;
+
+   FindInnerOuterRisingLowPairs(rates, copied, max_slope_per_bar,
+                                low_inner_newer, low_inner_older,
+                                low_outer_newer, low_outer_older);
+   FindInnerOuterFallingHighPairs(rates, copied, max_slope_per_bar,
+                                  high_inner_newer, high_inner_older,
+                                  high_outer_newer, high_outer_older);
 
    int drawn = 0;
    g_auto_draw_sequence++;
    string suffix = IntegerToString((long)TimeCurrent()) + "_" + IntegerToString(g_auto_draw_sequence);
 
-   if(low_newer >= 0 && low_older >= 0 &&
-      CreateAutoTrendline(AutoTrendlineName("BUY", suffix),
-                          rates[low_older].time, rates[low_older].low,
-                          rates[low_newer].time, rates[low_newer].low,
-                          InpAutoBuyLineColor))
+   if(low_inner_newer >= 0 && low_inner_older >= 0 &&
+      CreateAutoTrendline(AutoTrendlineName("BUY_INNER", suffix),
+                          rates[low_inner_older].time, rates[low_inner_older].low,
+                          rates[low_inner_newer].time, rates[low_inner_newer].low,
+                          InpAutoInnerLineColor, STYLE_SOLID, 2))
       drawn++;
 
-   if(high_newer >= 0 && high_older >= 0 &&
-      CreateAutoTrendline(AutoTrendlineName("SELL", suffix),
-                          rates[high_older].time, rates[high_older].high,
-                          rates[high_newer].time, rates[high_newer].high,
-                          InpAutoSellLineColor))
+   if(low_outer_newer >= 0 && low_outer_older >= 0 &&
+      !IsSameSwingPair(low_inner_newer, low_inner_older, low_outer_newer, low_outer_older) &&
+      CreateAutoTrendline(AutoTrendlineName("BUY_OUTER", suffix),
+                          rates[low_outer_older].time, rates[low_outer_older].low,
+                          rates[low_outer_newer].time, rates[low_outer_newer].low,
+                          InpAutoBuyLineColor, STYLE_DASH, 1))
+      drawn++;
+
+   if(high_inner_newer >= 0 && high_inner_older >= 0 &&
+      CreateAutoTrendline(AutoTrendlineName("SELL_INNER", suffix),
+                          rates[high_inner_older].time, rates[high_inner_older].high,
+                          rates[high_inner_newer].time, rates[high_inner_newer].high,
+                          InpAutoInnerLineColor, STYLE_SOLID, 2))
+      drawn++;
+
+   if(high_outer_newer >= 0 && high_outer_older >= 0 &&
+      !IsSameSwingPair(high_inner_newer, high_inner_older, high_outer_newer, high_outer_older) &&
+      CreateAutoTrendline(AutoTrendlineName("SELL_OUTER", suffix),
+                          rates[high_outer_older].time, rates[high_outer_older].high,
+                          rates[high_outer_newer].time, rates[high_outer_newer].high,
+                          InpAutoSellLineColor, STYLE_DASH, 1))
       drawn++;
 
    if(drawn == 0)
-      Print("GonyTrendLineEA: could not find rising swing lows or falling swing highs to draw trendlines");
+      Print("GonyTrendLineEA: could not find inner/outer rising lows or falling highs to draw trendlines");
 
    return drawn;
   }
 
 //+------------------------------------------------------------------+
-bool FindLastRisingLowPair(const MqlRates &rates[], const int count,
-                           int &newer_index, int &older_index)
+bool FindInnerOuterRisingLowPairs(const MqlRates &rates[], const int count,
+                                  const double max_slope_per_bar,
+                                  int &inner_newer_index, int &inner_older_index,
+                                  int &outer_newer_index, int &outer_older_index)
   {
-   newer_index = -1;
-   older_index = -1;
+   inner_newer_index = -1;
+   inner_older_index = -1;
+   outer_newer_index = -1;
+   outer_older_index = -1;
    int first = MathMax(1, InpAutoSwingRightBars);
    int last = count - MathMax(1, InpAutoSwingLeftBars) - 1;
+   datetime current_time = rates[0].time;
+   double outer_price = DBL_MAX;
+   int recent_limit = MathMax(2, InpAutoRecentSwings);
+   int swing_lows[];
 
-   for(int newer = first; newer <= last; newer++)
+   for(int index = first; index <= last && ArraySize(swing_lows) < recent_limit; index++)
      {
-      if(!IsSwingLow(rates, count, newer))
+      if(!IsSwingLow(rates, count, index))
          continue;
 
-      for(int older = newer + 1; older <= last; older++)
+      int size = ArraySize(swing_lows);
+      ArrayResize(swing_lows, size + 1);
+      swing_lows[size] = index;
+     }
+
+   for(int newer_pos = 0; newer_pos + 1 < ArraySize(swing_lows) && inner_newer_index < 0; newer_pos++)
+     {
+      int newer = swing_lows[newer_pos];
+
+      for(int older_pos = newer_pos + 1; older_pos < ArraySize(swing_lows) && inner_newer_index < 0; older_pos++)
         {
-         if(!IsSwingLow(rates, count, older))
+         int older = swing_lows[older_pos];
+
+         if(rates[newer].low <= rates[older].low)
             continue;
 
-         if(rates[newer].low > rates[older].low)
+         if(!SlopeWithinLimit(rates[older].low, rates[newer].low, older - newer, max_slope_per_bar))
+            continue;
+
+         inner_newer_index = newer;
+         inner_older_index = older;
+        }
+     }
+
+   for(int newer_pos = 0; newer_pos < ArraySize(swing_lows); newer_pos++)
+     {
+      int newer = swing_lows[newer_pos];
+
+      for(int older_pos = newer_pos + 1; older_pos < ArraySize(swing_lows); older_pos++)
+        {
+         int older = swing_lows[older_pos];
+
+         if(rates[newer].low > rates[older].low &&
+            SlopeWithinLimit(rates[older].low, rates[newer].low, older - newer, max_slope_per_bar))
            {
-            newer_index = newer;
-            older_index = older;
-            return true;
+            double projected_price = ProjectPriceAtTime(rates[older].time, rates[older].low,
+                                                        rates[newer].time, rates[newer].low,
+                                                        current_time);
+            if(projected_price < outer_price)
+              {
+               outer_price = projected_price;
+               outer_newer_index = newer;
+               outer_older_index = older;
+              }
            }
         }
      }
 
-   return false;
+   return inner_newer_index >= 0 || outer_newer_index >= 0;
   }
 
 //+------------------------------------------------------------------+
-bool FindLastFallingHighPair(const MqlRates &rates[], const int count,
-                             int &newer_index, int &older_index)
+bool FindInnerOuterFallingHighPairs(const MqlRates &rates[], const int count,
+                                    const double max_slope_per_bar,
+                                    int &inner_newer_index, int &inner_older_index,
+                                    int &outer_newer_index, int &outer_older_index)
   {
-   newer_index = -1;
-   older_index = -1;
+   inner_newer_index = -1;
+   inner_older_index = -1;
+   outer_newer_index = -1;
+   outer_older_index = -1;
    int first = MathMax(1, InpAutoSwingRightBars);
    int last = count - MathMax(1, InpAutoSwingLeftBars) - 1;
+   datetime current_time = rates[0].time;
+   double outer_price = -DBL_MAX;
+   int recent_limit = MathMax(2, InpAutoRecentSwings);
+   int swing_highs[];
 
-   for(int newer = first; newer <= last; newer++)
+   for(int index = first; index <= last && ArraySize(swing_highs) < recent_limit; index++)
      {
-      if(!IsSwingHigh(rates, count, newer))
+      if(!IsSwingHigh(rates, count, index))
          continue;
 
-      for(int older = newer + 1; older <= last; older++)
+      int size = ArraySize(swing_highs);
+      ArrayResize(swing_highs, size + 1);
+      swing_highs[size] = index;
+     }
+
+   for(int newer_pos = 0; newer_pos + 1 < ArraySize(swing_highs) && inner_newer_index < 0; newer_pos++)
+     {
+      int newer = swing_highs[newer_pos];
+
+      for(int older_pos = newer_pos + 1; older_pos < ArraySize(swing_highs) && inner_newer_index < 0; older_pos++)
         {
-         if(!IsSwingHigh(rates, count, older))
+         int older = swing_highs[older_pos];
+
+         if(rates[newer].high >= rates[older].high)
             continue;
 
-         if(rates[newer].high < rates[older].high)
+         if(!SlopeWithinLimit(rates[older].high, rates[newer].high, older - newer, max_slope_per_bar))
+            continue;
+
+         inner_newer_index = newer;
+         inner_older_index = older;
+        }
+     }
+
+   for(int newer_pos = 0; newer_pos < ArraySize(swing_highs); newer_pos++)
+     {
+      int newer = swing_highs[newer_pos];
+
+      for(int older_pos = newer_pos + 1; older_pos < ArraySize(swing_highs); older_pos++)
+        {
+         int older = swing_highs[older_pos];
+
+         if(rates[newer].high < rates[older].high &&
+            SlopeWithinLimit(rates[older].high, rates[newer].high, older - newer, max_slope_per_bar))
            {
-            newer_index = newer;
-            older_index = older;
-            return true;
+            double projected_price = ProjectPriceAtTime(rates[older].time, rates[older].high,
+                                                        rates[newer].time, rates[newer].high,
+                                                        current_time);
+            if(projected_price > outer_price)
+              {
+               outer_price = projected_price;
+               outer_newer_index = newer;
+               outer_older_index = older;
+              }
            }
         }
      }
 
-   return false;
+   return inner_newer_index >= 0 || outer_newer_index >= 0;
+  }
+
+//+------------------------------------------------------------------+
+bool IsSameSwingPair(const int newer_a, const int older_a,
+                     const int newer_b, const int older_b)
+  {
+   return newer_a == newer_b && older_a == older_b;
+  }
+
+//+------------------------------------------------------------------+
+double ProjectPriceAtTime(const datetime older_time, const double older_price,
+                          const datetime newer_time, const double newer_price,
+                          const datetime target_time)
+  {
+   if(newer_time == older_time)
+      return newer_price;
+
+   return newer_price + (newer_price - older_price) *
+          ((double)(target_time - newer_time) / (double)(newer_time - older_time));
+  }
+
+//+------------------------------------------------------------------+
+double AverageBarRange(const MqlRates &rates[], const int count)
+  {
+   if(count <= 0)
+      return 0.0;
+
+   double sum = 0.0;
+   for(int i = 0; i < count; i++)
+      sum += (rates[i].high - rates[i].low);
+
+   return sum / count;
+  }
+
+//+------------------------------------------------------------------+
+bool SlopeWithinLimit(const double older_price, const double newer_price,
+                     const int bar_distance, const double max_slope_per_bar)
+  {
+   if(max_slope_per_bar >= DBL_MAX)
+      return true;
+   if(bar_distance <= 0)
+      return true;
+
+   double slope = MathAbs(newer_price - older_price) / (double)bar_distance;
+   return slope <= max_slope_per_bar;
   }
 
 //+------------------------------------------------------------------+
@@ -545,7 +706,9 @@ bool IsSwingHigh(const MqlRates &rates[], const int count, const int index)
 bool CreateAutoTrendline(const string name,
                          const datetime older_time, const double older_price,
                          const datetime newer_time, const double newer_price,
-                         const color line_color)
+                         const color line_color,
+                         const ENUM_LINE_STYLE line_style = STYLE_SOLID,
+                         const int line_width = 2)
   {
    if(ObjectFind(0, name) >= 0)
       ObjectDelete(0, name);
@@ -575,8 +738,8 @@ bool CreateAutoTrendline(const string name,
      }
 
    ObjectSetInteger(0, name, OBJPROP_COLOR, line_color);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
-   ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, line_width);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, line_style);
    ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
@@ -685,7 +848,7 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
    ObjectSetInteger(0, auto_button, OBJPROP_COLOR, clrWhite);
    ObjectSetInteger(0, auto_button, OBJPROP_FONTSIZE, 9);
    ObjectSetString(0, auto_button, OBJPROP_FONT, "Arial");
-   ObjectSetString(0, auto_button, OBJPROP_TEXT, "Draw Buy/Sell Trendlines");
+   ObjectSetString(0, auto_button, OBJPROP_TEXT, "Draw Inner/Outer TLs");
    SetPanelObjectFlags(auto_button, 1000);
 
    DrawClearTrendlinesButton(InpPanelY + 248);
