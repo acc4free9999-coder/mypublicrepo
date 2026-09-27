@@ -250,6 +250,16 @@ export const usePricePrecision = () => useTradingStore((s) => getSymbolSpec(s.sy
 
 export const isReplayActive = (s: ReplayState['status']) => s === 'paused' || s === 'playing' || s === 'ended';
 
+/** Stop the replay and show all data up to the latest bar. Asks first when paper trades would be lost. */
+export function stopReplay(ask: (msg: string) => boolean = (m) => confirm(m)): boolean {
+  const s = useTradingStore.getState();
+  if (s.replay.status === 'off') return false;
+  const open = s.book.positions.length + s.book.pendingOrders.length;
+  if (open && !ask(`Stop the replay? ${open} open position${open === 1 ? '' : 's'} / order${open === 1 ? '' : 's'} will be discarded.`)) return false;
+  s.exitReplay();
+  return true;
+}
+
 const initialSymbol = SYMBOLS[0].symbol;
 /** Close of the bar under the replay cursor (NaN when no data is loaded). */
 export const marketPrice = (s: Pick<TradingStore, 'base' | 'replay'>) => s.base[s.replay.cursor]?.close ?? NaN;

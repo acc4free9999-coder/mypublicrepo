@@ -1,7 +1,7 @@
-import { History, Pause, Play, RotateCcw, Scissors, Shuffle, SkipForward, X } from 'lucide-react';
+import { History, Pause, Play, RotateCcw, Scissors, Shuffle, SkipForward, Square } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn, fmtTime } from '@/lib/format';
-import { hasData, isReplayActive, useTradingStore } from '@/store/useTradingStore';
+import { hasData, isReplayActive, stopReplay, useTradingStore } from '@/store/useTradingStore';
 import { REPLAY_SPEEDS } from '@/types';
 
 export function ReplayToolbar() {
@@ -52,7 +52,7 @@ export function ReplayToolbar() {
         </div>
       )}
       <div className="flex-1 !shrink" />
-      <Btn onClick={a.exitReplay} title="Exit replay (clears paper trades)"><X size={15} /> Exit</Btn>
+      <Btn onClick={() => stopReplay()} title="Stop replay and show the latest data (clears paper trades)" variant="danger"><Square size={13} fill="currentColor" /> Stop replay</Btn>
     </Bar>
   );
 }
@@ -62,7 +62,7 @@ const Bar = ({ children }: { children: ReactNode }) => (
 );
 const Sep = () => <div className="mx-1 h-5 w-px bg-slate-700" />;
 
-function Btn({ children, onClick, title, disabled, active, variant }: { children: ReactNode; onClick: () => void; title: string; disabled?: boolean; active?: boolean; variant?: 'primary' }) {
+function Btn({ children, onClick, title, disabled, active, variant }: { children: ReactNode; onClick: () => void; title: string; disabled?: boolean; active?: boolean; variant?: 'primary' | 'danger' }) {
   return (
     <button
       onClick={onClick}
@@ -70,7 +70,7 @@ function Btn({ children, onClick, title, disabled, active, variant }: { children
       disabled={disabled}
       className={cn(
         'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-        variant === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-500' : 'text-slate-300 hover:bg-slate-800',
+        variant === 'primary' ? 'bg-blue-600 text-white hover:bg-blue-500' : variant === 'danger' ? 'border border-rose-700/70 text-rose-300 hover:bg-rose-600 hover:text-white' : 'text-slate-300 hover:bg-slate-800',
         active && 'bg-slate-800 ring-1 ring-blue-500',
       )}
     >

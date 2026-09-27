@@ -40,6 +40,12 @@ npm run build
 - **Order ticket preview:** choosing Limit/Stop or enabling SL/TP in the order panel shows dashed preview lines. Drag them to adjust the ticket (the panel fields stay in sync), then click **✓** on the entry line or the panel button to submit.
 - **×** closes a position, cancels an order, or removes an SL/TP.
 
+### Chart view
+
+- **Auto** (bottom-right, next to the price axis) keeps the price scale fitted to the visible candles, like TradingView. Dragging the price axis turns it off; click **Auto** (or double-click the axis) to fit again. The choice is saved in `localStorage` (`gony-bar-replay:auto-scale`).
+- **Fit all data** zooms out to show every loaded bar. **Scroll to latest bar** jumps back to the most recent candle.
+- **Stop replay** (the red button in the replay toolbar, or the right-click menu) ends the replay and shows the latest data again, scrolled to the most recent bars. If positions or orders are open, it asks you to confirm first, because they are discarded.
+
 **Shortcuts:** `Space` play/pause · `→` step one candle · `Esc` cancel the bar selection or drawing tool · `Delete` remove the selected drawing · `Ctrl/⌘+Z` undo a drawing change.
 
 ### Drawing tools
@@ -54,8 +60,8 @@ These are TradingView-style tools in the left toolbar: trend line (`Alt+T`), ray
   - On a drawing: lock/unlock, show/hide stats, clone, remove.
   - At the cursor price: copy the price, or add a horizontal line there.
   - During replay: **Buy / Sell limit or stop @ price**. This fills the order ticket and shows the preview lines. Confirm with ✓ or the panel button.
-  - Outside replay: **Start replay from this bar**.
-  - Always: reset the chart view, scroll to the latest bar, hide/show drawings, and **Remove all drawings** (undo with `Ctrl/⌘+Z`).
+  - Outside replay: **Start replay from this bar**. During replay: **Stop replay · show latest data**.
+  - Always: reset the chart view (re-enables Auto), scroll to the latest bar, hide/show drawings, and **Remove all drawings** (undo with `Ctrl/⌘+Z`).
 - Drawings are stored per symbol in `(time, price)` coordinates and persisted to `localStorage`. They survive timeframe switches and can extend into the future area.
 - Drawings are rendered by a native Lightweight Charts series primitive (`src/drawings/DrawingsPrimitive.ts`), so they pan and zoom with the chart and show their prices and times on the axes.
 
@@ -107,7 +113,7 @@ Key design decisions:
     └──────exitReplay─────┴──────────── reset ◀──── ended ◀────┘
 ```
 
-Reset returns the cursor to the cutoff and clears the paper account (positions opened "in the future" would otherwise be inconsistent). Exiting replay does the same.
+Reset returns the cursor to the cutoff and clears the paper account (positions opened "in the future" would otherwise be inconsistent). **Stop replay** (`exitReplay`) does the same, reveals all bars again and scrolls the chart to the latest data.
 
 ### Matching engine algorithm (per base bar)
 
@@ -178,7 +184,7 @@ src/
 │   ├── chart/DrawingToolbar.tsx   Left drawing toolbar
 │   ├── chart/DrawingProperties.tsx Floating style editor for the selected drawing
 │   ├── chart/ChartContextMenu.tsx Right-click menu (drawing actions, price actions, replay, remove all)
-│   ├── replay/ReplayToolbar.tsx   Select bar · random · play/pause · step · reset · speed · exit
+│   ├── replay/ReplayToolbar.tsx   Select bar · random · play/pause · step · reset · speed · stop replay
 │   ├── trading/OrderPanel.tsx     Market / limit / stop ticket with SL/TP and R:R (shared with chart preview)
 │   ├── trading/AccountSummary.tsx
 │   ├── trading/BottomPanel.tsx    Positions (inline SL/TP edit) · Orders · History · Journal

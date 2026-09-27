@@ -15,7 +15,7 @@ import {
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
-import { Database, Download, Loader2, Maximize2, MoveHorizontal, ScanLine } from 'lucide-react';
+import { Database, Download, Loader2, Maximize2, MoveHorizontal } from 'lucide-react';
 import { lastIndexAtOrBefore } from '@/data/aggregate';
 import { getSymbolSpec } from '@/data/generator';
 import { DrawingsPrimitive } from '@/drawings/DrawingsPrimitive';
@@ -24,7 +24,7 @@ import { attachDrawingInteractions } from '@/drawings/interactions';
 import { TimeMapper } from '@/drawings/timeMapper';
 import { drawingsFor, useDrawingStore } from '@/store/useDrawingStore';
 import { useChartData } from '@/hooks/useChartData';
-import { fmtPrice } from '@/lib/format';
+import { cn, fmtPrice } from '@/lib/format';
 import { hasData, isReplayActive, marketPrice, ticketLots, usePricePrecision, useTradingStore } from '@/store/useTradingStore';
 import { attachTradeInteractions } from '@/tradelines/interactions';
 import { TradeLinesPrimitive } from '@/tradelines/TradeLinesPrimitive';
@@ -44,6 +44,17 @@ interface Legend {
   c: number;
   v: number;
 }
+
+const AUTO_SCALE_KEY = 'gony-bar-replay:auto-scale';
+const readAutoScale = () => {
+  try {
+    return localStorage.getItem(AUTO_SCALE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+};
+/** Bars shown after loading data or leaving a replay. */
+const DEFAULT_VISIBLE_BARS = 160;
 
 const mapCandle = (c: Candle) => ({ time: asTime(c.time), open: c.open, high: c.high, low: c.low, close: c.close });
 const mapVolume = (c: Candle) => ({ time: asTime(c.time), value: c.volume, color: c.close >= c.open ? 'rgba(38,166,154,0.45)' : 'rgba(239,83,80,0.45)' });
@@ -78,6 +89,18 @@ export function PriceChart() {
 
   const [legend, setLegend] = useState<Legend | null>(null);
   const [menu, setMenu] = useState<ContextTarget | null>(null);
+  // "Auto (fits data to screen)": price scale follows the visible candles. Dragging the price axis turns it off.
+  const [autoScale, setAutoScaleState] = useState(readAutoScale);
+  const setAutoScale = useCallback((on: boolean) => {
+    candleRef.current?.priceScale().applyOptions({ autoScale: on });
+    setAutoScaleState(on);
+    try {
+      localStorage.setItem(AUTO_SCALE_KEY, String(on));
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  const prevStatus = useRef(status);
   const closeMenu = useCallback(() => setMenu(null), []);
   const lastCandle = candles[candles.length - 1];
 
@@ -107,7 +130,7 @@ export function PriceChart() {
       wickUpColor: UP,
       wickDownColor: DOWN,
     });
-    candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
+    candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 }, autoScale: readAutoScale() });
     const volume = chart.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     const lineOpts = { lineWidth: 2 as const, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true };
@@ -184,8 +207,30 @@ export function PriceChart() {
     };
     el.addEventListener('contextmenu', onContextMenu);
 
+    // LWC has no price-scale event: re-read autoScale after gestures that can change it
+    // (axis drag / wheel over the axis turn it off, double-click on the axis turns it on).
+    const syncAuto = () => requestAnimationFrame(() => {
+      const on = candle.priceScale().options().autoScale;
+      setAutoScaleState((prev) => {
+        if (prev !== on) {
+          try {
+            localStorage.setItem(AUTO_SCALE_KEY, String(on));
+          } catch {
+            /* storage unavailable */
+          }
+        }
+        return on;
+      });
+    });
+    el.addEventListener('pointerup', syncAuto);
+    el.addEventListener('wheel', syncAuto, { passive: true });
+    el.addEventListener('dblclick', syncAuto);
+
     return () => {
       el.removeEventListener('contextmenu', onContextMenu);
+      el.removeEventListener('pointerup', syncAuto);
+      el.removeEventListener('wheel', syncAuto);
+      el.removeEventListener('dblclick', syncAuto);
       unsubDrawings();
       detachDrawing();
       unsubTrading();
@@ -210,11 +255,14 @@ export function PriceChart() {
     syncSeries(volumeRef.current!, indicators.volume.enabled ? candles : [], mapVolume, `${ds}|${indicators.volume.enabled}`, sync.current.volume);
     syncSeries(emaRef.current!, emaData, mapLine, `${ds}|${indicators.ema.enabled}|${indicators.ema.period}`, sync.current.ema);
 
-    if (full && candles.length) {
+    // Leaving a replay jumps back to the latest bars, even when the chart only appended them.
+    const stopped = isReplayActive(prevStatus.current) && status === 'off';
+    prevStatus.current = status;
+    if ((full || stopped) && candles.length) {
       const n = candles.length;
-      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 160), to: n + 10 });
+      chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - DEFAULT_VISIBLE_BARS), to: n + 10 });
     }
-  }, [candles, emaData, symbol, timeframe, indicators, dataKey]);
+  }, [candles, emaData, symbol, timeframe, indicators, dataKey, status]);
 
   // ───────────── per-symbol price format ─────────────
   useEffect(() => {
@@ -272,7 +320,7 @@ export function PriceChart() {
           onClose={closeMenu}
           onFit={() => {
             chartRef.current?.timeScale().fitContent();
-            candleRef.current?.priceScale().applyOptions({ autoScale: true });
+            setAutoScale(true);
           }}
           onScrollToLatest={() => chartRef.current?.timeScale().scrollToRealTime()}
         />
@@ -297,8 +345,20 @@ export function PriceChart() {
       <div className="absolute bottom-8 left-3 z-10 flex gap-1">
         <ChartBtn title="Fit all data" onClick={() => chartRef.current?.timeScale().fitContent()}><Maximize2 size={13} /></ChartBtn>
         <ChartBtn title="Scroll to latest bar" onClick={() => chartRef.current?.timeScale().scrollToRealTime()}><MoveHorizontal size={13} /></ChartBtn>
-        <ChartBtn title="Reset price auto-scale" onClick={() => candleRef.current?.priceScale().applyOptions({ autoScale: true })}><ScanLine size={13} /></ChartBtn>
       </div>
+
+      {/* Sits in the empty corner where the price and time axes meet, like TradingView's "auto" toggle. */}
+      <button
+        onClick={() => setAutoScale(!autoScale)}
+        aria-pressed={autoScale}
+        title={autoScale ? 'Auto (fits data to screen) — on. Click to scale manually.' : 'Auto (fits data to screen) — off. Click to fit the price scale to the visible bars.'}
+        className={cn(
+          'absolute bottom-1 right-1 z-10 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+          autoScale ? 'bg-blue-600 text-white hover:bg-blue-500' : 'border border-slate-600 bg-slate-900/80 text-slate-400 hover:text-slate-100',
+        )}
+      >
+        Auto
+      </button>
 
       <NoDataOverlay />
 

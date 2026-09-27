@@ -47,3 +47,25 @@ describe('drawing store duplicate / removeAll', () => {
     expect(list).toHaveLength(2);
   });
 });
+
+describe('stopReplay', () => {
+  it('returns to the latest bar, asking first when trades are open', async () => {
+    const { stopReplay, useTradingStore: st } = await import('@/store/useTradingStore');
+    const base = Array.from({ length: 50 }, (_, i) => ({ time: i * 3600, open: 100, high: 101, low: 99, close: 100, volume: 0 }));
+    st.setState({ symbol: 'ETHUSD', realData: { ETHUSD: { symbol: 'ETHUSD', fetchedAt: 1, series: { '1h': base } } } });
+    st.getState().setTimeframe('1h');
+    st.getState().enterReplay();
+    st.getState().selectCutoff(10 * 3600);
+    expect(st.getState().replay.cursor).toBe(10);
+    expect(st.getState().placeOrder({ side: 'buy', type: 'market', qty: 1 })).toBe(true);
+
+    expect(stopReplay(() => false)).toBe(false);
+    expect(st.getState().replay.status).toBe('paused');
+
+    expect(stopReplay(() => true)).toBe(true);
+    const s = st.getState();
+    expect(s.replay).toMatchObject({ status: 'off', cutoffIndex: null, cursor: 49 });
+    expect(s.book.positions).toHaveLength(0);
+    expect(stopReplay(() => true)).toBe(false);
+  });
+});

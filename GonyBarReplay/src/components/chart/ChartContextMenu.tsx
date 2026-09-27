@@ -13,13 +13,14 @@ import {
   Minus,
   MoveHorizontal,
   Ruler,
+  Square,
   Trash,
   Trash2,
 } from 'lucide-react';
 import { DRAWING_LABELS, isLine, statsVisible } from '@/drawings/types';
 import { cn, fmtPrice } from '@/lib/format';
 import { drawingsFor, useDrawingStore } from '@/store/useDrawingStore';
-import { hasData, isReplayActive, marketPrice, useTradingStore } from '@/store/useTradingStore';
+import { hasData, isReplayActive, marketPrice, stopReplay, useTradingStore } from '@/store/useTradingStore';
 import type { UnixTime } from '@/types';
 
 /** Where the chart was right-clicked. `price` / `barTime` are null outside the main pane / data. */
@@ -163,6 +164,13 @@ export function ChartContextMenu({ target, precision, onClose, onFit, onScrollTo
           >
             Start replay from this bar
           </Item>
+          <Sep />
+        </>
+      )}
+
+      {status !== 'off' && (
+        <>
+          <Item icon={<Square size={13} />} danger onClick={run(() => void stopReplay())}>Stop replay · show latest data</Item>
           <Sep />
         </>
       )}
