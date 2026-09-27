@@ -1,4 +1,3 @@
-import { CandlestickChart } from 'lucide-react';
 import { SYMBOLS } from '@/data/generator';
 import { cn } from '@/lib/format';
 import { useTradingStore } from '@/store/useTradingStore';
@@ -14,7 +13,7 @@ export function TopBar() {
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto whitespace-nowrap border-b border-slate-800 bg-[#0f131b] px-3 [&>*]:shrink-0">
       <div className="flex items-center gap-2 pr-2 font-semibold text-slate-100">
-        <CandlestickChart size={18} className="text-blue-400" /> GonyBarReplay
+        <img src="/favicon.svg" alt="" width={22} height={22} className="rounded-[5px]" /> GonyBarReplay
       </div>
       <select
         value={symbol}

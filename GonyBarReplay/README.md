@@ -11,11 +11,13 @@ npm test         # engine / aggregation / indicator unit tests
 npm run build
 ```
 
+**Live demo:** https://gony-bar-replay.vercel.app. See [Deploying to Vercel](#deploying-to-vercel).
+
 **Symbols:** XAUUSD (default), EURUSD, AUDUSD, BTCUSD, ETHUSD, SPX. Each one has its own price precision (FX pairs use 5 decimals), contract size, default lot size, volatility and trading session (FX, gold and SPX pause at weekends; crypto trades 24/7).
 
 **Timeframes:** 15m · 1H · 4H · 1D · 1W (Monday-aligned) · 1M (calendar months).
 
-**Data:** real OHLC bars only: fetched on demand from Twelve Data, or imported from an MT5 / MT4 / TradingView / Dukascopy / Binance / CSV export. Data is saved in the browser. There is no simulated data and no live stream. See [Real market data](#real-market-data-twelve-data) and [Importing files](#importing-files-mt5-mt4-tradingview-csv).
+**Data:** real OHLC bars only. They come from built-in MT5 exports (XAUUSD, Jan–Sep 2026), from Twelve Data on demand, or from an imported MT5 / MT4 / TradingView / Dukascopy / Binance / CSV export. Data is saved in the browser. There is no simulated data and no live stream. See [Built-in MT5 data](#built-in-mt5-data-mt5mt5data), [Real market data](#real-market-data-twelve-data) and [Importing files](#importing-files-mt5-mt4-tradingview-csv).
 
 **Indicators:** EMA (configurable period) and Volume. The on/off state and the EMA period are saved in `localStorage` (`gony-bar-replay:indicators`) and restored on reload.
 
@@ -157,6 +159,7 @@ src/
 │   ├── aggregate.ts               TF aggregation, no-look-ahead visibleCandles(), step targets
 │   ├── twelveData.ts              Twelve Data REST client (fetch on demand, 1 request per timeframe)
 │   ├── fileImport.ts              MT5 / MT4 / TradingView / Dukascopy / Binance / CSV parser (format + timeframe detection)
+│   ├── bundledData.ts             Loads the built-in MT5 files (public/data) and layers saved data over them
 │   └── realDataCache.ts           IndexedDB persistence of fetched / imported series
 ├── indicators/index.ts            EMA
 ├── engine/
@@ -191,7 +194,19 @@ src/
 │   └── layout/{Dashboard,TopBar,DataSourceMenu,ImportPanel}.tsx
 tests/                             Vitest: matching engine, aggregation, indicators, drawings, trade lines, data import
 mt5/GonyExportBars.mq5             MetaTrader 5 script: export all 6 timeframes as importable CSV
+mt5/Mt5Data/                       Built-in MT5 Bars exports shipped with the app
+public/favicon.svg                 App icon (candles inside a replay arrow); apple-touch-icon.png is a 180px render
+scripts/sync-mt5-data.mjs          Copies mt5/Mt5Data → public/data (+ manifest) before dev/build
 ```
+
+## Built-in MT5 data (`mt5/Mt5Data`)
+
+MT5 **Export Bars** files in [`mt5/Mt5Data/`](mt5/Mt5Data) ship with the app. There are currently six XAUUSD files (Exness `XAUUSDm`): M15, H1, H4, Daily, Weekly and Monthly, from 2026-01-01 to 2026-09-25. On a first visit the chart shows them straight away, with no API key and no import needed.
+
+- `npm run dev` and `npm run build` first run `scripts/sync-mt5-data.mjs`. It copies the folder to `public/data/mt5/` and writes `public/data/manifest.json`. Both are generated and git-ignored.
+- On startup the app fetches the manifest and files and parses them with the import parser. The symbol comes from the file name and the timeframe from the bar spacing. The files are assumed to be in UTC broker time (Exness), and MT5's Sunday-dated weekly bars are moved to Monday.
+- The built-in bars are kept **in memory only** and are not written to IndexedDB. Data you fetch or import is layered on top: per timeframe the series are merged, and your saved bars win on equal timestamps. The saved-data table shows `… + Built-in MT5` for merged timeframes. Removing a symbol's saved data falls back to the built-in bars.
+- **To update the data:** export new bars from MT5 (*View → Symbols → Bars → Export Bars*, UTC server time). Replace or add the files in `mt5/Mt5Data/`, keeping the symbol in the file name (e.g. `EURUSD_H1_….csv`). Then redeploy.
 
 ## Real market data (Twelve Data)
 
@@ -247,6 +262,41 @@ Parsing details:
 - **Dates** can be `YYYY-MM-DD`, `YYYY.MM.DD`, `DD.MM.YYYY`, `MM/DD/YYYY` (day/month order is detected per file), `YYYYMMDD`, ISO with a zone, or unix s/ms.
 - **Timeframe** is detected from the bar spacing. 1m/5m files are aggregated into 15m, 30m into 1H, 2H into 4H, and 12H into 1D. You can also force a coarser timeframe, e.g. import M15 bars as 1H.
 - If you import only one timeframe, the other timeframes are aggregated from it. For example, M15 alone also gives 1H to 1M, and D1 alone gives 1D, 1W and 1M.
-- **File time** (UTC−12 … UTC+14) applies only to zone-less intraday timestamps. Unix/ISO-with-zone times and D1+ bars are never shifted.
+- **File time** (UTC−12 … UTC+14) applies only to zone-less intraday timestamps. Unix/ISO-with-zone times and D1+ bars are never shifted. Weekly bars dated Sunday (MT5/MT4) or Saturday are moved to the app's Monday-based weeks.
 - Rows are sorted and duplicates removed; unreadable rows are skipped and counted. High and low are widened to include open and close if needed.
 - **Merge** keeps the saved bars of that timeframe and adds the file's bars (the file wins on overlap), e.g. to extend history. Otherwise the timeframe is replaced.
+
+## Deploying to Vercel
+
+The app is a static Vite build, so it needs no server or environment variables. [`vercel.json`](vercel.json) pins the Vite preset with build command `npm run build`, which also bundles the built-in MT5 data from `mt5/Mt5Data`, and output directory `dist`. The Twelve Data API key is typed into the app and stored in the browser, never in the build.
+
+### Option A: Vercel CLI
+
+Run these commands from the `GonyBarReplay/` folder:
+
+```bash
+npx vercel login                        # one-time; opens a device-code page in the browser
+npx vercel project add gony-bar-replay  # one-time; use a lowercase project name
+npx vercel link --yes --project gony-bar-replay
+npx vercel deploy --prod                # build on Vercel and publish to production
+```
+
+- `npx vercel deploy` without `--prod` creates a preview deployment, with its own URL.
+- `npx vercel ls gony-bar-replay` lists deployments. `npx vercel inspect <url>` shows a deployment's build details and aliases.
+- `vercel link` creates `.vercel/` (the project link) and `.env.local` (a short-lived Vercel token). Both are in `.gitignore`. Don't commit them.
+- The first `vercel deploy` fails with *"Project names … must be lowercase"* if you haven't created the project first. The default name comes from the folder name `GonyBarReplay`, which has capital letters. Create the project first (`vercel project add gony-bar-replay`) as above.
+- If `npx` fails with `EACCES` on `~/.npm/_cacache`, fix the cache ownership with `sudo chown -R $(whoami) ~/.npm`. Or run it once with a temporary cache: `npm_config_cache=/tmp/npm-cache npx vercel …`.
+
+### Option B: Git integration (deploy on every push)
+
+1. Push the repository to GitHub.
+2. In Vercel, click **Add New → Project** and import the repository.
+3. Set **Root Directory** to `GonyBarReplay`. The framework preset **Vite** and its build settings are detected automatically.
+4. Click **Deploy**.
+
+After that, every push to the default branch deploys to production, and other branches and PRs get preview URLs.
+
+### After deploying
+
+- Browser storage is per domain. Data, drawings, indicator and account settings saved on `localhost` don't appear on the deployed site. The built-in MT5 data is always available; load or import any other data again there.
+- Twelve Data is called directly from the browser, so it works the same on the deployed site.

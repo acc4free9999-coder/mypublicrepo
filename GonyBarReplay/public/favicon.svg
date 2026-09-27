@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>GonyBarReplay</title>
+  <rect width="64" height="64" rx="14" fill="#0f131b"/>
+  <!-- replay (rewind) arrow around the candles -->
+  <path d="M17.9 15.1A22 22 0 1 0 45.4 14.6" fill="none" stroke="#60a5fa" stroke-width="5" stroke-linecap="round"/>
+  <path d="M39.5 9.8 51.5 9.3 44.5 19.6Z" fill="#60a5fa" stroke="#60a5fa" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- candles -->
+  <g stroke-width="2.2" stroke-linecap="round">
+    <path d="M21 29v18" stroke="#26a69a"/>
+    <rect x="17.5" y="33" width="7" height="10" rx="1.2" fill="#26a69a"/>
+    <path d="M32 24v20" stroke="#ef5350"/>
+    <rect x="28.5" y="27" width="7" height="12" rx="1.2" fill="#ef5350"/>
+    <path d="M43 24v18" stroke="#26a69a"/>
+    <rect x="39.5" y="26" width="7" height="12" rx="1.2" fill="#26a69a"/>
+  </g>
+</svg>

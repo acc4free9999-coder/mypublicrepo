@@ -3,6 +3,7 @@ import { bucketEndIndex, lastIndexAtOrBefore, nextBucketStart, nextCandleEndInde
 import { loadAllRealData, saveRealData, deleteRealData, type RealSymbolData } from '@/data/realDataCache';
 import { fetchAllTimeframes } from '@/data/twelveData';
 import { mergeCandles } from '@/data/fileImport';
+import { loadBundledData, withBundled } from '@/data/bundledData';
 import { getSymbolSpec, SYMBOLS } from '@/data/generator';
 import {
   cancelOrder as engineCancel,
@@ -267,6 +268,9 @@ export const marketPrice = (s: Pick<TradingStore, 'base' | 'replay'>) => s.base[
 /** Replay reset caused by swapping the underlying series. */
 const replayOff = (s: Pick<TradingStore, 'replay'>, base: Candle[]): ReplayState => ({ ...s.replay, status: s.replay.status === 'selecting' ? 'selecting' : 'off', cutoffIndex: null, cursor: base.length - 1 });
 
+/** Built-in bars loaded from public/data at startup (in memory only). */
+let bundled: Record<string, RealSymbolData> = {};
+
 export const useTradingStore = create<TradingStore>()((set, get) => ({
   symbol: initialSymbol,
   timeframe: '1h',
@@ -397,14 +401,19 @@ export const useTradingStore = create<TradingStore>()((set, get) => ({
     set((s) => {
       const realData = { ...s.realData };
       delete realData[symbol];
+      // Built-in bars (if any) remain available after removing the saved data.
+      if (bundled[symbol]) realData[symbol] = bundled[symbol];
       if (symbol !== s.symbol) return { realData };
       const { base, baseTf } = resolveBase(realData, s.symbol, s.timeframe);
       return { realData, base, baseTf, replay: replayOff(s, base), ...tradingReset(), dataStatus: { loading: false, message: `Removed saved ${symbol} data.`, error: null } };
     });
   },
   hydrateRealData: async () => {
-    const all = await loadAllRealData();
-    const realData = Object.fromEntries(all.map((d) => [d.symbol, d]));
+    const [all, builtIn] = await Promise.all([loadAllRealData(), loadBundledData()]);
+    bundled = builtIn;
+    const saved = Object.fromEntries(all.map((d) => [d.symbol, d]));
+    const symbols = new Set([...Object.keys(saved), ...Object.keys(builtIn)]);
+    const realData = Object.fromEntries([...symbols].map((sym) => [sym, withBundled(saved[sym], builtIn[sym])!]));
     set((s) => {
       const merged = { ...realData, ...s.realData };
       // Don't yank the series out from under a running replay.

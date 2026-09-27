@@ -1,4 +1,4 @@
-import { aggregate } from './aggregate';
+import { aggregate, bucketStart } from './aggregate';
 import { TIMEFRAME_SECONDS, TIMEFRAMES, type Candle, type Timeframe } from '@/types';
 
 /**
@@ -264,7 +264,11 @@ export function parseBarsFile(text: string, opts: ParseOptions = {}): ParsedBars
     timeframe = up;
   }
 
-  if (native === timeframe) return { candles, timeframe, format, intervalSec, skipped };
+  if (native === timeframe) {
+    // MT5/MT4 label weeks by their Sunday open; the app's weeks start Monday 00:00 UTC.
+    if (timeframe === '1w') candles = candles.map((c) => ({ ...c, time: bucketStart(c.time + 2 * DAY, '1w') }));
+    return { candles, timeframe, format, intervalSec, skipped };
+  }
   const agg = aggregate(candles, timeframe);
   return { candles: agg, timeframe, format, intervalSec, aggregatedFrom: candles.length, skipped };
 }
