@@ -11,7 +11,7 @@ npm test         # engine / aggregation / indicator unit tests
 npm run build
 ```
 
-**Live demo:** https://gony-bar-replay.vercel.app. See [Deploying to Vercel](#deploying-to-vercel).
+**Live demo:** https://gony-bar-replay.vercel.app. See [Deploying to Vercel](#deploying-to-vercel) or [Deploying to a VPS](#deploying-to-a-vps) (Linux: Docker / Nginx · Windows Server: IIS).
 
 **Symbols:** XAUUSD (default), EURUSD, AUDUSD, BTCUSD, ETHUSD, SPX. Each one has its own price precision (FX pairs use 5 decimals), contract size, default lot size, volatility and trading session (FX, gold and SPX pause at weekends; crypto trades 24/7).
 
@@ -197,6 +197,8 @@ mt5/GonyExportBars.mq5             MetaTrader 5 script: export all 6 timeframes 
 mt5/Mt5Data/                       Built-in MT5 Bars exports shipped with the app
 public/favicon.svg                 App icon (candles inside a replay arrow); apple-touch-icon.png is a 180px render
 scripts/sync-mt5-data.mjs          Copies mt5/Mt5Data → public/data (+ manifest) before dev/build
+deploy/                            VPS deploy: Nginx configs (container + host site) and rsync deploy script
+Dockerfile · docker-compose.yml    Node build → Nginx container
 ```
 
 ## Built-in MT5 data (`mt5/Mt5Data`)
@@ -300,3 +302,118 @@ After that, every push to the default branch deploys to production, and other br
 
 - Browser storage is per domain. Data, drawings, indicator and account settings saved on `localhost` don't appear on the deployed site. The built-in MT5 data is always available; load or import any other data again there.
 - Twelve Data is called directly from the browser, so it works the same on the deployed site.
+
+## Deploying to a VPS
+
+The build output (`dist/`) is plain static files, so any web server can host it. The server only serves files; the app itself runs in the visitor's browser. Ready-made setups are included for Linux (Docker or Nginx) and for **Windows Server (IIS)**; see [Option C](#option-c-windows-server-2012-r2-iis).
+
+| File | Purpose |
+| --- | --- |
+| [`Dockerfile`](Dockerfile) · [`docker-compose.yml`](docker-compose.yml) · [`.dockerignore`](.dockerignore) | Builds the app with Node 24 (Debian slim) and serves it with Nginx in one container |
+| [`deploy/nginx.conf`](deploy/nginx.conf) | Nginx config used inside the container: gzip, long cache for `/assets/`, `no-cache` for `index.html` and `/data/` |
+| [`deploy/nginx-site.conf`](deploy/nginx-site.conf) | Host Nginx site (no Docker, or as a reverse proxy in front of the container) |
+| [`deploy/deploy-vps.sh`](deploy/deploy-vps.sh) | Builds locally and `rsync`s `dist/` to the VPS |
+| [`deploy/package-windows.sh`](deploy/package-windows.sh) | Builds locally and zips `dist/` + `web.config` for IIS |
+| [`deploy/iis/web.config`](deploy/iis/web.config) · [`deploy/iis/install-iis.ps1`](deploy/iis/install-iis.ps1) | IIS config (MIME types, caching, compression) and the PowerShell installer/updater |
+
+Requirements for options A and B: a Linux VPS (e.g. Ubuntu 22.04/24.04) with SSH access. Optionally, a domain whose DNS **A record** points to the VPS IP; this is needed for HTTPS.
+
+### Option A: Docker (recommended)
+
+On the VPS:
+
+```bash
+# one-time: install Docker + the compose plugin
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER && newgrp docker
+
+# get the code (or copy the GonyBarReplay folder with scp/rsync)
+git clone https://github.com/acc4free9999-coder/mypublicrepo.git
+cd mypublicrepo/GonyBarReplay
+
+PORT=80 docker compose up -d --build   # site on http://<vps-ip>/
+docker compose ps                      # STATUS should become "healthy"
+```
+
+- **Update:** `git pull && PORT=80 docker compose up -d --build`. The image rebuilds with the latest code and `mt5/Mt5Data` bars.
+- **Logs / stop:** `docker compose logs -f` · `docker compose down`.
+- **HTTPS with a domain:** keep the container on the default port 8080 (`docker compose up -d --build`), then put host Nginx and Certbot in front of it as a reverse proxy. Use `deploy/nginx-site.conf` with the `proxy_pass http://127.0.0.1:8080;` variant noted in its header, then follow steps 2–3 of Option B.
+- Without git on the VPS, build the image locally and ship it: `docker build -t gony-bar-replay . && docker save gony-bar-replay | ssh user@vps docker load`. Then run `docker run -d --restart unless-stopped -p 80:80 --name gony-bar-replay gony-bar-replay` on the VPS.
+
+### Option B: plain Nginx (no Docker)
+
+1. **On the VPS** (one-time):
+
+   ```bash
+   sudo apt update && sudo apt install -y nginx rsync
+   sudo mkdir -p /var/www/gony-bar-replay && sudo chown -R $USER /var/www/gony-bar-replay
+   ```
+
+2. **Nginx site** (one-time). Copy `deploy/nginx-site.conf` to the VPS and replace `example.com` with your domain, or use the VPS IP. Then:
+
+   ```bash
+   sudo cp nginx-site.conf /etc/nginx/sites-available/gony-bar-replay
+   sudo ln -s /etc/nginx/sites-available/gony-bar-replay /etc/nginx/sites-enabled/
+   sudo rm -f /etc/nginx/sites-enabled/default    # optional: drop the Nginx welcome page
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+3. **HTTPS** (one-time, needs the domain):
+
+   ```bash
+   sudo apt install -y certbot python3-certbot-nginx
+   sudo certbot --nginx -d example.com   # adds the 443 block + auto-renewal
+   ```
+
+4. **Deploy / update**: run this on your computer, from `GonyBarReplay/`:
+
+   ```bash
+   VPS=user@1.2.3.4 ./deploy/deploy-vps.sh
+   # options: REMOTE_DIR=/var/www/gony-bar-replay (default) · SSH_PORT=22 (default)
+   ```
+
+   It runs `npm run build` (including the built-in MT5 data) and syncs `dist/` to the VPS with `rsync --delete`. Nginx serves the new files immediately; no restart is needed.
+
+### Option C: Windows Server 2012 R2 (IIS)
+
+Docker isn't an option on Windows Server 2012 R2 because it can't run Linux containers, and current Node.js no longer supports that OS. So **build on your computer and let IIS serve the files**. IIS is built into Windows Server, and the included script installs and configures it.
+
+1. **Package** on your computer, from `GonyBarReplay/`:
+
+   ```bash
+   ./deploy/package-windows.sh    # → deploy/gony-bar-replay-iis.zip (~0.7 MB)
+   ```
+
+2. **Copy** `deploy/gony-bar-replay-iis.zip` and `deploy/iis/install-iis.ps1` to the same folder on the server, e.g. `C:\deploy\`. The easiest way is copy-paste over Remote Desktop, or the Microsoft Remote Desktop app's *Folders* redirection on macOS.
+
+3. **Install / update** on the server. Open PowerShell with *Run as Administrator*:
+
+   ```powershell
+   cd C:\deploy
+   powershell -ExecutionPolicy Bypass -File .\install-iis.ps1                        # site on http://<server-ip>/
+   # port 80 already used by another site?  add -Port 8080   (or -StopDefaultSite to stop IIS's "Default Web Site")
+   # serving a domain?                      add -HostName replay.example.com
+   ```
+
+   - **First run:** installs the IIS role (static content, default document, static compression, IIS Manager). It then creates `C:\inetpub\gony-bar-replay`, a "No Managed Code" app pool and the **GonyBarReplay** site, opens the port in Windows Firewall, and checks that the site answers.
+   - **Later runs:** replace the files with the new zip and keep the site and its bindings.
+   - **Updating** is the same loop: re-run step 1, copy the new zip, and run the script again.
+
+4. **Firewall at the provider:** if your VPS host has its own firewall or security group, allow TCP 80 (and 443 for HTTPS), or the port you chose.
+
+5. **HTTPS (optional, needs a domain pointing to the server):** use [win-acme](https://www.win-acme.com/), the Let's Encrypt client for IIS. Download it, run `wacs.exe` as Administrator and pick the *GonyBarReplay* site. It adds the 443 binding and a renewal task. Windows Server 2012 R2 supports TLS 1.2, which current browsers require.
+
+[`web.config`](deploy/iis/web.config) (shipped inside the zip):
+- It adds the MIME types IIS 8.5 lacks or mislabels: `.json`, `.csv`, `.svg`, `.js`, `.woff2`. Without them, the built-in MT5 data and the manifest would return 404.
+- It caches `/assets/` for a year, since those files are hashed and never change.
+- It makes `index.html` and `/data/` revalidate, so a redeploy is picked up immediately.
+
+No URL Rewrite module is needed, because the app has a single page.
+
+> Windows Server 2012 R2 reached end of support in October 2023 and no longer gets security updates. For a public site, keep it patched as far as possible, or consider moving to Windows Server 2019/2022 or Linux later. The same zip also works there.
+
+### Notes
+
+- Linux: open the firewall if one is enabled: `sudo ufw allow 'Nginx Full'` (or `sudo ufw allow 80,443/tcp` for Docker).
+- The app calls Twelve Data directly from the browser, so the VPS needs no API key, database or Node runtime. Node is only used at build time, inside Docker or on your computer.
+- As with Vercel, browser storage is per domain: data you saved on `localhost` or on the Vercel URL isn't carried over. The built-in MT5 bars are always there.

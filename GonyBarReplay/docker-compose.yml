@@ -1,0 +1,9 @@
+services:
+  web:
+    build: .
+    image: gony-bar-replay:latest
+    container_name: gony-bar-replay
+    restart: unless-stopped
+    # Host port → container port 80. Set PORT=80 to serve directly, or keep 8080 behind a host reverse proxy.
+    ports:
+      - "${PORT:-8080}:80"
