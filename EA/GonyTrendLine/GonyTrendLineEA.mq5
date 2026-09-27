@@ -49,6 +49,7 @@ input int     InpAutoSwingRightBars = 3;        // Swing bars on newer side
 input int     InpAutoRecentSwings   = 6;        // Newest swing points used for inner/outer lines
 input int     InpAutoLineFutureBars = 5;        // Auto line visual extension after latest swing
 input double  InpAutoMaxSlopeAtrMultiplier = 3.0; // Max line slope = avg bar range x this (0 = no limit)
+input int     InpSRLevelsCount      = 2;        // Support/resistance levels to add per side
 input color   InpAutoBuyLineColor   = clrLimeGreen; // Auto buy trendline color
 input color   InpAutoSellLineColor  = clrTomato;    // Auto sell trendline color
 input color   InpAutoInnerLineColor = clrBlue;      // Auto inner trendline color
@@ -56,6 +57,7 @@ input color   InpAutoInnerLineColor = clrBlue;      // Auto inner trendline colo
 CTrade trade;
 
 string g_comment_prefix = "GTL:";
+string g_sr_line_prefix = "GTL_SR_";
 string g_memory_prefix = "GTL_USED_";
 string g_panel_prefix = "GTL_PANEL_";
 string g_auto_line_prefix = "GTL_AUTO_TL_";
@@ -143,6 +145,24 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       Print("GonyTrendLineEA: auto trendline button drew ", drawn, " trendline(s)");
       g_last_scan = 0;
       ManageTrendlines();
+      ChartRedraw();
+      return;
+     }
+
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == PanelAddSRButtonName())
+     {
+      ObjectSetInteger(0, PanelAddSRButtonName(), OBJPROP_STATE, false);
+      int added = AddSupportResistanceLevels();
+      Print("GonyTrendLineEA: SR button added ", added, " horizontal line(s)");
+      ChartRedraw();
+      return;
+     }
+
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == PanelRemoveSRButtonName())
+     {
+      ObjectSetInteger(0, PanelRemoveSRButtonName(), OBJPROP_STATE, false);
+      int removed = RemoveSupportResistanceLevels();
+      Print("GonyTrendLineEA: SR button removed ", removed, " horizontal line(s)");
       ChartRedraw();
       return;
      }
@@ -374,6 +394,89 @@ int DeleteOrdersForRemovedTrendlines(const string &active_comments[])
          continue;
 
       if(DeleteOrder(ticket))
+         removed++;
+     }
+   return removed;
+  }
+
+//+------------------------------------------------------------------+
+int AddSupportResistanceLevels()
+  {
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   int copied = CopyRates(_Symbol, _Period, 0, MathMax(50, InpAutoTrendlineBars), rates);
+   if(copied <= 0)
+      return 0;
+
+   int added = 0;
+   int max_levels = MathMax(1, InpSRLevelsCount);
+   double support_levels[];
+   double resistance_levels[];
+
+   for(int i = 1; i < copied; i++)
+     {
+      if(rates[i].low < rates[i - 1].low)
+        {
+         int size = ArraySize(support_levels);
+         ArrayResize(support_levels, size + 1);
+         support_levels[size] = rates[i].low;
+        }
+      if(rates[i].high > rates[i - 1].high)
+        {
+         int size = ArraySize(resistance_levels);
+         ArrayResize(resistance_levels, size + 1);
+         resistance_levels[size] = rates[i].high;
+        }
+     }
+
+   for(int i = 0; i < MathMin(max_levels, ArraySize(support_levels)); i++)
+     {
+      string name = SRLevelName("SUPPORT", i);
+      if(ObjectFind(0, name) >= 0)
+         continue;
+      if(ObjectCreate(0, name, OBJ_HLINE, 0, 0, support_levels[i]))
+        {
+         ObjectSetInteger(0, name, OBJPROP_COLOR, clrGreen);
+         ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASH);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+         ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
+         ObjectSetInteger(0, name, OBJPROP_BACK, false);
+         added++;
+        }
+     }
+
+   for(int i = 0; i < MathMin(max_levels, ArraySize(resistance_levels)); i++)
+     {
+      string name = SRLevelName("RESISTANCE", i);
+      if(ObjectFind(0, name) >= 0)
+         continue;
+      if(ObjectCreate(0, name, OBJ_HLINE, 0, 0, resistance_levels[i]))
+        {
+         ObjectSetInteger(0, name, OBJPROP_COLOR, clrRed);
+         ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASH);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+         ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
+         ObjectSetInteger(0, name, OBJPROP_BACK, false);
+         added++;
+        }
+     }
+
+   return added;
+  }
+
+//+------------------------------------------------------------------+
+int RemoveSupportResistanceLevels()
+  {
+   int removed = 0;
+   for(int i = ObjectsTotal(0, 0, OBJ_HLINE) - 1; i >= 0; i--)
+     {
+      string name = ObjectName(0, i, 0, OBJ_HLINE);
+      if(StringFind(name, g_sr_line_prefix) < 0)
+         continue;
+
+      if(ObjectDelete(0, name))
          removed++;
      }
    return removed;
@@ -803,6 +906,8 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
    string bg = PanelBackgroundName();
    string title = PanelTitleName();
    string auto_button = PanelAutoDrawButtonName();
+   string add_sr_button = PanelAddSRButtonName();
+   string remove_sr_button = PanelRemoveSRButtonName();
    int hSpacer = 15;
    if(ObjectFind(0, bg) < 0)
       ObjectCreate(0, bg, OBJ_RECTANGLE_LABEL, 0, 0, 0);
@@ -851,7 +956,35 @@ void DrawPanel(const int total_trendlines, const int valid_setups,
    ObjectSetString(0, auto_button, OBJPROP_TEXT, "Draw Inner/Outer TLs");
    SetPanelObjectFlags(auto_button, 1000);
 
-   DrawClearTrendlinesButton(InpPanelY + 248);
+   if(ObjectFind(0, add_sr_button) < 0)
+      ObjectCreate(0, add_sr_button, OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_XDISTANCE, InpPanelX + 10);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_YDISTANCE, InpPanelY + 226);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_XSIZE, 145);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_YSIZE, 30);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_BGCOLOR, clrRoyalBlue);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, add_sr_button, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, add_sr_button, OBJPROP_FONT, "Arial");
+   ObjectSetString(0, add_sr_button, OBJPROP_TEXT, "Add S/R");
+   SetPanelObjectFlags(add_sr_button, 1000);
+
+   if(ObjectFind(0, remove_sr_button) < 0)
+      ObjectCreate(0, remove_sr_button, OBJ_BUTTON, 0, 0, 0);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_XDISTANCE, InpPanelX + 165);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_YDISTANCE, InpPanelY + 226);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_XSIZE, 145);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_YSIZE, 30);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_BGCOLOR, clrFireBrick);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_COLOR, clrWhite);
+   ObjectSetInteger(0, remove_sr_button, OBJPROP_FONTSIZE, 8);
+   ObjectSetString(0, remove_sr_button, OBJPROP_FONT, "Arial");
+   ObjectSetString(0, remove_sr_button, OBJPROP_TEXT, "Remove S/R");
+   SetPanelObjectFlags(remove_sr_button, 1000);
+
+   DrawClearTrendlinesButton(InpPanelY + 268);
   }
 
 //+------------------------------------------------------------------+
@@ -908,6 +1041,8 @@ void DeletePanelObjectsExceptClearButton()
    for(int i = 0; i < 5; i++)
       ObjectDelete(0, PanelStatsName(i));
    ObjectDelete(0, PanelAutoDrawButtonName());
+   ObjectDelete(0, PanelAddSRButtonName());
+   ObjectDelete(0, PanelRemoveSRButtonName());
   }
 
 //+------------------------------------------------------------------+
@@ -915,6 +1050,12 @@ void DeletePanelObjects()
   {
    DeletePanelObjectsExceptClearButton();
    ObjectDelete(0, PanelButtonName());
+  }
+
+//+------------------------------------------------------------------+
+string SRLevelName(const string side, const int index)
+  {
+   return g_sr_line_prefix + side + "_" + IntegerToString(index) + "_" + IntegerToString((long)ChartID());
   }
 
 //+------------------------------------------------------------------+
@@ -945,6 +1086,18 @@ string PanelButtonName()
 string PanelAutoDrawButtonName()
   {
    return g_panel_prefix + IntegerToString((long)ChartID()) + "_AUTO_DRAW_BTN";
+  }
+
+//+------------------------------------------------------------------+
+string PanelAddSRButtonName()
+  {
+   return g_panel_prefix + IntegerToString((long)ChartID()) + "_ADD_SR_BTN";
+  }
+
+//+------------------------------------------------------------------+
+string PanelRemoveSRButtonName()
+  {
+   return g_panel_prefix + IntegerToString((long)ChartID()) + "_REMOVE_SR_BTN";
   }
 
 //+------------------------------------------------------------------+
