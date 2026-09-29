@@ -33,6 +33,7 @@ input group "=== Trade / Behavior Settings ==="
 input ulong           InpMagicNumber     = 20240918; // Magic number for trades opened by the panel
 input ulong           InpSlippage        = 20;        // Max slippage (points)
 input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on ANY position on this symbol
+input bool            InpManageAllSymbols = true;     // Manage positions/orders on ALL symbols (false = chart symbol only)
 input bool            InpOneTradeOnly    = false;      // Only allow one open position at a time on this symbol; pending orders do not block new entries
 input int             InpCooldownMinutes = 0;          // Block new market entry for N minutes after the latest close on this symbol (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
@@ -55,7 +56,26 @@ CTrade         trade;
 string         g_prefix = "RM_EA_";
 string         g_gv_prefix = "RM_EA_TICKET_";   // GlobalVariable prefix to mark tickets already processed
 ulong          g_cooldownForcedCloseTicket = 0;
+int            g_panelWidth = 0;
 string        g_cooldownForcedCloseSymbol = "";
+
+//+------------------------------------------------------------------+
+//| Is this symbol managed by the EA?                                 |
+//+------------------------------------------------------------------+
+bool IsManagedSymbol(const string symbol)
+  {
+   return InpManageAllSymbols || symbol == Symbol();
+  }
+
+//+------------------------------------------------------------------+
+//| Configure CTrade for a request on the given symbol                |
+//+------------------------------------------------------------------+
+void PrepareTrade(const string symbol)
+  {
+   trade.SetExpertMagicNumber((int)InpMagicNumber);
+   trade.SetDeviationInPoints((int)InpSlippage);
+   trade.SetTypeFillingBySymbol(symbol);
+  }
 
 //+------------------------------------------------------------------+
 //| Utility: pip size (handles 3/5 digit brokers)                    |
@@ -76,6 +96,15 @@ double ValuePerPriceUnitPerLot(const string symbol)
   {
    double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
    double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tickSize <= 0.0 || tickValue <= 0.0)
+     {
+      // Symbol data may not be loaded yet (e.g. not in Market Watch);
+      // request it and retry once so risk figures don't collapse to zero.
+      if(!SymbolSelect(symbol, true))
+         return 0.0;
+      tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+      tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+     }
    if(tickSize <= 0.0)
       return 0.0;
    return tickValue / tickSize;
@@ -266,8 +295,7 @@ void CorrectLotSize(ulong ticket)
    string symbol = PositionGetString(POSITION_SYMBOL);
    long   type   = PositionGetInteger(POSITION_TYPE);
 
-   trade.SetExpertMagicNumber((int)InpMagicNumber);
-   trade.SetDeviationInPoints((int)InpSlippage);
+   PrepareTrade(symbol);
 
    if(!trade.PositionClose(ticket))
      {
@@ -303,16 +331,40 @@ void CorrectLotSize(ulong ticket)
 
 //+------------------------------------------------------------------+
 //| When one-trade-only mode is on, keep only the oldest open        |
-//| position on this symbol and ignore pending orders for new entry   |
-//| blocking.                                                         |
+//| position per managed symbol and ignore pending orders for new     |
+//| entry blocking.                                                   |
 //+------------------------------------------------------------------+
 void EnforceOneTradeOnly()
   {
    if(!InpOneTradeOnly)
       return;
 
-   string symbol = Symbol();
+   string symbols[];
+   int symbolCount = 0;
+   int totalPos = PositionsTotal();
+   for(int i = 0; i < totalPos; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      if(!IsManagedSymbol(symbol))
+         continue;
+      bool seen = false;
+      for(int j = 0; j < symbolCount && !seen; j++)
+         seen = (symbols[j] == symbol);
+      if(seen)
+         continue;
+      ArrayResize(symbols, symbolCount + 1);
+      symbols[symbolCount++] = symbol;
+     }
 
+   for(int i = 0; i < symbolCount; i++)
+      EnforceOneTradeOnlyForSymbol(symbols[i]);
+  }
+
+void EnforceOneTradeOnlyForSymbol(const string symbol)
+  {
    ulong  tickets[];
    datetime times[];
    int    count = 0;
@@ -340,8 +392,7 @@ void EnforceOneTradeOnly()
       if(times[i] < times[keepIdx])
          keepIdx = i;
 
-   trade.SetExpertMagicNumber((int)InpMagicNumber);
-   trade.SetDeviationInPoints((int)InpSlippage);
+   PrepareTrade(symbol);
 
    for(int i = 0; i < count; i++)
      {
@@ -353,14 +404,13 @@ void EnforceOneTradeOnly()
   }
 
 //+------------------------------------------------------------------+
-//| Scan and manage all positions on the chart symbol                |
+//| Scan and manage all positions on managed symbols                 |
 //+------------------------------------------------------------------+
 void ManagePositions()
   {
    if(!InpManageAllPositions)
       return;
 
-   string symbol = Symbol();
    int total = PositionsTotal();
    for(int i = total - 1; i >= 0; i--)
      {
@@ -369,7 +419,8 @@ void ManagePositions()
          continue;
       if(!PositionSelectByTicket(ticket))
          continue;
-      if(PositionGetString(POSITION_SYMBOL) != symbol)
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      if(!IsManagedSymbol(symbol))
          continue;
 
       double volume = PositionGetDouble(POSITION_VOLUME);
@@ -473,7 +524,7 @@ void CorrectOrderVolume(ulong ticket)
    datetime expiration = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
    ENUM_ORDER_TYPE_TIME typeTime = (ENUM_ORDER_TYPE_TIME)OrderGetInteger(ORDER_TYPE_TIME);
 
-   trade.SetExpertMagicNumber((int)InpMagicNumber);
+   PrepareTrade(symbol);
 
    if(!trade.OrderDelete(ticket))
      {
@@ -556,14 +607,13 @@ void CorrectOrderVolume(ulong ticket)
   }
 
 //+------------------------------------------------------------------+
-//| Scan and manage all pending orders on the chart symbol           |
+//| Scan and manage all pending orders on managed symbols            |
 //+------------------------------------------------------------------+
 void ManagePendingOrders()
   {
    if(!InpManageAllPositions)
       return;
 
-   string symbol = Symbol();
    int total = OrdersTotal();
    for(int i = total - 1; i >= 0; i--)
      {
@@ -572,7 +622,8 @@ void ManagePendingOrders()
          continue;
       if(!OrderSelect(ticket))
          continue;
-      if(OrderGetString(ORDER_SYMBOL) != symbol)
+      string symbol = OrderGetString(ORDER_SYMBOL);
+      if(!IsManagedSymbol(symbol))
          continue;
 
       double volume = OrderGetDouble(ORDER_VOLUME_CURRENT);
@@ -779,6 +830,8 @@ void CreatePanel()
    int bodyH = ArraySize(lines) * RM_PANEL_LINE_H + RM_PANEL_PADDING;
    int totalH = headerH + bodyH + btnH + RM_PANEL_PADDING * 2;
 
+   g_panelWidth = w;
+
    CreateBackground(g_prefix + "BG", x, y, w, totalH, C'20,20,20', clrDodgerBlue);
 
    CreateLabel(g_prefix + "TITLE", "RISK MANAGER EA", x + RM_PANEL_PADDING, y + 8,
@@ -814,6 +867,8 @@ void CreatePanel()
    // Resize background to fit actual content precisely
    ObjectSetInteger(0, g_prefix + "BG", OBJPROP_YSIZE,
                    (testBtnY + 40 + RM_PANEL_PADDING) - y);
+
+   ChartRedraw(0);
   }
 
 void RemovePanel()
@@ -837,18 +892,39 @@ void UpdatePanelInfo()
    if(!InpShowPanel)
       return;
 
+   // Rebuild if the panel objects are gone (e.g. chart objects cleared)
+   if(ObjectFind(0, g_prefix + "BG") < 0)
+     {
+      CreatePanel();
+      return;
+     }
+
    string lines[];
    GetPanelInfoLines(lines);
+
+   // Values read at startup can be empty/zero before the terminal finishes
+   // connecting, which makes the initial panel too narrow. Rebuild if the
+   // text has since grown wider than the panel we created.
+   int needed = 0;
+   for(int i = 0; i < ArraySize(lines); i++)
+      needed = MathMax(needed, EstimateTextWidth(lines[i], InpPanelFontSize, false) + RM_PANEL_PADDING * 2);
+   if(needed > g_panelWidth)
+     {
+      CreatePanel();
+      return;
+     }
+
    for(int i = 0; i < ArraySize(lines); i++)
       ObjectSetString(0, g_prefix + "INFO" + IntegerToString(i), OBJPROP_TEXT, lines[i]);
+
+   ChartRedraw(0);
   }
 
 //+------------------------------------------------------------------+
-//| Count currently open positions on the chart symbol               |
+//| Count currently open positions on a symbol                       |
 //+------------------------------------------------------------------+
-int CountOpenTradesOnSymbol()
+int CountOpenTradesOnSymbol(const string symbol)
   {
-   string symbol = Symbol();
    int count = 0;
 
    int totalPos = PositionsTotal();
@@ -865,16 +941,15 @@ int CountOpenTradesOnSymbol()
 //+------------------------------------------------------------------+
 //| Build the account status shown after a non-EA position close      |
 //+------------------------------------------------------------------+
-void GetTradeStatus(double &remainingBalance, int &remainingTrades, double &riskMoney)
+void GetTradeStatus(const string symbol, double &remainingBalance, int &remainingTrades, double &riskMoney)
   {
-   string symbol = Symbol();
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double lots = NormalizeLot(symbol, InpFixedLot);
    double slDist = ComputeSLDistance(symbol, lots);
    double valuePerUnit = ValuePerPriceUnitPerLot(symbol);
    riskMoney = valuePerUnit * lots * slDist;
 
-   int posCount = CountOpenTradesOnSymbol();
+   int posCount = CountOpenTradesOnSymbol(symbol);
    remainingBalance = balance;
    remainingTrades = 0;
    if(riskMoney > 0.0)
@@ -889,7 +964,7 @@ void NotifyPositionClosed(const string symbol, const long reason)
    double remainingBalance;
    double riskMoney;
    int remainingTrades;
-   GetTradeStatus(remainingBalance, remainingTrades, riskMoney);
+   GetTradeStatus(symbol, remainingBalance, remainingTrades, riskMoney);
 
    string closeType = "Manual";
    if(reason == DEAL_REASON_SL)
@@ -1001,7 +1076,7 @@ void OpenTrade(bool isBuy)
   {
    string symbol = Symbol();
 
-   if(InpOneTradeOnly && CountOpenTradesOnSymbol() > 0)
+   if(InpOneTradeOnly && CountOpenTradesOnSymbol(symbol) > 0)
      {
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
             " - one-trade-only mode is on and a trade already exists on ", symbol);
@@ -1024,8 +1099,7 @@ void OpenTrade(bool isBuy)
 
    double lots = NormalizeLot(symbol, InpFixedLot);
 
-   trade.SetExpertMagicNumber((int)InpMagicNumber);
-   trade.SetDeviationInPoints((int)InpSlippage);
+   PrepareTrade(symbol);
 
    bool opened = isBuy ? trade.Buy(lots, symbol) : trade.Sell(lots, symbol);
    if(!opened)
@@ -1070,7 +1144,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
      {
       ulong posTicket = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
       long reason = HistoryDealGetInteger(trans.deal, DEAL_REASON);
-      if(symbol == Symbol() &&
+      if(IsManagedSymbol(symbol) &&
          (reason == DEAL_REASON_CLIENT || reason == DEAL_REASON_MOBILE ||
           reason == DEAL_REASON_WEB || reason == DEAL_REASON_SL ||
           reason == DEAL_REASON_TP || reason == DEAL_REASON_SO))
@@ -1088,15 +1162,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
    if(entry == DEAL_ENTRY_IN)
      {
-      if(IsCooldownActiveForSymbol(symbol))
+      if(IsManagedSymbol(symbol) && IsCooldownActiveForSymbol(symbol))
         {
          ulong posTicket = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
          if(posTicket != 0)
            {
             g_cooldownForcedCloseTicket = posTicket;
             g_cooldownForcedCloseSymbol = symbol;
-            trade.SetExpertMagicNumber((int)InpMagicNumber);
-            trade.SetDeviationInPoints((int)InpSlippage);
+            PrepareTrade(symbol);
             if(!trade.PositionClose(posTicket))
                {
                 Print("RiskManagerEA: failed to close trade entered during cooldown, ticket=", posTicket, " err=", GetLastError());

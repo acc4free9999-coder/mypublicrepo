@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Jira Work Log - Calendar</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="calendar">
+  <header>
+    <h1 id="range-label"></h1>
+    <div>
+      <span id="range-total"></span>
+      <button id="add-log" class="primary">+ Log time</button>
+      <span class="view-toggle">
+        <button id="view-sprint">Sprint</button><button id="view-month">Month</button>
+      </span>
+      <button id="prev">&lsaquo; Prev</button>
+      <button id="today">Today</button>
+      <button id="next">Next &rsaquo;</button>
+      <button id="refresh">Refresh</button>
+      <button id="open-options">Settings</button>
+    </div>
+  </header>
+  <p id="status" class="status"></p>
+  <div class="calendar-grid" id="weekdays">
+    <div></div>
+    <div class="weekday">Mon</div>
+    <div class="weekday">Tue</div>
+    <div class="weekday">Wed</div>
+    <div class="weekday">Thu</div>
+    <div class="weekday">Fri</div>
+    <div class="weekday">Sat</div>
+    <div class="weekday">Sun</div>
+  </div>
+  <div class="calendar-grid" id="grid"></div>
+
+  <div id="context-menu" class="context-menu" role="menu" hidden>
+    <button id="menu-open" role="menuitem">Open in Jira</button>
+    <button id="menu-edit" role="menuitem">Edit work log</button>
+  </div>
+
+  <div id="popover" class="popover" role="tooltip" hidden></div>
+
+  <dialog id="log-dialog">
+    <form id="log-form">
+      <h2>Log time</h2>
+      <div class="row">
+        <label>Assignee <input id="assignee" placeholder="Any assignee"></label>
+        <label>Search <input id="search" type="search" placeholder="Issue key or summary"></label>
+      </div>
+      <ul id="results" class="issues"></ul>
+      <p id="selected" class="selected-issue"></p>
+      <label>Time spent <input id="time" required placeholder="e.g. 1h 30m"></label>
+      <div class="row">
+        <label>Date <input id="date" type="date" required></label>
+        <label>Start <input id="start" type="time" value="09:00" required></label>
+      </div>
+      <label>Remaining estimate (optional)
+        <input id="estimate" placeholder="Leave empty to adjust automatically">
+        <small id="estimate-info" class="hint"></small>
+      </label>
+      <label>Comment <textarea id="comment" rows="2"></textarea></label>
+      <p id="dialog-status" class="status"></p>
+      <div class="row">
+        <button type="button" id="dialog-cancel">Cancel</button>
+        <button type="submit" class="primary">Log work</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="edit-dialog">
+    <form id="edit-form">
+      <h2>Edit work log</h2>
+      <p id="edit-title" class="selected-issue"></p>
+      <label>Time spent <input id="edit-time" required placeholder="e.g. 1h 30m"></label>
+      <div class="row">
+        <label>Date <input id="edit-date" type="date" required></label>
+        <label>Start <input id="edit-start" type="time" required></label>
+      </div>
+      <div class="row">
+        <label>Original estimate <input id="edit-original" placeholder="e.g. 2d"></label>
+        <label>Remaining estimate <input id="edit-remaining" placeholder="e.g. 4h"></label>
+      </div>
+      <small id="edit-estimate-info" class="hint"></small>
+      <label>Comment <textarea id="edit-comment" rows="3"></textarea></label>
+      <p id="edit-status" class="status"></p>
+      <div class="row">
+        <button type="button" id="edit-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="calendar.js"></script>
+</body>
+</html>

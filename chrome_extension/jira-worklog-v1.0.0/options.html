@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Jira Work Log - Settings</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="options">
+  <h1>Jira Work Log Settings</h1>
+  <p>Default site is https://sd.homecredit.vn. Leave email and token empty to use your
+    logged-in Jira session in this browser.</p>
+  <p>Credentials are stored locally in this browser only.</p>
+  <form id="form">
+    <label>Jira URL
+      <input id="baseUrl" type="url" placeholder="https://sd.homecredit.vn" required>
+    </label>
+    <label>Email (optional, Jira Cloud only)
+      <input id="email" type="email">
+    </label>
+    <label>Token (optional: Personal Access Token, or Cloud API token with email)
+      <input id="token" type="password">
+    </label>
+    <p><a href="https://sd.homecredit.vn/secure/ViewProfile.jspa?selectedTab=com.atlassian.pats.pats-plugin:jira-user-personal-access-tokens" target="_blank" rel="noopener">Create a Personal Access Token</a></p>
+    <h2>Sprint</h2>
+    <div class="row">
+      <label>Any sprint end date
+        <input id="sprintEnd" type="date" required>
+      </label>
+      <label>Sprint length (days)
+        <input id="sprintLength" type="number" min="1" max="60" required>
+      </label>
+    </div>
+    <button type="submit" class="primary">Save &amp; test connection</button>
+    <p id="status" class="status"></p>
+  </form>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Droplet Dictionary — Notebook</title>
+  <link rel="icon" href="../icons/icon32.png" />
+  <link rel="stylesheet" href="vocab.css" />
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="../icons/icon48.png" alt="" /> Droplet Dictionary</div>
+    <nav id="tabs">
+      <a href="#notebook" data-tab="notebook">📒 Notebook</a>
+      <a href="#review" data-tab="review">🎮 Review</a>
+      <a href="#settings" data-tab="settings">⚙️ Settings</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Notebook -->
+    <section id="notebook" class="tab">
+      <div class="toolbar">
+        <input id="filter" type="search" placeholder="Search your words…" />
+        <select id="sort">
+          <option value="new">Newest first</option>
+          <option value="az">A → Z</option>
+          <option value="due">Due soonest</option>
+          <option value="weak">Weakest first</option>
+        </select>
+        <button id="exportCsv">⬇ Export CSV</button>
+        <label class="btn">⬆ Import CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden /></label>
+      </div>
+      <p class="muted" id="summary"></p>
+      <div id="list"></div>
+    </section>
+
+    <!-- Review -->
+    <section id="review" class="tab">
+      <div class="toolbar">
+        <label>Game
+          <select id="mode">
+            <option value="flash">Flashcards</option>
+            <option value="choice">Multiple choice</option>
+            <option value="type">Fill in the blank</option>
+            <option value="listen">Listening</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="allWords" /> Include words not yet due</label>
+        <button id="start" class="primary">Start</button>
+      </div>
+      <div id="game"></div>
+    </section>
+
+    <!-- Settings -->
+    <section id="settings" class="tab">
+      <form id="settingsForm" class="settings">
+        <label>Translate into
+          <select name="targetLang" id="targetLang"></select>
+        </label>
+        <label><input type="checkbox" name="showIcon" /> Show the droplet icon when I select text</label>
+        <label><input type="checkbox" name="dblclickLookup" /> Look up instantly when I double-click a word</label>
+        <label><input type="checkbox" name="autoSpeak" /> Pronounce automatically on lookup</label>
+        <label><input type="checkbox" name="reminders" /> Show number of due words on the toolbar icon</label>
+        <p class="muted" id="savedMsg"></p>
+      </form>
+      <div class="danger">
+        <button id="clearAll">🗑 Delete all saved words</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="../lib/common.js"></script>
+  <script src="vocab.js"></script>
+</body>
+</html>

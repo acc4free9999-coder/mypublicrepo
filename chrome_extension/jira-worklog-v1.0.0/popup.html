@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="popup">
+  <header>
+    <h1>Jira Work Log</h1>
+    <div>
+      <button id="open-calendar">Calendar</button>
+      <button id="open-options">Settings</button>
+    </div>
+  </header>
+
+  <input id="filter" type="search" placeholder="Filter my open tasks...">
+  <p id="status" class="status"></p>
+  <ul id="issues" class="issues"></ul>
+
+  <form id="log-form" hidden>
+    <h2><a id="selected-issue" target="_blank" rel="noopener"></a></h2>
+    <label>Time spent
+      <input id="time" required placeholder="e.g. 1h 30m">
+    </label>
+    <div class="row">
+      <label>Date <input id="date" type="date" required></label>
+      <label>Start <input id="start" type="time" value="09:00" required></label>
+    </div>
+    <label>Comment
+      <textarea id="comment" rows="2"></textarea>
+    </label>
+    <div class="row">
+      <button type="button" id="cancel">Cancel</button>
+      <button type="submit" class="primary">Log work</button>
+    </div>
+  </form>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Jira Work Log",
+  "version": "1.0.0",
+  "description": "View your Jira tasks, log work, and see your worklogs in a calendar.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Jira Work Log"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage"],
+  "host_permissions": ["https://sd.homecredit.vn/*", "https://*.atlassian.net/*"]
+}
