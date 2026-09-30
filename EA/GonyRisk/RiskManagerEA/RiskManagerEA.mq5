@@ -2,8 +2,9 @@
 //|                                              RiskManagerEA.mq5   |
 //|  Risk-management EA: fixed lot size, auto SL (percent/pips),     |
 //|  auto TP at fixed Risk:Reward, on-chart Buy/Sell panel, and      |
-//|  auto-correction of any manually opened position on the chart    |
-//|  symbol (oversized lot is closed and reopened at the fixed lot). |
+//|  auto-correction of any manually opened position on the          |
+//|  configured symbols (up to 4, each with its own lot/SL/R:R/       |
+//|  one-trade-only settings). Attach to ONE chart only.              |
 //+------------------------------------------------------------------+
 #property copyright "Risk Manager EA"
 #property version   "1.00"
@@ -20,22 +21,56 @@ enum ENUM_SL_MODE
   };
 
 //--- Inputs
-input group "=== Lot / Risk Settings ==="
-input double         InpFixedLot        = 0.10;    // Fixed lot size (all trades use this size)
-input ENUM_SL_MODE   InpSLMode          = SL_MODE_PERCENT; // Stop Loss mode
-input double          InpSLPercent       = 1.0;     // SL risk, % of account equity (used if mode = Percent)
-input double          InpSLPips          = 20;       // SL distance in pips (used if mode = Pips)
-input double          InpInitialBalance  = 1000.0;   // Initial balance (used if mode = % of Initial Balance)
-input double          InpSLPercentInitial= 1.0;      // SL risk, % of initial balance (used if mode = % of Initial Balance)
-input double          InpRiskReward      = 3.0;      // Risk:Reward ratio for Take Profit (e.g. 3 = 1:3)
+// Each symbol group is matched by exact name or prefix, so "XAUUSD"
+// also matches broker-suffixed symbols such as "XAUUSDm".
+input group "=== Symbol 1 ==="
+input string          InpSym1Name        = "XAUUSDm";  // Symbol name or prefix (empty = unused)
+input bool            InpSym1Enabled     = true;      // Manage this symbol
+input double          InpSym1FixedLot    = 0.01;      // Fixed lot size
+input ENUM_SL_MODE    InpSym1SLMode      = SL_MODE_PERCENT_INITIAL; // Stop Loss mode
+input double          InpSym1SLPercent   = 10.0;       // SL risk % (of equity or initial balance, per SL mode)
+input double          InpSym1SLPips      = 20;        // SL distance in pips (used if mode = Pips)
+input double          InpSym1RiskReward  = 10.0;       // Risk:Reward for TP (e.g. 3 = 1:3)
+input bool            InpSym1OneTradeOnly= false;     // Only one open position at a time
+
+input group "=== Symbol 2 ==="
+input string          InpSym2Name        = "EURUSDm";  // Symbol name or prefix (empty = unused)
+input bool            InpSym2Enabled     = true;      // Manage this symbol
+input double          InpSym2FixedLot    = 0.10;      // Fixed lot size
+input ENUM_SL_MODE    InpSym2SLMode      = SL_MODE_PERCENT_INITIAL; // Stop Loss mode
+input double          InpSym2SLPercent   = 20.0;       // SL risk % (of equity or initial balance, per SL mode)
+input double          InpSym2SLPips      = 20;        // SL distance in pips (used if mode = Pips)
+input double          InpSym2RiskReward  = 10.0;       // Risk:Reward for TP (e.g. 3 = 1:3)
+input bool            InpSym2OneTradeOnly= false;     // Only one open position at a time
+
+input group "=== Symbol 3 ==="
+input string          InpSym3Name        = "AUDUSDm";  // Symbol name or prefix (empty = unused)
+input bool            InpSym3Enabled     = true;      // Manage this symbol
+input double          InpSym3FixedLot    = 0.10;      // Fixed lot size
+input ENUM_SL_MODE    InpSym3SLMode      = SL_MODE_PERCENT_INITIAL; // Stop Loss mode
+input double          InpSym3SLPercent   = 20.0;       // SL risk % (of equity or initial balance, per SL mode)
+input double          InpSym3SLPips      = 20;        // SL distance in pips (used if mode = Pips)
+input double          InpSym3RiskReward  = 10.0;       // Risk:Reward for TP (e.g. 3 = 1:3)
+input bool            InpSym3OneTradeOnly= false;     // Only one open position at a time
+
+input group "=== Symbol 4 ==="
+input string          InpSym4Name        = "GBPUSDm";  // Symbol name or prefix (empty = unused)
+input bool            InpSym4Enabled     = true;      // Manage this symbol
+input double          InpSym4FixedLot    = 0.10;      // Fixed lot size
+input ENUM_SL_MODE    InpSym4SLMode      = SL_MODE_PERCENT_INITIAL; // Stop Loss mode
+input double          InpSym4SLPercent   = 20.0;       // SL risk % (of equity or initial balance, per SL mode)
+input double          InpSym4SLPips      = 20;        // SL distance in pips (used if mode = Pips)
+input double          InpSym4RiskReward  = 10.0;       // Risk:Reward for TP (e.g. 3 = 1:3)
+input bool            InpSym4OneTradeOnly= false;     // Only one open position at a time
+
+input group "=== Account Settings ==="
+input double          InpInitialBalance  = 100.0;   // Initial balance (used by SL mode = % of Initial Balance)
 
 input group "=== Trade / Behavior Settings ==="
 input ulong           InpMagicNumber     = 20240918; // Magic number for trades opened by the panel
 input ulong           InpSlippage        = 20;        // Max slippage (points)
-input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on ANY position on this symbol
-input bool            InpManageAllSymbols = true;     // Manage positions/orders on ALL symbols (false = chart symbol only)
-input bool            InpOneTradeOnly    = false;      // Only allow one open position at a time on this symbol; pending orders do not block new entries
-input int             InpCooldownMinutes = 0;          // Block new market entry for N minutes after the latest close on this symbol (0 = disabled)
+input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on ANY position on configured symbols
+input int             InpCooldownMinutes = 0;          // Block new market entry for N minutes after the latest close on a symbol (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
 
 input group "=== Trading Hours ==="
@@ -60,11 +95,120 @@ int            g_panelWidth = 0;
 string        g_cooldownForcedCloseSymbol = "";
 
 //+------------------------------------------------------------------+
-//| Is this symbol managed by the EA?                                 |
+//| Per-symbol settings                                               |
 //+------------------------------------------------------------------+
+#define RM_SLOT_COUNT 4
+
+struct SymbolSettings
+  {
+   string            name;        // configured name/prefix
+   string            symbol;      // resolved broker symbol ("" if not found)
+   bool              enabled;
+   double            fixedLot;
+   ENUM_SL_MODE      slMode;
+   double            slPercent;
+   double            slPips;
+   double            riskReward;
+   bool              oneTradeOnly;
+  };
+
+SymbolSettings g_slots[RM_SLOT_COUNT];
+
+void LoadSlot(const int i, const string name, const bool enabled, const double lot,
+              const ENUM_SL_MODE mode, const double pct, const double pips,
+              const double rr, const bool oneTrade)
+  {
+   g_slots[i].name         = name;
+   StringTrimLeft(g_slots[i].name);
+   StringTrimRight(g_slots[i].name);
+   g_slots[i].symbol       = "";
+   g_slots[i].enabled      = enabled && g_slots[i].name != "";
+   g_slots[i].fixedLot     = lot;
+   g_slots[i].slMode       = mode;
+   g_slots[i].slPercent    = pct;
+   g_slots[i].slPips       = pips;
+   g_slots[i].riskReward   = rr;
+   g_slots[i].oneTradeOnly = oneTrade;
+  }
+
+//+------------------------------------------------------------------+
+//| Pick a display symbol for a slot's panel line: the chart symbol   |
+//| if it matches, then a Market Watch symbol, then any broker symbol.|
+//| An exact name match wins; otherwise the shortest prefix match.    |
+//| Trade management does NOT use this - see FindSlot().              |
+//+------------------------------------------------------------------+
+string ResolveBrokerSymbol(const string name)
+  {
+   if(Symbol() == name || StringFind(Symbol(), name) == 0)
+      return Symbol();
+
+   for(int pass = 0; pass < 2; pass++)
+     {
+      bool selectedOnly = (pass == 0);
+      string best = "";
+      int total = SymbolsTotal(selectedOnly);
+      for(int i = 0; i < total; i++)
+        {
+         string candidate = SymbolName(i, selectedOnly);
+         if(candidate == name)
+            return candidate;
+         if(StringFind(candidate, name) != 0)
+            continue;
+         if(best == "" || StringLen(candidate) < StringLen(best))
+            best = candidate;
+        }
+      if(best != "")
+         return best;
+     }
+   return "";
+  }
+
+void InitSymbolSlots()
+  {
+   LoadSlot(0, InpSym1Name, InpSym1Enabled, InpSym1FixedLot, InpSym1SLMode, InpSym1SLPercent, InpSym1SLPips, InpSym1RiskReward, InpSym1OneTradeOnly);
+   LoadSlot(1, InpSym2Name, InpSym2Enabled, InpSym2FixedLot, InpSym2SLMode, InpSym2SLPercent, InpSym2SLPips, InpSym2RiskReward, InpSym2OneTradeOnly);
+   LoadSlot(2, InpSym3Name, InpSym3Enabled, InpSym3FixedLot, InpSym3SLMode, InpSym3SLPercent, InpSym3SLPips, InpSym3RiskReward, InpSym3OneTradeOnly);
+   LoadSlot(3, InpSym4Name, InpSym4Enabled, InpSym4FixedLot, InpSym4SLMode, InpSym4SLPercent, InpSym4SLPips, InpSym4RiskReward, InpSym4OneTradeOnly);
+
+   for(int i = 0; i < RM_SLOT_COUNT; i++)
+     {
+      if(!g_slots[i].enabled)
+         continue;
+      g_slots[i].symbol = ResolveBrokerSymbol(g_slots[i].name);
+      if(g_slots[i].symbol == "")
+        {
+         Print("RiskManagerEA: no broker symbol starts with '", g_slots[i].name, "' (slot ", i + 1, ")");
+         continue;
+        }
+      SymbolSelect(g_slots[i].symbol, true);
+      Print("RiskManagerEA: slot ", i + 1, " '", g_slots[i].name, "' manages every symbol starting with it (panel shows ", g_slots[i].symbol, ")");
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Slot that manages a trade's symbol; -1 if none. A slot matches    |
+//| the exact name or any symbol starting with it (XAUUSD matches     |
+//| XAUUSD, XAUUSDm, XAUUSD.r ...). The longest matching name wins,   |
+//| then the lowest slot number.                                      |
+//+------------------------------------------------------------------+
+int FindSlot(const string symbol)
+  {
+   int best = -1;
+   for(int i = 0; i < RM_SLOT_COUNT; i++)
+     {
+      if(!g_slots[i].enabled)
+         continue;
+      if(StringFind(symbol, g_slots[i].name) != 0)
+         continue;
+      if(best < 0 || StringLen(g_slots[i].name) > StringLen(g_slots[best].name))
+         best = i;
+     }
+   return best;
+  }
+
 bool IsManagedSymbol(const string symbol)
   {
-   return InpManageAllSymbols || symbol == Symbol();
+   return FindSlot(symbol) >= 0;
   }
 
 //+------------------------------------------------------------------+
@@ -115,27 +259,45 @@ double ValuePerPriceUnitPerLot(const string symbol)
 //+------------------------------------------------------------------+
 double ComputeSLDistance(const string symbol, double lots)
   {
-   if(InpSLMode == SL_MODE_PIPS)
-     {
-      return InpSLPips * PipSize(symbol);
-     }
-   else if(InpSLMode == SL_MODE_PERCENT_INITIAL)
-     {
-      double riskAmount = InpInitialBalance * (InpSLPercentInitial / 100.0);
-      double valuePerUnit = ValuePerPriceUnitPerLot(symbol);
-      if(valuePerUnit <= 0.0 || lots <= 0.0)
-         return 0.0;
-      return riskAmount / (valuePerUnit * lots);
-     }
-   else // percent of live equity
-     {
-      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-      double riskAmount = equity * (InpSLPercent / 100.0);
-      double valuePerUnit = ValuePerPriceUnitPerLot(symbol);
-      if(valuePerUnit <= 0.0 || lots <= 0.0)
-         return 0.0;
-      return riskAmount / (valuePerUnit * lots);
-     }
+   int slot = FindSlot(symbol);
+   if(slot < 0)
+      return 0.0;
+
+   if(g_slots[slot].slMode == SL_MODE_PIPS)
+      return g_slots[slot].slPips * PipSize(symbol);
+
+   double base = (g_slots[slot].slMode == SL_MODE_PERCENT_INITIAL) ? InpInitialBalance
+                                                                   : AccountInfoDouble(ACCOUNT_EQUITY);
+   double riskAmount = base * (g_slots[slot].slPercent / 100.0);
+   double valuePerUnit = ValuePerPriceUnitPerLot(symbol);
+   if(valuePerUnit <= 0.0 || lots <= 0.0)
+      return 0.0;
+   return riskAmount / (valuePerUnit * lots);
+  }
+
+//+------------------------------------------------------------------+
+//| Configured fixed lot for a symbol, normalized to broker limits    |
+//+------------------------------------------------------------------+
+double GetFixedLot(const string symbol)
+  {
+   int slot = FindSlot(symbol);
+   if(slot < 0)
+      return 0.0;
+   return NormalizeLot(symbol, g_slots[slot].fixedLot);
+  }
+
+double GetRiskReward(const string symbol)
+  {
+   int slot = FindSlot(symbol);
+   if(slot < 0)
+      return 0.0;
+   return g_slots[slot].riskReward;
+  }
+
+bool IsOneTradeOnly(const string symbol)
+  {
+   int slot = FindSlot(symbol);
+   return slot >= 0 && g_slots[slot].oneTradeOnly;
   }
 
 //+------------------------------------------------------------------+
@@ -229,7 +391,7 @@ bool ApplySLTP(ulong ticket, int retries = 5)
       return false;
      }
    slDist = EnforceMinStopDistance(symbol, slDist);
-   double tpDist = slDist * InpRiskReward;
+   double tpDist = slDist * GetRiskReward(symbol);
 
    double sl, tp;
    if(type == POSITION_TYPE_BUY)
@@ -274,7 +436,10 @@ bool ApplySLTP(ulong ticket, int retries = 5)
      {
       ok = trade.PositionModify(ticket, sl, tp);
       if(ok)
+        {
+         Print("RiskManagerEA: set SL/TP on ", symbol, " position ", ticket, " SL=", sl, " TP=", tp);
          break;
+        }
       int err = GetLastError();
       Print("RiskManagerEA: PositionModify failed for ticket ", ticket,
             " err=", err, " retcode=", trade.ResultRetcode(), " (attempt ", attempt + 1, "/", retries, ")");
@@ -282,6 +447,27 @@ bool ApplySLTP(ulong ticket, int retries = 5)
       Sleep(200);
      }
    return ok;
+  }
+
+//+------------------------------------------------------------------+
+//| True if a volume differs from the configured fixed lot by at     |
+//| least half a volume step (tolerates floating-point noise).        |
+//+------------------------------------------------------------------+
+bool IsLotDifferent(const string symbol, const double volume, const double fixedLot)
+  {
+   double step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   if(step <= 0.0)
+      step = 0.01;
+   return MathAbs(volume - fixedLot) >= step * 0.5;
+  }
+
+//+------------------------------------------------------------------+
+//| Mark a position being closed by the EA for lot correction, so     |
+//| its close does not start the cooldown.                            |
+//+------------------------------------------------------------------+
+string LotFixKey(const ulong posTicket)
+  {
+   return g_prefix + "LOTFIX_" + IntegerToString((long)posTicket);
   }
 
 //+------------------------------------------------------------------+
@@ -294,16 +480,21 @@ void CorrectLotSize(ulong ticket)
 
    string symbol = PositionGetString(POSITION_SYMBOL);
    long   type   = PositionGetInteger(POSITION_TYPE);
+   double volume = PositionGetDouble(POSITION_VOLUME);
 
    PrepareTrade(symbol);
 
+   GlobalVariableSet(LotFixKey(ticket), 1.0);
    if(!trade.PositionClose(ticket))
      {
-      Print("RiskManagerEA: failed to close oversized position ", ticket, " err=", GetLastError());
+      GlobalVariableDel(LotFixKey(ticket));
+      Print("RiskManagerEA: failed to close position ", ticket, " with wrong lot ", volume, " err=", GetLastError());
       return;
      }
+   Print("RiskManagerEA: closed ", symbol, " position ", ticket, " lot ", volume,
+         " - reopening at fixed lot ", GetFixedLot(symbol));
 
-   double lots = NormalizeLot(symbol, InpFixedLot);
+   double lots = GetFixedLot(symbol);
    bool opened;
    if(type == POSITION_TYPE_BUY)
       opened = trade.Buy(lots, symbol);
@@ -330,15 +521,11 @@ void CorrectLotSize(ulong ticket)
   }
 
 //+------------------------------------------------------------------+
-//| When one-trade-only mode is on, keep only the oldest open        |
-//| position per managed symbol and ignore pending orders for new     |
-//| entry blocking.                                                   |
+//| When one-trade-only is on for a symbol, keep only the oldest open |
+//| position on it and ignore pending orders for new entry blocking.  |
 //+------------------------------------------------------------------+
 void EnforceOneTradeOnly()
   {
-   if(!InpOneTradeOnly)
-      return;
-
    string symbols[];
    int symbolCount = 0;
    int totalPos = PositionsTotal();
@@ -348,7 +535,7 @@ void EnforceOneTradeOnly()
       if(ticket == 0 || !PositionSelectByTicket(ticket))
          continue;
       string symbol = PositionGetString(POSITION_SYMBOL);
-      if(!IsManagedSymbol(symbol))
+      if(!IsOneTradeOnly(symbol))
          continue;
       bool seen = false;
       for(int j = 0; j < symbolCount && !seen; j++)
@@ -404,7 +591,7 @@ void EnforceOneTradeOnlyForSymbol(const string symbol)
   }
 
 //+------------------------------------------------------------------+
-//| Scan and manage all positions on managed symbols                 |
+//| Scan and manage all positions on the chart symbol                |
 //+------------------------------------------------------------------+
 void ManagePositions()
   {
@@ -424,11 +611,11 @@ void ManagePositions()
          continue;
 
       double volume = PositionGetDouble(POSITION_VOLUME);
-      double fixedLot = NormalizeLot(symbol, InpFixedLot);
+      double fixedLot = GetFixedLot(symbol);
 
-      if(volume > fixedLot + 0.0000001 && !IsProcessed(ticket))
+      if(IsLotDifferent(symbol, volume, fixedLot) && !IsProcessed(ticket))
         {
-         // Oversized: close and reopen at fixed lot, then SL/TP will be applied inside CorrectLotSize
+         // Wrong lot size: close and reopen at fixed lot, then SL/TP will be applied inside CorrectLotSize
          CorrectLotSize(ticket);
         }
       else
@@ -469,7 +656,7 @@ bool ApplySLTPToOrder(ulong ticket)
       return false;
      }
    slDist = EnforceMinStopDistance(symbol, slDist);
-   double tpDist = slDist * InpRiskReward;
+   double tpDist = slDist * GetRiskReward(symbol);
 
    double sl, tp;
    if(isBuySide)
@@ -505,7 +692,9 @@ bool ApplySLTPToOrder(ulong ticket)
                                 OrderGetInteger(ORDER_TIME_EXPIRATION),
                                 OrderGetDouble(ORDER_PRICE_STOPLIMIT));
    if(!ok)
-      Print("RiskManagerEA: OrderModify failed for pending order ", ticket, " err=", GetLastError());
+      Print("RiskManagerEA: OrderModify failed for pending order ", ticket, " err=", GetLastError(), " retcode=", trade.ResultRetcode());
+   else
+      Print("RiskManagerEA: set SL/TP on ", symbol, " pending order ", ticket, " SL=", finalSL, " TP=", finalTP);
    return ok;
   }
 
@@ -528,11 +717,11 @@ void CorrectOrderVolume(ulong ticket)
 
    if(!trade.OrderDelete(ticket))
      {
-      Print("RiskManagerEA: failed to delete oversized pending order ", ticket, " err=", GetLastError());
+      Print("RiskManagerEA: failed to delete pending order ", ticket, " with wrong lot, err=", GetLastError());
       return;
      }
 
-   double lots = NormalizeLot(symbol, InpFixedLot);
+   double lots = GetFixedLot(symbol);
    bool placed = false;
    ulong newOrderTicket = 0;
    switch(type)
@@ -607,7 +796,7 @@ void CorrectOrderVolume(ulong ticket)
   }
 
 //+------------------------------------------------------------------+
-//| Scan and manage all pending orders on managed symbols            |
+//| Scan and manage all pending orders on the chart symbol           |
 //+------------------------------------------------------------------+
 void ManagePendingOrders()
   {
@@ -627,11 +816,11 @@ void ManagePendingOrders()
          continue;
 
       double volume = OrderGetDouble(ORDER_VOLUME_CURRENT);
-      double fixedLot = NormalizeLot(symbol, InpFixedLot);
+      double fixedLot = GetFixedLot(symbol);
 
-      if(volume > fixedLot + 0.0000001 && !IsProcessed(ticket))
+      if(IsLotDifferent(symbol, volume, fixedLot) && !IsProcessed(ticket))
         {
-         // Oversized: delete and recreate at fixed lot, then SL/TP applied inside CorrectOrderVolume
+         // Wrong lot size: delete and recreate at fixed lot, then SL/TP applied inside CorrectOrderVolume
          CorrectOrderVolume(ticket);
         }
       else
@@ -718,76 +907,84 @@ void CreateLabel(const string name, const string text, int x, int y, color clr, 
 //+------------------------------------------------------------------+
 void GetPanelInfoLines(string &lines[])
   {
-   string symbol   = Symbol();
    double equity   = AccountInfoDouble(ACCOUNT_EQUITY);
    double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
-   double lots     = NormalizeLot(symbol, InpFixedLot);
-   double slDist   = ComputeSLDistance(symbol, lots);
-   double pip      = PipSize(symbol);
-   double slPips   = (pip > 0.0) ? slDist / pip : 0.0;
-   double tpPips   = slPips * InpRiskReward;
-   double valuePerUnit = ValuePerPriceUnitPerLot(symbol);
-   double riskMoney = valuePerUnit * lots * slDist;
-   double rewardMoney = riskMoney * InpRiskReward;
+   double openRisk = ComputeOpenRisk();
+   double remainingBalance = MathMax(0.0, balance - openRisk);
 
-   int posCount = 0;
-   int total = PositionsTotal();
-   for(int i = 0; i < total; i++)
-     {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket != 0 && PositionSelectByTicket(ticket) && PositionGetString(POSITION_SYMBOL) == symbol)
-         posCount++;
-     }
+   ArrayResize(lines, 3 + RM_SLOT_COUNT * 2);
+   int n = 0;
+   lines[n++] = StringFormat("Equity: %.2f | Balance: %.2f | Open Risk: $%.2f | Remaining: $%.2f",
+                             equity, balance, openRisk, remainingBalance);
 
-   double remainingBalance = balance;
-   int remainingTrades = 0;
-   if(riskMoney > 0.0)
+   for(int i = 0; i < RM_SLOT_COUNT; i++)
      {
-      remainingBalance = MathMax(0.0, balance - riskMoney * posCount);
-      remainingTrades = (int)MathFloor((remainingBalance / riskMoney) + 0.0000001);
-     }
-   string cooldownText = "Cooldown: Off";
-   if(InpCooldownMinutes > 0)
-     {
-      datetime latestClose = GetLastCloseTime(symbol);
-      if(latestClose == 0)
-         cooldownText = "Cooldown: Ready";
-      else
+      string label = StringFormat("[%d] %s", i + 1, g_slots[i].name);
+      if(!g_slots[i].enabled)
         {
-         long remainingSeconds = (long)(InpCooldownMinutes * 60) - (long)(TimeCurrent() - latestClose);
-         if(remainingSeconds <= 0)
-            cooldownText = "Cooldown: Ready";
-         else
-            cooldownText = StringFormat("Cooldown: %02d:%02d", remainingSeconds / 60, remainingSeconds % 60);
+         lines[n++] = label + ": Off";
+         lines[n++] = " ";
+         continue;
         }
+      string symbol = g_slots[i].symbol;
+      if(symbol == "")
+        {
+         lines[n++] = label + ": no matching symbol found for panel (trades still managed by name)";
+         lines[n++] = " ";
+         continue;
+        }
+      if(FindSlot(symbol) != i)
+        {
+         lines[n++] = StringFormat("[%d] %s: duplicate of slot %d (ignored)", i + 1, symbol, FindSlot(symbol) + 1);
+         lines[n++] = " ";
+         continue;
+        }
+
+      double lots    = GetFixedLot(symbol);
+      double slDist  = ComputeSLDistance(symbol, lots);
+      double pip     = PipSize(symbol);
+      double slPips  = (pip > 0.0) ? slDist / pip : 0.0;
+      double rr      = g_slots[i].riskReward;
+      double risk    = ComputeTradeRisk(symbol);
+      int    open    = CountOpenTradesOnSymbol(symbol);
+      int    left    = (risk > 0.0) ? (int)MathFloor((remainingBalance / risk) + 0.0000001) : 0;
+
+      string slText;
+      if(g_slots[i].slMode == SL_MODE_PERCENT)
+         slText = StringFormat("SL %.2f%% equity", g_slots[i].slPercent);
+      else if(g_slots[i].slMode == SL_MODE_PERCENT_INITIAL)
+         slText = StringFormat("SL %.2f%% of $%.0f", g_slots[i].slPercent, InpInitialBalance);
+      else
+         slText = StringFormat("SL %.1f pips", g_slots[i].slPips);
+
+      lines[n++] = StringFormat("[%d] %s | Lot %.2f | %s | R:R 1:%.1f | 1-Trade: %s",
+                                i + 1, symbol, lots, slText, rr,
+                                g_slots[i].oneTradeOnly ? "On" : "Off");
+      lines[n++] = StringFormat("     SL %.1f / TP %.1f pips | Risk $%.2f / $%.2f | Open %d | Left %d | %s",
+                                slPips, slPips * rr, risk, risk * rr, open, left,
+                                GetCooldownText(symbol));
      }
 
-   ArrayResize(lines, 13);
-   lines[0] = StringFormat("Symbol: %s", symbol);
-   lines[1] = StringFormat("Fixed Lot: %.2f", lots);
-   string slModeStr = (InpSLMode == SL_MODE_PERCENT) ? "% Equity" :
-                       (InpSLMode == SL_MODE_PERCENT_INITIAL) ? "% Initial Balance" : "Fixed Pips";
-   lines[2] = StringFormat("SL Mode: %s", slModeStr);
-   if(InpSLMode == SL_MODE_PERCENT)
-      lines[3] = StringFormat("SL Risk: %.2f%% of equity", InpSLPercent);
-   else if(InpSLMode == SL_MODE_PERCENT_INITIAL)
-      lines[3] = StringFormat("SL Risk: %.2f%% of $%.2f initial", InpSLPercentInitial, InpInitialBalance);
-   else
-      lines[3] = StringFormat("SL: %.1f pips (fixed)", InpSLPips);
-   lines[4] = StringFormat("SL Distance: %.1f pips", slPips);
-   lines[5] = StringFormat("TP Distance: %.1f pips (R:R 1:%.1f)", tpPips, InpRiskReward);
-   lines[6] = StringFormat("Risk / Reward: $%.2f / $%.2f", riskMoney, rewardMoney);
-   lines[7] = StringFormat("Equity: %.2f | Balance: %.2f", equity, balance);
-   lines[8] = StringFormat("Remaining Balance: $%.2f | Trades Left: %d", remainingBalance, remainingTrades);
-   lines[9] = StringFormat("Open Positions (%s): %d", symbol, posCount);
-   lines[10] = cooldownText;
    if(InpUseTradingHours)
-      lines[11] = StringFormat("Trading Hours: %s (%s - %s)",
+      lines[n++] = StringFormat("Trading Hours: %s (%s - %s)",
                                 IsWithinTradingHours() ? "Open" : "Closed",
                                 InpTradingStartTime, InpTradingEndTime);
    else
-      lines[11] = "Trading Hours: Off (24h)";
-   lines[12] = StringFormat("Magic: %I64u", InpMagicNumber);
+      lines[n++] = "Trading Hours: Off (24h)";
+   lines[n++] = StringFormat("Magic: %I64u", InpMagicNumber);
+  }
+
+string GetCooldownText(const string symbol)
+  {
+   if(InpCooldownMinutes <= 0)
+      return "Cooldown Off";
+   datetime latestClose = GetLastCloseTime(symbol);
+   if(latestClose == 0)
+      return "Cooldown Ready";
+   long remainingSeconds = (long)(InpCooldownMinutes * 60) - (long)(TimeCurrent() - latestClose);
+   if(remainingSeconds <= 0)
+      return "Cooldown Ready";
+   return StringFormat("Cooldown %02d:%02d", remainingSeconds / 60, remainingSeconds % 60);
   }
 
 //+------------------------------------------------------------------+
@@ -939,24 +1136,60 @@ int CountOpenTradesOnSymbol(const string symbol)
   }
 
 //+------------------------------------------------------------------+
-//| Build the account status shown after a non-EA position close      |
+//| Configured risk (money) for one fixed-lot trade on a symbol       |
+//+------------------------------------------------------------------+
+double ComputeTradeRisk(const string symbol)
+  {
+   double lots = GetFixedLot(symbol);
+   double slDist = ComputeSLDistance(symbol, lots);
+   return ValuePerPriceUnitPerLot(symbol) * lots * slDist;
+  }
+
+//+------------------------------------------------------------------+
+//| Risk still at stake on open positions of all configured symbols,  |
+//| from each position's actual volume and stop loss (0 once the SL   |
+//| is at break-even or in profit).                                   |
+//+------------------------------------------------------------------+
+double ComputeOpenRisk()
+  {
+   double openRisk = 0.0;
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      if(!IsManagedSymbol(symbol))
+         continue;
+
+      double volume    = PositionGetDouble(POSITION_VOLUME);
+      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl        = PositionGetDouble(POSITION_SL);
+      double slDist;
+      if(sl == 0.0)
+         slDist = ComputeSLDistance(symbol, volume);
+      else if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+         slDist = openPrice - sl;
+      else
+         slDist = sl - openPrice;
+
+      openRisk += MathMax(0.0, slDist) * ValuePerPriceUnitPerLot(symbol) * volume;
+     }
+   return openRisk;
+  }
+
+//+------------------------------------------------------------------+
+//| Remaining balance after open risk, and trades left for a symbol   |
 //+------------------------------------------------------------------+
 void GetTradeStatus(const string symbol, double &remainingBalance, int &remainingTrades, double &riskMoney)
   {
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-   double lots = NormalizeLot(symbol, InpFixedLot);
-   double slDist = ComputeSLDistance(symbol, lots);
-   double valuePerUnit = ValuePerPriceUnitPerLot(symbol);
-   riskMoney = valuePerUnit * lots * slDist;
-
-   int posCount = CountOpenTradesOnSymbol(symbol);
-   remainingBalance = balance;
+   riskMoney = ComputeTradeRisk(symbol);
+   remainingBalance = MathMax(0.0, balance - ComputeOpenRisk());
    remainingTrades = 0;
    if(riskMoney > 0.0)
-     {
-      remainingBalance = MathMax(0.0, balance - riskMoney * posCount);
       remainingTrades = (int)MathFloor((remainingBalance / riskMoney) + 0.0000001);
-     }
   }
 
 void NotifyPositionClosed(const string symbol, const long reason)
@@ -1076,7 +1309,14 @@ void OpenTrade(bool isBuy)
   {
    string symbol = Symbol();
 
-   if(InpOneTradeOnly && CountOpenTradesOnSymbol(symbol) > 0)
+   if(!IsManagedSymbol(symbol))
+     {
+      Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
+            " - chart symbol ", symbol, " is not configured in any symbol group");
+      return;
+     }
+
+   if(IsOneTradeOnly(symbol) && CountOpenTradesOnSymbol(symbol) > 0)
      {
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
             " - one-trade-only mode is on and a trade already exists on ", symbol);
@@ -1097,7 +1337,7 @@ void OpenTrade(bool isBuy)
       return;
      }
 
-   double lots = NormalizeLot(symbol, InpFixedLot);
+   double lots = GetFixedLot(symbol);
 
    PrepareTrade(symbol);
 
@@ -1156,6 +1396,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
          g_cooldownForcedCloseSymbol = "";
          return; // keep the original cooldown timestamp; do not reset it
         }
+      if(GlobalVariableCheck(LotFixKey(posTicket)))
+        {
+         GlobalVariableDel(LotFixKey(posTicket));
+         return; // EA lot-size correction; not a real close, so no cooldown
+        }
       UpdateLastCloseTime(symbol);
       return;
      }
@@ -1188,6 +1433,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   InitSymbolSlots();
+
    trade.SetExpertMagicNumber((int)InpMagicNumber);
    trade.SetDeviationInPoints((int)InpSlippage);
    trade.SetTypeFillingBySymbol(Symbol());
@@ -1255,7 +1502,11 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    else if(sparam == g_prefix + "TEST_NOTIFY")
      {
       ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
-      NotifyPositionClosed(Symbol(), DEAL_REASON_CLIENT);
+      string testSymbol = Symbol();
+      for(int i = 0; i < RM_SLOT_COUNT && !IsManagedSymbol(testSymbol); i++)
+         if(g_slots[i].enabled && g_slots[i].symbol != "")
+            testSymbol = g_slots[i].symbol;
+      NotifyPositionClosed(testSymbol, DEAL_REASON_CLIENT);
      }
   }
 //+------------------------------------------------------------------+
