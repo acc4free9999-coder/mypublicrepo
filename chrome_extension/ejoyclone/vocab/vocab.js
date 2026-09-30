@@ -1,6 +1,7 @@
 const $ = (sel) => document.querySelector(sel);
 const esc = EJ.esc;
-const speak = (text) => EJ.send({ type: 'speak', text }).catch(() => {});
+const speak = (w, accent = 'us') => EJ.send(EJ.speakMsg(w.word, w.pron, accent)).catch(() => {});
+const pronLine = (w) => (EJ.pronText(w.pron) || w.phonetic ? EJ.renderPron(w.pron, w.phonetic) : '');
 const shuffle = (arr) => {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -21,6 +22,112 @@ function showTab() {
 }
 window.addEventListener('hashchange', showTab);
 
+// ---------- Collections ----------
+let collections = {};
+let selected = localStorage.getItem('ej-selected') || 'all'; // 'all' | 'unsorted' | collection id
+let openPicker = null; // word key whose collection picker is expanded
+
+const isRealCollection = (id) => Boolean(collections[id]);
+const memberOf = (w) => EJ.wordCollections(w).filter((id) => collections[id]);
+
+function inView(w, view = selected) {
+  if (view === 'all') return true;
+  if (view === 'unsorted') return memberOf(w).length === 0;
+  return memberOf(w).includes(view);
+}
+
+function select(view) {
+  selected = view === 'all' || view === 'unsorted' || isRealCollection(view) ? view : 'all';
+  localStorage.setItem('ej-selected', selected);
+  openPicker = null;
+  renderNotebook();
+}
+
+const viewName = (view) =>
+  view === 'all' ? 'All words' : view === 'unsorted' ? 'Unsorted' : collections[view]?.name || 'All words';
+
+function renderSidebar() {
+  const words = Object.values(vocab);
+  const count = (view) => words.filter((w) => inView(w, view)).length;
+  const item = (view, icon) =>
+    `<button class="coll-item ${selected === view ? 'active' : ''}" data-view="${esc(view)}">
+      <span class="name">${icon} ${esc(viewName(view))}</span><span class="count">${count(view)}</span>
+    </button>`;
+  const unsorted = count('unsorted');
+  $('#collList').innerHTML = [
+    item('all', '📚'),
+    '<div class="coll-sep"></div>',
+    ...EJ.sortedCollections(collections).map((c) => item(c.id, '📁')),
+    unsorted ? `<div class="coll-sep"></div>${item('unsorted', '🗂')}` : '',
+  ].join('');
+}
+
+$('#collList').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-view]');
+  if (btn) select(btn.dataset.view);
+});
+
+$('#newColl').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = EJ.normalize(e.target.elements.name.value).slice(0, 40);
+  if (!name) return;
+  const existing = EJ.findCollectionByName(collections, name);
+  e.target.elements.name.value = '';
+  if (existing) return select(existing.id);
+  const c = { id: EJ.newCollectionId(), name, createdAt: Date.now() };
+  collections[c.id] = c;
+  await EJ.setCollections(collections);
+  select(c.id);
+});
+
+$('#renameColl').addEventListener('click', async () => {
+  const c = collections[selected];
+  if (!c) return;
+  const name = EJ.normalize(prompt('Rename collection', c.name) || '').slice(0, 40);
+  if (!name || name === c.name) return;
+  const clash = EJ.findCollectionByName(collections, name);
+  if (clash && clash.id !== c.id) return alert(`A collection named “${clash.name}” already exists.`);
+  c.name = name;
+  await EJ.setCollections(collections);
+});
+
+$('#deleteColl').addEventListener('click', async () => {
+  const c = collections[selected];
+  if (!c) return;
+  if (Object.keys(collections).length <= 1) return alert('You need at least one collection. Create another one first.');
+  const words = Object.values(vocab).filter((w) => memberOf(w).includes(c.id));
+  const only = words.filter((w) => memberOf(w).length === 1).length;
+  const msg =
+    `Delete collection “${c.name}”?\n\nIts ${words.length} word(s) stay in your notebook` +
+    (only ? ` (${only} will become Unsorted).` : '.');
+  if (!confirm(msg)) return;
+  for (const w of words) w.collections = EJ.wordCollections(w).filter((id) => id !== c.id);
+  delete collections[c.id];
+  const { lastCollection } = await chrome.storage.local.get('lastCollection');
+  await Promise.all([
+    EJ.setVocab(vocab),
+    EJ.setCollections(collections),
+    lastCollection === c.id ? chrome.storage.local.remove('lastCollection') : null,
+  ]);
+  select('all');
+});
+
+$('#reviewColl').addEventListener('click', () => {
+  renderReviewOptions();
+  $('#reviewCollection').value = selected;
+  location.hash = 'review';
+});
+
+async function setMembership(key, collectionId, on) {
+  const w = vocab[key];
+  if (!w || !collections[collectionId]) return;
+  const ids = new Set(EJ.wordCollections(w));
+  if (on) ids.add(collectionId);
+  else ids.delete(collectionId);
+  w.collections = [...ids];
+  await EJ.setVocab(vocab);
+}
+
 // ---------- Notebook ----------
 function fmtDue(due) {
   const diff = due - Date.now();
@@ -37,10 +144,61 @@ function highlight(ctx, word) {
   return safe.replace(new RegExp(reEscape(esc(word)), 'gi'), (m) => `<mark>${m}</mark>`);
 }
 
+function renderNotebook() {
+  if (selected !== 'all' && selected !== 'unsorted' && !isRealCollection(selected)) selected = 'all';
+  renderSidebar();
+  $('#collTitle').textContent = viewName(selected);
+  $('#renameColl').hidden = $('#deleteColl').hidden = !isRealCollection(selected);
+  renderList();
+}
+
+function renderWord(k, w) {
+  const lvl = EJ.level(w.srs);
+  const ids = memberOf(w);
+  const chips = ids.length
+    ? ids.map((id) => `<button class="chip" data-goto="${esc(id)}">📁 ${esc(collections[id].name)}</button>`).join('')
+    : '<span class="chip none">Unsorted</span>';
+  const picker =
+    openPicker === k
+      ? `<div class="picker">${EJ.sortedCollections(collections)
+          .map(
+            (c) => `<label><input type="checkbox" data-coll="${esc(c.id)}" ${ids.includes(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`
+          )
+          .join('')}</div>`
+      : '';
+  return `
+    <div class="word" data-key="${esc(k)}">
+      <h3>${esc(w.word)}</h3>
+      ${pronLine(w)}
+      <div class="side">
+        <span class="lvl lvl-${lvl.n}" title="Next review ${esc(fmtDue(w.srs.due))}">${lvl.label}</span>
+        <span class="muted">${esc(fmtDue(w.srs.due))}</span>
+        <div>
+          <button data-act="speak" title="Pronounce">🔊</button>
+          <button data-act="picker" title="Add to / remove from collections">📁</button>
+          ${isRealCollection(selected) ? '<button data-act="unlink" title="Remove from this collection">➖</button>' : ''}
+          <button data-act="delete" title="Delete word from notebook">🗑</button>
+        </div>
+      </div>
+      ${w.translation ? `<div class="tr">${esc(w.translation)}</div>` : ''}
+      ${w.definition ? `<div class="def">${esc(w.definition)}</div>` : ''}
+      ${
+        w.context
+          ? `<div class="ctx">“${highlight(w.context, w.word)}”${
+              /^https?:/.test(w.url) ? ` — <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title || 'source')}</a>` : ''
+            }</div>`
+          : ''
+      }
+      <div class="chips">${chips}</div>
+      ${picker}
+    </div>`;
+}
+
 function renderList() {
   const q = EJ.key($('#filter').value);
   const sort = $('#sort').value;
-  let items = Object.entries(vocab);
+  const inCollection = Object.entries(vocab).filter(([, w]) => inView(w));
+  let items = inCollection;
   if (q) items = items.filter(([, w]) => [w.word, w.translation, w.definition, w.context].join(' ').toLowerCase().includes(q));
   const sorters = {
     new: (a, b) => b[1].createdAt - a[1].createdAt,
@@ -50,44 +208,38 @@ function renderList() {
   };
   items.sort(sorters[sort]);
 
-  const total = Object.keys(vocab).length;
-  $('#summary').textContent = `${total} word${total === 1 ? '' : 's'} saved · ${EJ.dueCount(vocab)} due for review`;
-  $('#list').innerHTML = items.length
-    ? items
-        .map(([k, w]) => {
-          const lvl = EJ.level(w.srs);
-          return `
-          <div class="word" data-key="${esc(k)}">
-            <h3>${esc(w.word)} <small>${esc(w.phonetic)}</small></h3>
-            <div class="side">
-              <span class="lvl lvl-${lvl.n}" title="Next review ${esc(fmtDue(w.srs.due))}">${lvl.label}</span>
-              <span class="muted">${esc(fmtDue(w.srs.due))}</span>
-              <div><button data-act="speak" title="Pronounce">🔊</button> <button data-act="delete" title="Delete">🗑</button></div>
-            </div>
-            ${w.translation ? `<div class="tr">${esc(w.translation)}</div>` : ''}
-            ${w.definition ? `<div class="def">${esc(w.definition)}</div>` : ''}
-            ${
-              w.context
-                ? `<div class="ctx">“${highlight(w.context, w.word)}”${
-                    /^https?:/.test(w.url) ? ` — <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title || 'source')}</a>` : ''
-                  }</div>`
-                : ''
-            }
-          </div>`;
-        })
-        .join('')
-    : `<p class="muted">${total ? 'No matches.' : 'No words yet. Select any text on a web page and click the green droplet to save words.'}</p>`;
+  const total = inCollection.length;
+  const due = EJ.dueCount(Object.fromEntries(inCollection));
+  $('#summary').textContent = `${total} word${total === 1 ? '' : 's'} · ${due} due for review`;
+  const empty = !Object.keys(vocab).length
+    ? 'No words yet. Select any text on a web page, click the green droplet, then save it to a collection.'
+    : total
+      ? 'No matches.'
+      : 'This collection is empty. Use the 📁 button on a word (in “All words”) or the lookup card to add words here.';
+  $('#list').innerHTML = items.length ? items.map(([k, w]) => renderWord(k, w)).join('') : `<p class="muted">${empty}</p>`;
 }
 
 $('#list').addEventListener('click', async (e) => {
+  const chip = e.target.closest('[data-goto]');
+  if (chip) return select(chip.dataset.goto);
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
   const key = btn.closest('.word').dataset.key;
-  if (btn.dataset.act === 'speak') speak(vocab[key].word);
-  if (btn.dataset.act === 'delete' && confirm(`Delete “${vocab[key].word}”?`)) {
+  const act = btn.dataset.act;
+  if (act === 'speak') speak(vocab[key], btn.dataset.accent);
+  if (act === 'picker') {
+    openPicker = openPicker === key ? null : key;
+    renderList();
+  }
+  if (act === 'unlink') await setMembership(key, selected, false);
+  if (act === 'delete' && confirm(`Delete “${vocab[key].word}” from your notebook and all collections?`)) {
     delete vocab[key];
     await EJ.setVocab(vocab);
   }
+});
+$('#list').addEventListener('change', (e) => {
+  const box = e.target.closest('[data-coll]');
+  if (box) setMembership(box.closest('.word').dataset.key, box.dataset.coll, box.checked);
 });
 $('#filter').addEventListener('input', renderList);
 $('#sort').addEventListener('change', renderList);
@@ -96,10 +248,16 @@ $('#sort').addEventListener('change', renderList);
 const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
 $('#exportCsv').addEventListener('click', () => {
-  const header = ['word', 'phonetic', 'translation', 'definition', 'context', 'url'];
-  const rows = Object.values(vocab).map((w) => header.map((h) => csvCell(w[h])).join(','));
+  const header = ['word', 'phonetic', 'translation', 'definition', 'context', 'url', 'collections'];
+  const rows = Object.values(vocab)
+    .filter((w) => inView(w))
+    .map((w) => {
+      const rec = { ...w, collections: memberOf(w).map((id) => collections[id].name).join('; ') };
+      return header.map((h) => csvCell(rec[h])).join(',');
+    });
   const blob = new Blob(['\ufeff' + [header.join(','), ...rows].join('\n')], { type: 'text/csv' });
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'droplet-vocabulary.csv' });
+  const slug = viewName(selected).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'words';
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `droplet-${slug}.csv` });
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -126,223 +284,56 @@ function parseCsv(text) {
   return rows.filter((r) => r.some((c) => c.trim()));
 }
 
+// Rows with a "collections" column go to those collections (created if needed);
+// other rows go to the collection currently open, or the first collection.
 $('#importCsv').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   const rows = parseCsv((await file.text()).replace(/^\ufeff/, ''));
   const first = rows[0]?.map((h) => h.trim().toLowerCase()) || [];
   const hasHeader = first.includes('word');
-  const cols = hasHeader ? first : ['word', 'translation', 'definition'];
+  const cols = (hasHeader ? first : ['word', 'translation', 'definition']).map((c) => (c === 'collection' ? 'collections' : c));
+  const fallback = isRealCollection(selected) ? selected : EJ.sortedCollections(collections)[0].id;
+  const idForName = (name) => {
+    let c = EJ.findCollectionByName(collections, name);
+    if (!c) {
+      c = { id: EJ.newCollectionId(), name: name.slice(0, 40), createdAt: Date.now() };
+      collections[c.id] = c;
+    }
+    return c.id;
+  };
   let added = 0;
   for (const r of hasHeader ? rows.slice(1) : rows) {
     const rec = Object.fromEntries(cols.map((c, i) => [c, (r[i] || '').trim()]));
     const k = EJ.key(rec.word);
     if (!k) continue;
+    const names = (rec.collections || '').split(';').map(EJ.normalize).filter(Boolean);
+    const ids = names.length ? names.map(idForName) : [fallback];
+    const old = vocab[k];
     vocab[k] = {
       word: rec.word,
-      phonetic: rec.phonetic || vocab[k]?.phonetic || '',
-      translation: rec.translation || vocab[k]?.translation || '',
-      definition: rec.definition || vocab[k]?.definition || '',
-      context: rec.context || vocab[k]?.context || '',
-      url: rec.url || vocab[k]?.url || '',
-      title: vocab[k]?.title || '',
-      createdAt: vocab[k]?.createdAt || Date.now(),
-      srs: vocab[k]?.srs || EJ.newSrs(),
+      phonetic: rec.phonetic || old?.phonetic || '',
+      pron: old?.pron,
+      pronChecked: old?.pronChecked || false,
+      translation: rec.translation || old?.translation || '',
+      definition: rec.definition || old?.definition || '',
+      context: rec.context || old?.context || '',
+      url: rec.url || old?.url || '',
+      title: old?.title || '',
+      createdAt: old?.createdAt || Date.now(),
+      srs: old?.srs || EJ.newSrs(),
+      collections: [...new Set([...(old ? EJ.wordCollections(old) : []), ...ids])],
     };
     added++;
   }
+  await EJ.setCollections(collections);
   await EJ.setVocab(vocab);
+  EJ.send({ type: 'backfillPronunciations' }).catch(() => {});
   e.target.value = '';
   alert(`Imported ${added} word(s).`);
 });
 
-// ---------- Review games ----------
-const game = { queue: [], idx: 0, total: 0, correct: 0, mode: 'flash', requeued: new Set() };
-
-async function grade(key, g) {
-  if (!vocab[key]) return;
-  vocab[key].srs = EJ.reviewSrs(vocab[key].srs, g);
-  if (g > 0) game.correct++;
-  else if (!game.requeued.has(key)) {
-    game.requeued.add(key);
-    game.queue.push(key);
-  }
-  await EJ.setVocab(vocab);
-}
-
-function startGame() {
-  const all = $('#allWords').checked;
-  const now = Date.now();
-  const keys = Object.keys(vocab).filter((k) => all || vocab[k].srs.due <= now);
-  game.mode = $('#mode').value;
-  game.queue = shuffle(keys).slice(0, 20);
-  game.idx = 0;
-  game.total = game.queue.length;
-  game.correct = 0;
-  game.requeued = new Set();
-  if (!game.total) {
-    $('#game').innerHTML = `<div class="done"><div class="big">🎉</div><p>Nothing is due right now.</p>
-      <p class="muted">${Object.keys(vocab).length ? 'Tick “Include words not yet due” to practise anyway.' : 'Save some words first.'}</p></div>`;
-    return;
-  }
-  if (game.mode === 'choice' && Object.values(vocab).filter((w) => w.translation).length < 4) {
-    game.mode = 'flash';
-    alert('Multiple choice needs at least 4 words with translations — switching to flashcards.');
-  }
-  nextCard();
-}
-
-function progress() {
-  const pct = Math.round((game.idx / game.queue.length) * 100);
-  return `<div class="progress"><div style="width:${pct}%"></div></div>`;
-}
-
-function answerBlock(w) {
-  return `<div class="answer">
-    <div class="tr">${esc(w.translation)}</div>
-    ${w.definition ? `<div class="muted">${esc(w.definition)}</div>` : ''}
-    ${w.context ? `<div class="prompt"><div class="ctx">“${highlight(w.context, w.word)}”</div></div>` : ''}
-  </div>`;
-}
-
-function blanked(text, word) {
-  return esc(text).replace(new RegExp(reEscape(esc(word)), 'gi'), '<b>_____</b>');
-}
-
-function nextCard() {
-  if (game.idx >= game.queue.length) {
-    const firstTry = game.total ? Math.round((Math.min(game.correct, game.total) / game.total) * 100) : 0;
-    $('#game').innerHTML = `<div class="done"><div class="big">✅</div><h2>Session complete!</h2>
-      <p>You reviewed ${game.total} word(s). Score: ${firstTry}%</p>
-      <button class="primary" id="again">Play again</button></div>`;
-    $('#again').onclick = startGame;
-    return;
-  }
-  const key = game.queue[game.idx];
-  const w = vocab[key];
-  if (!w) {
-    game.idx++;
-    return nextCard();
-  }
-  ({ flash: flashCard, choice: choiceCard, type: typeCard, listen: listenCard })[game.mode](key, w);
-}
-
-const advance = () => {
-  game.idx++;
-  nextCard();
-};
-
-function flashCard(key, w) {
-  $('#game').innerHTML = `${progress()}
-    <div class="prompt"><div class="big">${esc(w.word)}</div><div class="sub">${esc(w.phonetic)}</div>
-    <button id="say">🔊</button></div>
-    <div class="row"><button class="primary" id="reveal">Show answer (Space)</button></div>`;
-  $('#say').onclick = () => speak(w.word);
-  const reveal = () => {
-    $('#reveal').parentElement.outerHTML = `${answerBlock(w)}
-      <div class="row">
-        <button class="grade-0" data-g="0">1 · Again</button>
-        <button class="grade-1" data-g="1">2 · Hard</button>
-        <button class="grade-2" data-g="2">3 · Good</button>
-        <button class="grade-3" data-g="3">4 · Easy</button>
-      </div>`;
-    document.querySelectorAll('[data-g]').forEach((b) => (b.onclick = () => onGrade(Number(b.dataset.g))));
-  };
-  const onGrade = async (g) => {
-    document.onkeydown = null;
-    await grade(key, g);
-    advance();
-  };
-  $('#reveal').onclick = reveal;
-  document.onkeydown = (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    if (e.code === 'Space' && $('#reveal')) (e.preventDefault(), reveal());
-    else if (/^[1-4]$/.test(e.key) && !$('#reveal')) onGrade(Number(e.key) - 1);
-  };
-}
-
-function choiceCard(key, w) {
-  document.onkeydown = null;
-  const pool = shuffle(
-    Object.entries(vocab).filter(([k, x]) => k !== key && x.translation && x.translation !== w.translation)
-  ).slice(0, 3);
-  const options = shuffle([[key, w], ...pool]);
-  $('#game').innerHTML = `${progress()}
-    <div class="prompt"><div class="big">${esc(w.word)}</div><div class="sub">${esc(w.phonetic)}</div></div>
-    <div class="choices">${options.map(([k, x]) => `<button data-k="${esc(k)}">${esc(x.translation)}</button>`).join('')}</div>
-    <div id="after"></div>`;
-  speak(w.word);
-  document.querySelectorAll('.choices button').forEach((b) => {
-    b.onclick = async () => {
-      const ok = b.dataset.k === key;
-      document.querySelectorAll('.choices button').forEach((x) => {
-        x.disabled = true;
-        if (x.dataset.k === key) x.classList.add('right');
-      });
-      if (!ok) b.classList.add('wrong');
-      await grade(key, ok ? 2 : 0);
-      $('#after').innerHTML = `${answerBlock(w)}<div class="row"><button class="primary" id="next">Next →</button></div>`;
-      $('#next').onclick = advance;
-      $('#next').focus();
-    };
-  });
-}
-
-function typeInCard(key, w, promptHtml) {
-  document.onkeydown = null;
-  $('#game').innerHTML = `${progress()}${promptHtml}
-    <form class="typein"><input type="text" id="guess" autocomplete="off" placeholder="Type the word…" /><button class="primary">Check</button></form>
-    <div class="row"><button id="hint">💡 Hint</button><button id="skip">I don't know</button></div>
-    <div id="after"></div>`;
-  const input = $('#guess');
-  input.focus();
-  let hints = 0;
-  $('#hint').onclick = () => {
-    hints = Math.min(hints + 1, w.word.length);
-    input.placeholder = w.word.slice(0, hints) + '·'.repeat(Math.max(0, w.word.length - hints));
-    input.focus();
-  };
-  const finish = async (ok) => {
-    input.disabled = true;
-    document.querySelectorAll('.typein button, #hint, #skip').forEach((b) => (b.disabled = true));
-    await grade(key, ok ? (hints ? 1 : 2) : 0);
-    $('#after').innerHTML = `<div class="feedback ${ok ? 'ok' : 'bad'}">${ok ? 'Correct!' : `Answer: ${esc(w.word)}`}</div>
-      ${answerBlock(w)}<div class="row"><button class="primary" id="next">Next →</button></div>`;
-    speak(w.word);
-    $('#next').onclick = advance;
-    $('#next').focus();
-  };
-  $('.typein').onsubmit = (e) => {
-    e.preventDefault();
-    if (!input.value.trim()) return;
-    finish(EJ.key(input.value) === EJ.key(w.word));
-  };
-  $('#skip').onclick = () => finish(false);
-}
-
-function typeCard(key, w) {
-  const clue = w.context ? blanked(w.context, w.word) : esc(w.definition || '');
-  typeInCard(
-    key,
-    w,
-    `<div class="prompt"><div class="big" style="font-size:24px">${esc(w.translation || w.definition)}</div>
-     ${clue ? `<div class="ctx">“${clue}”</div>` : ''}
-     <div class="sub">${w.word.length} letters</div></div>`
-  );
-}
-
-function listenCard(key, w) {
-  typeInCard(
-    key,
-    w,
-    `<div class="prompt"><button id="say" style="font-size:40px;padding:16px 28px">🔊</button>
-     <div class="sub">Listen and type what you hear</div></div>`
-  );
-  $('#say').onclick = () => (speak(w.word), $('#guess').focus());
-  speak(w.word);
-}
-
-$('#start').addEventListener('click', startGame);
+// Review games live in game.js.
 
 // ---------- Settings ----------
 async function initSettings() {
@@ -371,15 +362,18 @@ $('#clearAll').addEventListener('click', async () => {
 
 // ---------- Init ----------
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.vocab) {
-    vocab = changes.vocab.newValue || {};
-    renderList();
-  }
+  if (area !== 'local' || !(changes.vocab || changes.collections)) return;
+  if (changes.vocab) vocab = changes.vocab.newValue || {};
+  if (changes.collections) collections = changes.collections.newValue || {};
+  renderNotebook();
+  renderReviewOptions();
 });
 
 (async () => {
   showTab();
-  vocab = await EJ.getVocab();
-  renderList();
+  [vocab, collections] = await Promise.all([EJ.getVocab(), EJ.getCollections()]);
+  renderNotebook();
+  renderReviewOptions();
   initSettings();
+  EJ.send({ type: 'backfillPronunciations' }).catch(() => {});
 })();

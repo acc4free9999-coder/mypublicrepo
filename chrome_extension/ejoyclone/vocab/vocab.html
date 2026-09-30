@@ -19,33 +19,61 @@
   <main>
     <!-- Notebook -->
     <section id="notebook" class="tab">
-      <div class="toolbar">
-        <input id="filter" type="search" placeholder="Search your words…" />
-        <select id="sort">
-          <option value="new">Newest first</option>
-          <option value="az">A → Z</option>
-          <option value="due">Due soonest</option>
-          <option value="weak">Weakest first</option>
-        </select>
-        <button id="exportCsv">⬇ Export CSV</button>
-        <label class="btn">⬆ Import CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden /></label>
+      <div class="nb">
+        <aside class="sidebar">
+          <div class="side-title">Collections</div>
+          <div id="collList"></div>
+          <form id="newColl" class="newcoll">
+            <input name="name" maxlength="40" placeholder="New collection…" autocomplete="off" />
+            <button type="submit" title="Create collection">+</button>
+          </form>
+        </aside>
+        <div class="nb-main">
+          <div class="coll-head">
+            <h2 id="collTitle"></h2>
+            <div id="collActions">
+              <button id="reviewColl" class="primary">🎮 Review</button>
+              <button id="renameColl">✏️ Rename</button>
+              <button id="deleteColl" class="danger-btn">🗑 Delete collection</button>
+            </div>
+          </div>
+          <div class="toolbar">
+            <input id="filter" type="search" placeholder="Search your words…" />
+            <select id="sort">
+              <option value="new">Newest first</option>
+              <option value="az">A → Z</option>
+              <option value="due">Due soonest</option>
+              <option value="weak">Weakest first</option>
+            </select>
+            <button id="exportCsv">⬇ Export CSV</button>
+            <label class="btn">⬆ Import CSV<input id="importCsv" type="file" accept=".csv,text/csv" hidden /></label>
+          </div>
+          <p class="muted" id="summary"></p>
+          <div id="list"></div>
+        </div>
       </div>
-      <p class="muted" id="summary"></p>
-      <div id="list"></div>
     </section>
 
     <!-- Review -->
     <section id="review" class="tab">
+      <div id="gameStats" class="gstats"></div>
       <div class="toolbar">
+        <label>Collection
+          <select id="reviewCollection"></select>
+        </label>
         <label>Game
           <select id="mode">
+            <option value="mixed">🎲 Mixed (all games)</option>
             <option value="flash">Flashcards</option>
-            <option value="choice">Multiple choice</option>
+            <option value="choice">Multiple choice (word → meaning)</option>
+            <option value="reverse">Multiple choice (meaning → word)</option>
             <option value="type">Fill in the blank</option>
             <option value="listen">Listening</option>
           </select>
         </label>
         <label><input type="checkbox" id="allWords" /> Include words not yet due</label>
+        <label title="20 seconds per question; faster answers earn bonus points"><input type="checkbox" id="timed" /> ⏱ Timer</label>
+        <button id="soundToggle" type="button" title="Game sounds"></button>
         <button id="start" class="primary">Start</button>
       </div>
       <div id="game"></div>
@@ -71,5 +99,6 @@
 
   <script src="../lib/common.js"></script>
   <script src="vocab.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>

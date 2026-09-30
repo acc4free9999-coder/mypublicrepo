@@ -18,9 +18,10 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["storage", "contextMenus", "tts", "alarms"],
+  "permissions": ["storage", "contextMenus", "tts", "alarms", "offscreen"],
   "host_permissions": [
     "https://translate.googleapis.com/*",
+    "https://clients5.google.com/*",
     "https://en.wiktionary.org/*",
     "https://api.dictionaryapi.dev/*"
   ],

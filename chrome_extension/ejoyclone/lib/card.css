@@ -19,7 +19,10 @@
 .ej-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .ej-titles { min-width: 0; }
 .ej-word { font-size: 20px; font-weight: 700; color: #0f766e; word-break: break-word; }
-.ej-phon { color: #6b7280; font-size: 13px; }
+.ej-phon { color: #374151; font-size: 14px; font-family: 'Lucida Sans Unicode', 'Arial Unicode MS', 'Segoe UI', sans-serif; }
+.ej-pron { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; }
+.ej-pron-item { display: inline-flex; align-items: center; gap: 5px; }
+.ej-btn.ej-pron-btn { padding: 1px 7px; font-size: 12px; }
 .ej-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .ej-btn {
   border: 1px solid #d1d5db; background: #f9fafb; color: #111827; border-radius: 8px;
@@ -28,6 +31,26 @@
 .ej-btn:hover { background: #ecfdf5; border-color: #10b981; }
 .ej-save.is-saved { background: #10b981; border-color: #10b981; color: #fff; }
 .ej-trans { margin: 10px 0 6px; font-size: 16px; font-weight: 600; color: #111827; }
+.ej-colls {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px;
+  padding: 5px 8px; background: #f0fdf4; border-radius: 8px; font-size: 12px;
+}
+.ej-colls-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.ej-chip { background: #d1fae5; color: #065f46; border-radius: 999px; padding: 0 8px; font-weight: 600; }
+.ej-muted { color: #6b7280; }
+.ej-link { border: none; background: none; color: #0f766e; font: inherit; font-weight: 600; cursor: pointer; padding: 0; flex-shrink: 0; }
+.ej-link:hover { text-decoration: underline; }
+.ej-picker {
+  margin-top: 4px; padding: 8px; border: 1px solid #d1fae5; border-radius: 8px; max-height: 180px; overflow: auto;
+  display: flex; flex-direction: column; gap: 4px; font-size: 13px;
+}
+.ej-pick { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.ej-pick input { margin: 0; accent-color: #10b981; }
+.ej-newcoll { display: flex; gap: 6px; margin-top: 4px; }
+.ej-newcoll input {
+  flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; font-size: 13px;
+  background: #fff; color: inherit;
+}
 .ej-alt { font-size: 13px; color: #374151; margin: 2px 0; }
 .ej-pos { display: inline-block; font-size: 11px; font-style: italic; color: #fff; background: #14b8a6; border-radius: 4px; padding: 0 6px; margin-right: 4px; }
 .ej-meanings { border-top: 1px solid #e5e7eb; margin-top: 10px; padding-top: 8px; }
@@ -36,6 +59,18 @@
 .ej-meaning li { margin: 3px 0; }
 .ej-ex { color: #6b7280; font-style: italic; font-size: 13px; }
 .ej-syn { font-size: 12px; color: #4b5563; margin-top: 2px; }
+.ej-ex-tr { font-style: normal; color: #0f766e; margin-top: 1px; }
+.ej-pron-wait { font-size: 12px; margin-top: 4px; }
+.ej-family { border-top: 1px solid #e5e7eb; margin-top: 8px; padding-top: 8px; }
+.ej-fams { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ej-fam {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left;
+  border: 1px solid #99f6e4; background: #f0fdfa; color: #111827; border-radius: 8px;
+  padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer; line-height: 1.3;
+}
+.ej-fam:hover { border-color: #14b8a6; }
+.ej-fam b { color: #0f766e; font-size: 13px; }
+.ej-fam span { color: #4b5563; }
 .ej-links { display: flex; flex-wrap: wrap; gap: 10px; border-top: 1px solid #e5e7eb; margin-top: 8px; padding-top: 8px; font-size: 12px; }
 .ej-links a { color: #0f766e; text-decoration: none; }
 .ej-links a:hover { text-decoration: underline; }
@@ -56,4 +91,15 @@
   .ej-btn { background: #374151; border-color: #4b5563; color: #f9fafb; }
   .ej-meanings, .ej-links { border-color: #374151; }
   .ej-drop { background: #374151; }
+  .ej-colls { background: #064e3b33; }
+  .ej-chip { background: #065f46; color: #d1fae5; }
+  .ej-muted { color: #9ca3af; }
+  .ej-phon { color: #e5e7eb; }
+  .ej-ex-tr, .ej-fam b { color: #5eead4; }
+  .ej-family { border-color: #374151; }
+  .ej-fam { background: #064e3b55; border-color: #115e59; color: #f9fafb; }
+  .ej-fam span { color: #d1d5db; }
+  .ej-link { color: #5eead4; }
+  .ej-picker { border-color: #374151; }
+  .ej-newcoll input { background: #111827; border-color: #4b5563; }
 }

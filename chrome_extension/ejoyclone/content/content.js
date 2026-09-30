@@ -30,15 +30,22 @@
   card.style.display = 'none';
   root.append(drop, card);
 
-  let pending = null; // { text, rect, context }
-  let current = null; // { data, info, saved }
-  let lookupSeq = 0;
+  let pending = null; // { text, rect, context } — rect is in page (not viewport) coordinates
+  let current = null; // info of the word shown in the card
 
   const hideAll = () => {
     drop.style.display = 'none';
     card.style.display = 'none';
     current = null;
+    lookupCard.close();
   };
+
+  const toPageRect = (r) => ({
+    left: r.left + window.scrollX,
+    top: r.top + window.scrollY,
+    bottom: r.bottom + window.scrollY,
+    width: r.width,
+  });
 
   function selectionInfo() {
     const sel = window.getSelection();
@@ -48,7 +55,7 @@
     const rects = range.getClientRects();
     const rect = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
     if (!rect || (!rect.width && !rect.height)) return null;
-    return { text, rect, context: extractContext(range, text) };
+    return { text, rect: toPageRect(rect), context: extractContext(range, text) };
   }
 
   function extractContext(range, text) {
@@ -62,16 +69,17 @@
     return EJ.normalize(hit || '').slice(0, 400);
   }
 
-  function place(el, rect, { below = true } = {}) {
+  function place(el, pageRect) {
     el.style.display = el === drop ? 'flex' : 'block';
     const sx = window.scrollX;
     const sy = window.scrollY;
+    const rect = { left: pageRect.left - sx, top: pageRect.top - sy, bottom: pageRect.bottom - sy, width: pageRect.width };
     const w = el.offsetWidth;
     const h = el.offsetHeight;
     let left = rect.left + (el === drop ? rect.width : 0);
     left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
     let top = rect.bottom + 6;
-    if (!below || top + h > window.innerHeight - 8) {
+    if (top + h > window.innerHeight - 8) {
       const above = rect.top - h - 6;
       if (above >= 8) top = above;
     }
@@ -79,65 +87,24 @@
     el.style.top = `${top + sy}px`;
   }
 
-  async function openCard(info) {
+  const lookupCard = EJ.createLookupCard({
+    el: card,
+    root,
+    getMeta: () => ({ context: current?.context || '', url: location.href, title: document.title }),
+    afterRender: () => current && place(card, current.rect),
+    autoSpeak: async () => settings.autoSpeak,
+  });
+
+  function openCard(info) {
     mount();
     drop.style.display = 'none';
-    const seq = ++lookupSeq;
-    const isCurrent = () => seq === lookupSeq && card.style.display !== 'none';
-    current = { data: { text: info.text }, info, saved: false };
-    card.innerHTML = `<div class="ej-loading">Looking up “${EJ.esc(info.text.slice(0, 80))}”…</div>`;
+    current = info;
     place(card, info.rect);
-
-    EJ.send({ type: 'isSaved', text: info.text })
-      .then((saved) => {
-        if (!isCurrent()) return;
-        current.saved = saved;
-        render();
-      })
-      .catch(() => {});
-    const data = await EJ.lookup(info.text, (partial) => {
-      if (!isCurrent()) return;
-      current.data = partial;
-      render();
-    });
-    if (!isCurrent()) return;
-    // Refresh the saved entry if it was saved before the dictionary data arrived.
-    if (current.saved && data.dict) saveCurrent().catch(() => {});
-    if (settings.autoSpeak && !data.error) speak(info.text);
+    lookupCard.open(info.text);
   }
 
-  function render() {
-    card.innerHTML = EJ.renderResult(current.data, { saved: current.saved });
-    place(card, current.info.rect);
-  }
-
-  function speak(text) {
-    EJ.send({ type: 'speak', text }).catch(() => {});
-  }
-
-  const saveCurrent = () =>
-    EJ.send({
-      type: 'save',
-      data: current.data,
-      context: current.info.context,
-      url: location.href,
-      title: document.title,
-    });
-
-  card.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-act]');
-    if (!btn || !current) return;
-    if (btn.dataset.act === 'speak') speak(current.data.text);
-    if (btn.dataset.act === 'save') {
-      try {
-        if (current.saved) await EJ.send({ type: 'remove', text: current.data.text });
-        else await saveCurrent();
-        current.saved = !current.saved;
-        render();
-      } catch (err) {
-        card.insertAdjacentHTML('beforeend', `<div class="ej-error">${EJ.esc(err.message)}</div>`);
-      }
-    }
+  card.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideAll();
   });
 
   drop.addEventListener('mousedown', (e) => e.preventDefault()); // keep selection
@@ -182,7 +149,7 @@
     if (msg?.type !== 'show-lookup') return;
     const info = selectionInfo() || {
       text: EJ.normalize(msg.text),
-      rect: new DOMRect(window.innerWidth / 2 - 180, 40, 0, 0),
+      rect: toPageRect(new DOMRect(window.innerWidth / 2 - 180, 40, 0, 0)),
       context: '',
     };
     info.text = EJ.normalize(msg.text) || info.text;
