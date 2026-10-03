@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f2">
+  <title>Still — Your space to focus</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="icon-leaf" viewBox="0 0 24 24"><path d="M20 4C10 2 3 8 5 15s15 7 15-11Z"/><path d="m4 21 11-12M9 16v-5m0 5h5"/></symbol>
+    <symbol id="icon-rain" viewBox="0 0 24 24"><path d="M6 14a4 4 0 0 1 0-8 6 6 0 0 1 11-1 4.5 4.5 0 0 1 1 9M8 17l-1 3m6-3-1 3m6-3-1 3"/></symbol>
+    <symbol id="icon-forest" viewBox="0 0 24 24"><path d="m8 3-5 7h3l-4 6h12l-4-6h3L8 3Zm0 13v5m9-13 3-3m-3 3-3-3m3 3v3"/></symbol>
+    <symbol id="icon-ocean" viewBox="0 0 24 24"><path d="M2 9c3-4 5 4 8 0s5 4 8 0 4 0 4 0M2 15c3-4 5 4 8 0s5 4 8 0 4 0 4 0M2 21c3-4 5 4 8 0s5 4 8 0 4 0 4 0"/></symbol>
+    <symbol id="icon-stream" viewBox="0 0 24 24"><path d="M9 2c10 5-10 7 0 12s-3 6-3 8M16 2c10 5-10 7 0 12s-3 6-3 8"/></symbol>
+    <symbol id="icon-wind" viewBox="0 0 24 24"><path d="M3 8h12a3 3 0 1 0-3-3M2 12h17a3 3 0 1 1-3 3M4 17h5a3 3 0 1 1-3 3"/></symbol>
+    <symbol id="icon-fire" viewBox="0 0 24 24"><path d="M13 2c2 7-3 7-2 11 2-1 3-3 3-5 8 6 6 14-2 14S1 15 6 9c0 4 1 5 2 5-1-6 4-7 5-12Z"/></symbol>
+    <symbol id="icon-thunder" viewBox="0 0 24 24"><path d="M6 14a4 4 0 0 1 0-8 6 6 0 0 1 11-1 4.5 4.5 0 0 1 1 9m-6-3-4 6h4l-2 5 6-7h-4l2-4"/></symbol>
+    <symbol id="icon-night" viewBox="0 0 24 24"><path d="M19 15A8 8 0 0 1 9 5 8 8 0 1 0 19 15ZM18 2v4m-2-2h4m0 5v2m-1-1h2"/></symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z"/></symbol>
+    <symbol id="icon-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="icon-reset" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M9 4v6m6 4v6"/></symbol>
+    <symbol id="icon-volume" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4ZM17 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </svg>
+  <main>
+    <header class="header">
+      <div class="brand"><span class="brand-mark"><svg><use href="#icon-leaf"/></svg></span><span>still<span class="brand-dot">.</span></span></div>
+      <div class="header-right"><span class="local-label"><span></span> YOUR SPACE TO FOCUS</span><button id="settings-toggle" class="icon-button" aria-label="Timer settings" aria-expanded="false" aria-controls="settings-panel"><svg><use href="#icon-settings"/></svg></button></div>
+    </header>
+
+    <section id="settings-panel" class="settings-panel" hidden aria-label="Timer settings">
+      <form id="settings-form">
+        <div class="settings-fields">
+          <label>Focus minutes<input id="focus-minutes" type="number" min="1" max="180" required></label>
+          <label>Break minutes<input id="break-minutes" type="number" min="1" max="60" required></label>
+        </div>
+        <div class="settings-footer"><label class="checkbox-label"><input id="notify" type="checkbox"> Completion notifications</label><button class="small-button" type="submit">Save</button></div>
+        <p>Changes apply to the next session. Sound keeps playing during breaks.</p>
+      </form>
+    </section>
+
+    <section class="timer-card" aria-label="Focus timer">
+      <div class="timer-copy"><span class="eyebrow">ONE THING AT A TIME</span><h1>A little calm.<br>A lot more focus.</h1><p>Settle in. You’re right where<br>you need to be.</p><div class="session-count"><svg><use href="#icon-check"/></svg><span id="session-count">0 sessions completed</span></div></div>
+      <div class="timer-side">
+        <div class="mode-switch" role="group" aria-label="Timer mode"><button id="focus-mode" aria-pressed="true">Focus</button><button id="break-mode" aria-pressed="false">Break</button></div>
+        <div class="clock">
+          <svg class="clock-ring" viewBox="0 0 140 140" aria-hidden="true"><circle class="ring-track" cx="70" cy="70" r="62"/><circle id="ring-progress" cx="70" cy="70" r="62"/></svg>
+          <div class="clock-text"><span id="timer-time" role="timer" aria-label="Time remaining">25:00</span><span id="timer-status">MAKE ROOM FOR FLOW</span></div>
+        </div>
+        <div class="timer-controls"><button id="timer-start" class="timer-start"><svg><use href="#icon-play"/></svg><span>Start focus</span></button><button id="timer-reset" class="icon-button" aria-label="Reset timer"><svg><use href="#icon-reset"/></svg></button></div>
+      </div>
+    </section>
+
+    <section class="sound-section" aria-labelledby="sounds-heading">
+      <div class="section-heading"><div><h2 id="sounds-heading">Find your atmosphere</h2><p>Layer a few sounds. Make it yours.</p></div><span id="active-count" class="count-badge">1 selected</span></div>
+      <div class="presets" role="group" aria-label="Sound mix presets"><button data-preset="woodland">🌿 Woodland</button><button data-preset="rainy">🌧 Rainy day</button><button data-preset="coast">🌊 Coastline</button><button data-preset="cozy">🔥 Cozy cabin</button></div>
+      <div id="sound-grid" class="sound-grid"></div>
+    </section>
+    <div id="error" class="error" role="alert" hidden></div>
+    <footer class="player">
+      <div class="player-top"><div class="now-playing"><span id="playing-indicator" class="playing-indicator"><i></i><i></i><i></i></span><div><strong id="mix-title">Your quiet corner</strong><span id="mix-status">Ready when you are</span></div></div><button id="play-all" class="play-all"><svg><use href="#icon-play"/></svg><span>Play sounds</span></button></div>
+      <div class="master-row"><svg><use href="#icon-volume"/></svg><label for="master-volume">Master volume</label><input id="master-volume" type="range" min="0" max="100" value="70"><output id="master-output" for="master-volume">70%</output></div>
+    </footer>
+    <div class="bottom-note"><span class="privacy-dot"></span> Made for your peace of mind. Local audio, no tracking.</div>
+  </main>
+  <script src="shared.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
