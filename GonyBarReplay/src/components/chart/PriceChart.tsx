@@ -32,6 +32,7 @@ import { TIMEFRAME_LABELS, TIMEFRAME_SECONDS, type Candle, type LinePoint } from
 import { ChartContextMenu, type ContextTarget } from './ChartContextMenu';
 import { DrawingProperties } from './DrawingProperties';
 import { asTime, syncSeries, type SyncMarker } from './seriesSync';
+import { initializePriceScale } from './priceScaleInit';
 
 const UP = '#26a69a';
 const DOWN = '#ef5350';
@@ -91,7 +92,13 @@ export function PriceChart() {
   const [menu, setMenu] = useState<ContextTarget | null>(null);
   // "Auto (fits data to screen)": price scale follows the visible candles. Dragging the price axis turns it off.
   const [autoScale, setAutoScaleState] = useState(readAutoScale);
+  const autoScalePreference = useRef(autoScale);
+  const scaleInitialized = useRef(false);
+  const cancelScaleInit = useRef<(() => void) | null>(null);
   const setAutoScale = useCallback((on: boolean) => {
+    cancelScaleInit.current?.();
+    cancelScaleInit.current = null;
+    autoScalePreference.current = on;
     candleRef.current?.priceScale().applyOptions({ autoScale: on });
     setAutoScaleState(on);
     try {
@@ -130,7 +137,8 @@ export function PriceChart() {
       wickUpColor: UP,
       wickDownColor: DOWN,
     });
-    candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 }, autoScale: readAutoScale() });
+    // A saved manual mode has no saved price range; fit once before restoring it.
+    candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 }, autoScale: true });
     const volume = chart.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     const lineOpts = { lineWidth: 2 as const, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true };
@@ -210,7 +218,9 @@ export function PriceChart() {
     // LWC has no price-scale event: re-read autoScale after gestures that can change it
     // (axis drag / wheel over the axis turn it off, double-click on the axis turns it on).
     const syncAuto = () => requestAnimationFrame(() => {
+      if (cancelScaleInit.current || !scaleInitialized.current) return;
       const on = candle.priceScale().options().autoScale;
+      autoScalePreference.current = on;
       setAutoScaleState((prev) => {
         if (prev !== on) {
           try {
@@ -227,6 +237,9 @@ export function PriceChart() {
     el.addEventListener('dblclick', syncAuto);
 
     return () => {
+      cancelScaleInit.current?.();
+      cancelScaleInit.current = null;
+      scaleInitialized.current = false;
       el.removeEventListener('contextmenu', onContextMenu);
       el.removeEventListener('pointerup', syncAuto);
       el.removeEventListener('wheel', syncAuto);
@@ -261,6 +274,17 @@ export function PriceChart() {
     if ((full || stopped) && candles.length) {
       const n = candles.length;
       chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - DEFAULT_VISIBLE_BARS), to: n + 10 });
+      if (!scaleInitialized.current) {
+        scaleInitialized.current = true;
+        const series = candleRef.current;
+        cancelScaleInit.current = initializePriceScale(
+          (on) => {
+            series.priceScale().applyOptions({ autoScale: on });
+            if (on === autoScalePreference.current) cancelScaleInit.current = null;
+          },
+          () => autoScalePreference.current,
+        );
+      }
     }
   }, [candles, emaData, symbol, timeframe, indicators, dataKey, status]);
 

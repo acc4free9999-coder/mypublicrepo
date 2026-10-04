@@ -45,6 +45,7 @@ npm run build
 ### Chart view
 
 - **Auto** (bottom-right, next to the price axis) keeps the price scale fitted to the visible candles, like TradingView. Dragging the price axis turns it off; click **Auto** (or double-click the axis) to fit again. The choice is saved in `localStorage` (`gony-bar-replay:auto-scale`).
+- On reload, the chart fits its initial price range before restoring manual scaling, so candles remain visible even when Auto was off. Replay sessions and paper trades are not restored; reload returns to the latest loaded data.
 - **Fit all data** zooms out to show every loaded bar. **Scroll to latest bar** jumps back to the most recent candle.
 - **Stop replay** (the red button in the replay toolbar, or the right-click menu) ends the replay and shows the latest data again, scrolled to the most recent bars. If positions or orders are open, it asks you to confirm first, because they are discarded.
 

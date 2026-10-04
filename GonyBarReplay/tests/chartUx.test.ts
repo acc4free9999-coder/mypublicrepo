@@ -1,8 +1,30 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { initializePriceScale } from '@/components/chart/priceScaleInit';
 import { screenAngle, trendStats } from '@/drawings/DrawingsPrimitive';
 import { statsVisible } from '@/drawings/types';
 import { useDrawingStore } from '@/store/useDrawingStore';
 import { DEFAULT_INDICATORS, loadIndicators } from '@/store/useTradingStore';
+
+describe('price scale initialization', () => {
+  it('fits the first painted range before restoring saved manual mode', () => {
+    const frames: FrameRequestCallback[] = [];
+    const schedule = (fn: FrameRequestCallback) => frames.push(fn);
+    const apply = vi.fn();
+    initializePriceScale(apply, () => false, schedule, vi.fn());
+    expect(apply.mock.calls).toEqual([[true]]);
+    frames.shift()!(0);
+    expect(apply.mock.calls).toEqual([[true]]);
+    frames.shift()!(0);
+    expect(apply.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('cancels initialization when the chart is removed or the user changes scaling', () => {
+    const cancel = vi.fn();
+    const cleanup = initializePriceScale(vi.fn(), () => true, () => 42, cancel);
+    cleanup();
+    expect(cancel).toHaveBeenCalledWith(42);
+  });
+});
 
 describe('indicator persistence', () => {
   it('restores saved values and falls back to defaults for bad input', () => {
