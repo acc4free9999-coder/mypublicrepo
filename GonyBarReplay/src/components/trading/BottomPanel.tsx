@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Check, Pencil, X } from 'lucide-react';
+import { balanceCurve, tradeStats } from '@/engine/stats';
+import { BalanceChart } from './BalanceChart';
 import { cn, fmtPrice, fmtQty, fmtTime, fmtUsd, pnlClass } from '@/lib/format';
 import { usePricePrecision, useTradingStore } from '@/store/useTradingStore';
-import type { Position } from '@/types';
+import type { ClosedTrade, Position } from '@/types';
 
 type Tab = 'positions' | 'orders' | 'history' | 'journal';
 
@@ -55,6 +57,7 @@ export function BottomPanel() {
             ))}
           </Table>
         )}
+        {tab === 'history' && book.closedTrades.length > 0 && <HistoryStats trades={book.closedTrades} />}
         {tab === 'history' && (
           <Table head={['Side', 'Lots', 'Entry', 'Exit', 'Realized PnL', 'Reason', 'Opened', 'Closed']} empty="No closed trades yet">
             {book.closedTrades.map((t) => (
@@ -84,6 +87,48 @@ export function BottomPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+const fmtRatio = (v: number | null) => (v == null ? '—' : v === Infinity ? '∞' : v.toFixed(2));
+
+function HistoryStats({ trades }: { trades: ClosedTrade[] }) {
+  const initialBalance = useTradingStore((st) => st.account.initialBalance);
+  // closedTrades is newest first; the stats and curve need chronological order.
+  const chrono = useMemo(() => [...trades].reverse(), [trades]);
+  const s = useMemo(() => tradeStats(chrono), [chrono]);
+  const curve = useMemo(() => balanceCurve(chrono, initialBalance), [chrono, initialBalance]);
+  const usd = (v: number | null) => (v == null ? '—' : fmtUsd(v, true));
+  const tone = (v: number | null) => (v == null ? 'text-slate-500' : pnlClass(v));
+  const items: [string, string, string, string?][] = [
+    ['Net PnL', usd(s.netPnl), tone(s.netPnl)],
+    ['Win rate', s.winRate == null ? '—' : `${s.winRate.toFixed(1)}%`, s.winRate == null ? 'text-slate-500' : s.winRate >= 50 ? 'text-emerald-400' : 'text-rose-400', `${s.wins}W / ${s.losses}L${s.breakeven ? ` / ${s.breakeven}BE` : ''}`],
+    ['Total win', usd(s.grossProfit), tone(s.grossProfit), `${s.wins} trade${s.wins === 1 ? '' : 's'}`],
+    ['Total loss', usd(s.grossLoss), tone(s.grossLoss), `${s.losses} trade${s.losses === 1 ? '' : 's'}`],
+    ['Max win', usd(s.maxWin), tone(s.maxWin)],
+    ['Max loss', usd(s.maxLoss), tone(s.maxLoss)],
+    ['Avg win', usd(s.avgWin), tone(s.avgWin)],
+    ['Avg loss', usd(s.avgLoss), tone(s.avgLoss)],
+    ['Risk : Reward', s.rewardRisk == null ? '—' : `1 : ${fmtRatio(s.rewardRisk)}`, s.rewardRisk == null ? 'text-slate-500' : s.rewardRisk >= 1 ? 'text-emerald-400' : 'text-amber-400', 'avg win ÷ avg loss'],
+    ['Avg R-multiple', s.avgR == null ? '—' : `${s.avgR >= 0 ? '+' : ''}${s.avgR.toFixed(2)}R`, tone(s.avgR), `${s.tradesWithRisk} trade${s.tradesWithRisk === 1 ? '' : 's'} with SL`],
+    ['Profit factor', fmtRatio(s.profitFactor), s.profitFactor == null ? 'text-slate-500' : s.profitFactor >= 1 ? 'text-emerald-400' : 'text-rose-400', 'gross win ÷ gross loss'],
+    ['Expectancy', usd(s.expectancy), tone(s.expectancy), 'per trade'],
+    ['Max drawdown', usd(curve.maxDrawdown), tone(curve.maxDrawdown), `${curve.maxDrawdownPct.toFixed(2)}% from peak`],
+    ['Streak', `${s.maxConsecutiveWins}W / ${s.maxConsecutiveLosses}L`, 'text-slate-200', 'max consecutive'],
+  ];
+  return (
+    <>
+    <BalanceChart curve={curve} initialBalance={initialBalance} />
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] border-b border-slate-800" data-testid="history-stats">
+      {items.map(([label, value, cls, hint]) => (
+        <div key={label} className="border-r border-b border-slate-800/60 px-3 py-1.5" title={hint}>
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+          <div className={cn('whitespace-nowrap font-mono text-xs', cls)}>{value}</div>
+          {hint && <div className="truncate text-[10px] text-slate-600">{hint}</div>}
+        </div>
+      ))}
+    </div>
+    </>
   );
 }
 

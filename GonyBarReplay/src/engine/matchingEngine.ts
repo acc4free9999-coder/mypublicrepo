@@ -94,6 +94,7 @@ function fillOrderMut(book: TradingBook, order: Order, price: number, time: Unix
       entryPrice: price,
       stopLoss: order.stopLoss,
       takeProfit: order.takeProfit,
+      initialStopLoss: order.stopLoss,
       openedAt: time,
       orderId: order.id,
       currentPrice: price,
@@ -111,6 +112,8 @@ function fillOrderMut(book: TradingBook, order: Order, price: number, time: Unix
 /** Closes a position at `price`. Mutates `book`. */
 function closePositionMut(book: TradingBook, pos: Position, price: number, time: UnixTime, reason: CloseReason, ids: IdFactory, events: TradeEvent[]) {
   const realizedPnl = pnlOf(pos.side, pos.qty, pos.entryPrice, price, pos.contractSize);
+  const sl = pos.initialStopLoss;
+  const riskUsd = sl != null ? -pnlOf(pos.side, pos.qty, pos.entryPrice, sl, pos.contractSize) : undefined;
   book.positions = book.positions.filter((p) => p.id !== pos.id);
   book.realizedPnl += realizedPnl;
   book.closedTrades = [
@@ -125,6 +128,8 @@ function closePositionMut(book: TradingBook, pos: Position, price: number, time:
       closedAt: time,
       realizedPnl,
       reason,
+      // A stop at or beyond entry carries no risk, so it can't define an R-multiple.
+      riskUsd: riskUsd != null && riskUsd > 0 ? riskUsd : undefined,
     },
     ...book.closedTrades,
   ];
@@ -246,7 +251,9 @@ export function closePosition(input: TradingBook, positionId: string, price: num
 export function updateBrackets(input: TradingBook, positionId: string, brackets: { stopLoss?: number; takeProfit?: number }): TradingBook {
   return {
     ...input,
-    positions: input.positions.map((p) => (p.id === positionId ? { ...p, stopLoss: brackets.stopLoss, takeProfit: brackets.takeProfit } : p)),
+    positions: input.positions.map((p) =>
+      p.id === positionId ? { ...p, stopLoss: brackets.stopLoss, takeProfit: brackets.takeProfit, initialStopLoss: p.initialStopLoss ?? brackets.stopLoss } : p,
+    ),
   };
 }
 

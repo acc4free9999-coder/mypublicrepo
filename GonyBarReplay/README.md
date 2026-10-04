@@ -42,6 +42,17 @@ npm run build
 - **Order ticket preview:** choosing Limit/Stop or enabling SL/TP in the order panel shows dashed preview lines. Drag them to adjust the ticket (the panel fields stay in sync), then click **✓** on the entry line or the panel button to submit.
 - **×** closes a position, cancels an order, or removes an SL/TP.
 
+### Trade analytics (History tab)
+
+Once a trade is closed, a **balance chart** and a stats grid appear above the trade list. Both cover every closed trade in the current replay.
+
+- **Balance chart** plots the realized balance after each closed trade, from the starting balance (dashed baseline) to the latest trade. The line is green when the balance is above the start and red when below. Each dot is coloured by that trade's result. Hover to see the trade number, close time, balance, trade PnL and drawdown.
+
+- **Net PnL**, **Win rate** (wins ÷ (wins + losses); breakeven trades count as neither), **Total win / Total loss** (gross profit / gross loss, with trade counts), **Max win / Max loss**, **Avg win / Avg loss**.
+- **Risk : Reward** is the realized ratio, avg win ÷ |avg loss|, shown as `1 : x`.
+- **Avg R-multiple** is the mean of PnL ÷ initial risk. Initial risk is the dollar loss at the *first* stop loss: the SL at fill, or the first SL added afterwards. Moving the SL later (e.g. to breakeven) doesn't change it. Trades without a stop are left out.
+- **Profit factor** is gross profit ÷ |gross loss| (∞ with no losses). **Expectancy** is the average PnL per trade. **Streak** is the maximum number of consecutive wins and losses. **Max drawdown** is the largest drop of realized balance from a previous peak, in USD and as a % of that peak.
+
 ### Chart view
 
 - **Auto** (bottom-right, next to the price axis) keeps the price scale fitted to the visible candles, like TradingView. Dragging the price axis turns it off; click **Auto** (or double-click the axis) to fit again. The choice is saved in `localStorage` (`gony-bar-replay:auto-scale`).
@@ -165,7 +176,8 @@ src/
 ├── indicators/index.ts            EMA
 ├── engine/
 │   ├── matchingEngine.ts          Pure order book + intra-bar matching (limit / stop / SL / TP)
-│   └── risk.ts                    Ticket validation, margin checks, account computation, risk-% lot sizing
+│   ├── risk.ts                    Ticket validation, margin checks, account computation, risk-% lot sizing
+│   └── stats.ts                   Closed-trade analytics (win rate, R:R, profit factor, R-multiples, balance curve / drawdown)
 ├── drawings/
 │   ├── types.ts                   Drawing model, tool list, Fib levels, palette
 │   ├── timeMapper.ts              time ⇄ fractional logical index (interpolates / extrapolates)
@@ -191,7 +203,8 @@ src/
 │   ├── replay/ReplayToolbar.tsx   Select bar · random · play/pause · step · reset · speed · stop replay
 │   ├── trading/OrderPanel.tsx     Market / limit / stop ticket with SL/TP and R:R (shared with chart preview)
 │   ├── trading/AccountSummary.tsx
-│   ├── trading/BottomPanel.tsx    Positions (inline SL/TP edit) · Orders · History · Journal
+│   ├── trading/BottomPanel.tsx    Positions (inline SL/TP edit) · Orders · History (+ stats) · Journal
+│   ├── trading/BalanceChart.tsx   SVG balance curve shown in the History tab
 │   └── layout/{Dashboard,TopBar,DataSourceMenu,ImportPanel}.tsx
 tests/                             Vitest: matching engine, aggregation, indicators, drawings, trade lines, data import
 mt5/GonyExportBars.mq5             MetaTrader 5 script: export all 7 timeframes as importable CSV

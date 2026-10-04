@@ -78,6 +78,8 @@ export interface Position {
   entryPrice: number;
   stopLoss?: number;
   takeProfit?: number;
+  /** First stop loss on the position (at fill, or the first one added later). Moving the SL doesn't change it. */
+  initialStopLoss?: number;
   openedAt: UnixTime;
   orderId: string;
   /** Mark-to-market fields, refreshed on every replay tick. */
@@ -96,6 +98,8 @@ export interface ClosedTrade {
   closedAt: UnixTime;
   realizedPnl: number;
   reason: CloseReason;
+  /** USD lost if the initial stop loss had been hit; undefined when the trade never had a stop. */
+  riskUsd?: number;
 }
 
 export interface Account {
