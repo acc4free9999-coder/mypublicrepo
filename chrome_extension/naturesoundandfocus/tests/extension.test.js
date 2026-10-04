@@ -80,14 +80,58 @@ async function background(savedState, options = {}) {
   };
 }
 
-test("fresh installation has eight sounds and a 25/5 timer", async () => {
+test("fresh installation has eleven sounds and a 25/5 timer", async () => {
   const app = await background();
   const state = await app.get();
-  assert.equal(Object.keys(state.mixer.volumes).length, 8);
+  assert.equal(Object.keys(state.mixer.volumes).length, 11);
   assert.equal(state.mixer.playing, false);
   assert.equal(state.mixer.volumes.rain, 60);
   assert.equal(state.timer.remaining, 1500);
   assert.equal(state.settings.break, 5);
+});
+
+test("upgrading an eight-sound mix persists muted instruments without changing existing state", async () => {
+  const first = await background();
+  await first.send("timerStart");
+  const saved = await first.get();
+  for (const id of ["piano", "guitar", "flute"]) delete saved.mixer.volumes[id];
+  saved.mixer.volumes.ocean = 37;
+  saved.mixer.master = 42;
+  const app = await background(saved);
+  const restored = await app.get();
+  assert.deepEqual(restored.timer, saved.timer);
+  assert.deepEqual(restored.settings, saved.settings);
+  assert.equal(restored.mixer.master, 42);
+  assert.equal(restored.mixer.volumes.ocean, 37);
+  for (const id of ["piano", "guitar", "flute"]) {
+    assert.equal(restored.mixer.volumes[id], 0);
+    assert.equal(app.storage.state.mixer.volumes[id], 0);
+  }
+  restored.mixer.volumes.piano = 55;
+  restored.mixer.playing = true;
+  assert.equal((await app.send("setMixer", { mixer: restored.mixer })).ok, true);
+  const reopened = await background(app.storage.state);
+  assert.equal((await reopened.get()).mixer.volumes.piano, 55);
+});
+
+test("instrument-only mixes and instrument/nature blends use the background audio engine", async () => {
+  const app = await background();
+  const mixer = (await app.get()).mixer;
+  for (const id of Object.keys(mixer.volumes)) mixer.volumes[id] = 0;
+  mixer.playing = true;
+  for (const id of ["piano", "guitar", "flute"]) {
+    mixer.volumes[id] = 40;
+    assert.equal((await app.send("setMixer", { mixer })).ok, true);
+    assert.equal(app.audioMessages.at(-1).mixer.volumes[id], 40);
+    mixer.volumes[id] = 0;
+  }
+  mixer.volumes.rain = 60;
+  mixer.volumes.piano = 30;
+  mixer.volumes.guitar = 25;
+  mixer.volumes.flute = 20;
+  await app.send("setMixer", { mixer });
+  assert.equal(app.createCount, 1);
+  assert.deepEqual((await app.get()).mixer.volumes, mixer.volumes);
 });
 
 test("pause, resume and reset preserve the real timer deadline", async () => {
@@ -255,7 +299,7 @@ test("disabled notifications still complete the timer", async () => {
   assert.equal(app.notifications.length, 0);
 });
 
-test("all synthesized buffers are finite, audible and loop with a quiet seam", () => {
+test("all synthesized buffers are finite and audible", () => {
   const context = vm.createContext({});
   vm.runInContext(read("audio.js"), context);
   const param = () => ({ value: 0, setTargetAtTime() {} });
@@ -279,10 +323,126 @@ test("all synthesized buffers are finite, audible and loop with a quiet seam", (
       energy += sample * sample;
     }
     assert.ok(Math.sqrt(energy / data.length) > 0.005, `${id} is audible`);
-    assert.equal(Math.abs(data[0]), 0);
-    assert.ok(Math.abs(data[data.length - 1]) < 0.005, id);
+    if (id !== "rain") {
+      assert.equal(Math.abs(data[0]), 0);
+      assert.ok(Math.abs(data[data.length - 1]) < 0.005, id);
+    }
   }
   assert.throws(() => mixer.createBuffer("invalid"), /Unknown sound/);
+});
+
+test("rain keeps its energy across repeated loop boundaries at browser sample rates", () => {
+  for (const sampleRate of [44100, 48000]) {
+    for (const seed of [1, 42, 987654321]) {
+      let randomState = seed;
+      const math = Object.create(Math);
+      math.random = () => {
+        randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0;
+        return randomState / 4294967296;
+      };
+      const context = vm.createContext({ Math: math });
+      vm.runInContext(read("audio.js"), context);
+      const param = () => ({ value: 0 });
+      const node = () => ({ gain: param(), threshold: param(), knee: param(), ratio: param(), connect() {} });
+      const audio = {
+        sampleRate, destination: {},
+        createGain: node, createDynamicsCompressor: node,
+        createBuffer: (channels, length) => {
+          const data = new Float32Array(length);
+          return { getChannelData: () => data };
+        }
+      };
+      const data = new context.SynthMixer(audio).createBuffer("rain").getChannelData(0);
+      const rms = (start, length) => {
+        let energy = 0;
+        for (let i = 0; i < length; i++) {
+          const sample = data[((start + i) % data.length + data.length) % data.length];
+          energy += sample * sample;
+        }
+        return Math.sqrt(energy / length);
+      };
+      const reference = rms(sampleRate, sampleRate);
+      const window = Math.round(sampleRate * 0.01);
+      for (const boundary of [data.length, data.length * 2, data.length * 3]) {
+        for (let offset = -12; offset <= 12; offset++) {
+          const ratio = rms(boundary + offset * window - Math.floor(window / 2), window) / reference;
+          assert.ok(ratio > 0.7 && ratio < 1.3,
+            `${sampleRate} Hz, seed ${seed}, boundary ${boundary}, window ${offset}: RMS ratio ${ratio}`);
+        }
+      }
+      let differenceEnergy = 0;
+      for (let i = 1; i < sampleRate; i++) {
+        differenceEnergy += (data[i] - data[i - 1]) ** 2;
+      }
+      const typicalDifference = Math.sqrt(differenceEnergy / (sampleRate - 1));
+      assert.ok(Math.abs(data[0] - data[data.length - 1]) < typicalDifference * 3,
+        "the loop boundary must not introduce an abnormal sample jump");
+    }
+  }
+});
+
+test("instrument phrases are audible, pitched, distinct and loop without a cut release", () => {
+  const context = vm.createContext({});
+  vm.runInContext(read("audio.js"), context);
+  const param = () => ({ value: 0 });
+  const node = () => ({ gain: param(), threshold: param(), knee: param(), ratio: param(), connect() {} });
+  const sampleRate = 24000;
+  const audio = {
+    sampleRate, destination: {}, createGain: node, createDynamicsCompressor: node,
+    createBuffer: (channels, length) => {
+      const data = new Float32Array(length);
+      return { getChannelData: () => data };
+    }
+  };
+  const mixer = new context.SynthMixer(audio);
+  const buffers = {};
+  const projection = (data, frequency) => {
+    let real = 0;
+    let imaginary = 0;
+    for (let i = sampleRate * 0.3; i < sampleRate * 0.8; i++) {
+      const phase = 2 * Math.PI * frequency * i / sampleRate;
+      real += data[i] * Math.cos(phase);
+      imaginary += data[i] * Math.sin(phase);
+    }
+    return Math.hypot(real, imaginary);
+  };
+  for (const [id, midi] of [["piano", 60], ["guitar", 48], ["flute", 72]]) {
+    const data = mixer.createBuffer(id).getChannelData(0);
+    buffers[id] = data;
+    assert.equal(data.length, sampleRate * 32);
+    let energy = 0;
+    for (const sample of data) {
+      assert.ok(Number.isFinite(sample), id);
+      assert.ok(Math.abs(sample) < 0.5, `${id} has no excessive peaks`);
+      energy += sample * sample;
+    }
+    assert.ok(Math.sqrt(energy / data.length) > 0.005, `${id} is audible`);
+    const frequency = 440 * 2 ** ((midi - 69) / 12);
+    assert.ok(projection(data, frequency) > projection(data, frequency * 1.17) * 10,
+      `${id} has a pitched first note, not broadband noise`);
+    assert.ok(Math.abs(data[0] - data[data.length - 1]) < 0.025,
+      `${id} has a smooth repeat boundary`);
+    for (let second = 0; second < 32; second += 4) {
+      let noteEnergy = 0;
+      for (let i = Math.round((second + 0.3) * sampleRate); i < Math.round((second + 0.8) * sampleRate); i++) {
+        noteEnergy += data[i] ** 2;
+      }
+      assert.ok(noteEnergy > 0.1, `${id} phrase remains audible at ${second} seconds`);
+    }
+  }
+  assert.notDeepEqual(buffers.piano, buffers.guitar);
+  assert.notDeepEqual(buffers.piano, buffers.flute);
+});
+
+test("every sound has a popup icon and every preset includes only supported sounds", () => {
+  const context = vm.createContext({});
+  vm.runInContext(read("shared.js"), context);
+  const { sounds, presets } = context.NatureFocus;
+  const html = read("popup.html");
+  for (const sound of sounds) assert.ok(html.includes(`id="icon-${sound.icon}"`), sound.id);
+  for (const preset of Object.values(presets)) {
+    for (const id of Object.keys(preset)) assert.ok(sounds.some(sound => sound.id === id), id);
+  }
 });
 
 test("audio mixing creates sources only when needed and ramps volume without restarting", async () => {

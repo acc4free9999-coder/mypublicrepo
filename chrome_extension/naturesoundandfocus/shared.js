@@ -8,7 +8,10 @@ globalThis.NatureFocus = (() => {
     { id: "wind", name: "Mountain wind", subtitle: "Space to breathe", icon: "wind" },
     { id: "fire", name: "Campfire", subtitle: "Warmth for late nights", icon: "fire" },
     { id: "thunder", name: "Distant thunder", subtitle: "Cozy on the inside", icon: "thunder" },
-    { id: "night", name: "Summer night", subtitle: "The world slows down", icon: "night" }
+    { id: "night", name: "Summer night", subtitle: "The world slows down", icon: "night" },
+    { id: "piano", name: "Gentle piano", subtitle: "A soft melody for flow", icon: "piano" },
+    { id: "guitar", name: "Acoustic guitar", subtitle: "Warm strings, clear mind", icon: "guitar" },
+    { id: "flute", name: "Peaceful flute", subtitle: "A breath of quiet music", icon: "flute" }
   ];
   const presets = {
     woodland: { forest: 65, stream: 40, wind: 15 },

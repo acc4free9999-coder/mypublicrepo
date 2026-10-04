@@ -92,6 +92,14 @@ async function reconcileTimer() {
 async function initialize() {
   const stored = await chrome.storage.local.get("state");
   state = stored.state || NatureFocus.defaultState();
+  let migrated = false;
+  for (const sound of NatureFocus.sounds) {
+    if (state.mixer.volumes[sound.id] === undefined) {
+      state.mixer.volumes[sound.id] = 0;
+      migrated = true;
+    }
+  }
+  if (migrated) await persist();
   await reconcileTimer();
   await updateBadge();
 }

@@ -13,10 +13,13 @@ globalThis.SynthMixer = class SynthMixer {
   }
 
   createBuffer(id) {
+    if (["piano", "guitar", "flute"].includes(id)) return this.createInstrumentBuffer(id);
     const rate = this.context.sampleRate;
     const seconds = 16;
     const buffer = this.context.createBuffer(1, rate * seconds, rate);
-    const data = buffer.getChannelData(0);
+    const output = buffer.getChannelData(0);
+    const overlap = id === "rain" ? Math.round(rate * 0.12) : 0;
+    const data = overlap ? new Float32Array(output.length + overlap) : output;
     let low = 0;
     let brown = 0;
     const events = Array.from({ length: id === "forest" ? 22 : 48 }, () => ({
@@ -78,8 +81,66 @@ globalThis.SynthMixer = class SynthMixer {
         default:
           throw new Error(`Unknown sound: ${id}`);
       }
-      // Fade the loop seam to prevent clicks without interrupting the other layers.
-      data[i] *= Math.min(1, t / 0.06, (seconds - t) / 0.06);
+      if (!overlap) {
+        // Fade intermittent soundscapes at the loop seam to prevent clicks.
+        data[i] *= Math.min(1, t / 0.06, (seconds - t) / 0.06);
+      }
+    }
+    if (overlap) {
+      output.set(data.subarray(0, output.length));
+      // Continue the tail across the loop boundary, then blend into the head.
+      // Equal-power weights keep uncorrelated rain noise from dipping in volume.
+      for (let i = 0; i < overlap; i++) {
+        const angle = i / (overlap - 1) * Math.PI / 2;
+        output[i] = data[output.length + i] * Math.cos(angle) + data[i] * Math.sin(angle);
+      }
+    }
+    return buffer;
+  }
+
+  createInstrumentBuffer(id) {
+    const rate = this.context.sampleRate;
+    const buffer = this.context.createBuffer(1, rate * 32, rate);
+    const data = buffer.getChannelData(0);
+    const melody = [60, 64, 67, 69, 67, 64, 62, 64, 60, 62, 64, 67, 69, 67, 64, 62];
+    const flute = id === "flute";
+    const guitar = id === "guitar";
+    const interval = flute ? 4 : 2;
+    const duration = flute ? 3.8 : guitar ? 3 : 4;
+    const attack = flute ? 0.18 : guitar ? 0.008 : 0.012;
+    const release = flute ? 0.3 : 0.15;
+    const echoes = [
+      { delay: 0, gain: 1 },
+      { delay: Math.round(rate * 0.17), gain: 0.18 },
+      { delay: Math.round(rate * 0.37), gain: 0.08 }
+    ];
+    for (let note = 0; note < 32 / interval; note++) {
+      const midi = melody[note * (flute ? 2 : 1)] + (guitar ? -12 : flute ? 12 : 0);
+      const frequency = 440 * 2 ** ((midi - 69) / 12);
+      const start = Math.round(note * interval * rate);
+      for (let i = 0; i < Math.round(duration * rate); i++) {
+        const age = i / rate;
+        const envelope = Math.min(1, age / attack) * Math.min(1, (duration - age) / release);
+        const phase = 2 * Math.PI * frequency * age;
+        let wave;
+        if (flute) {
+          const vibrato = 0.035 * Math.sin(2 * Math.PI * 5 * age) * Math.min(1, age / 0.5);
+          wave = Math.sin(phase + vibrato) + 0.12 * Math.sin(phase * 2 + vibrato)
+            + 0.04 * Math.sin(phase * 3) + (Math.random() * 2 - 1) * 0.015;
+          wave *= 0.11 * Math.sin(Math.PI * age / duration) ** 0.4;
+        } else {
+          wave = Math.sin(phase) * Math.exp(-age * (guitar ? 1.5 : 0.9))
+            + 0.32 * Math.sin(phase * (guitar ? 2 : 2.002)) * Math.exp(-age * 2)
+            + 0.14 * Math.sin(phase * (guitar ? 3 : 3.006)) * Math.exp(-age * 3)
+            + 0.06 * Math.sin(phase * 4) * Math.exp(-age * 5);
+          wave *= 0.17;
+        }
+        const sample = wave * envelope;
+        // Wrap note releases and echoes into the head so the phrase has no cut tail.
+        for (const echo of echoes) {
+          data[(start + i + echo.delay) % data.length] += sample * echo.gain;
+        }
+      }
     }
     return buffer;
   }

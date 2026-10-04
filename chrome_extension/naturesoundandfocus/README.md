@@ -1,8 +1,8 @@
 # Still — Nature Sounds & Focus
 
 A self-contained Chrome extension for a quieter workday. Mix eight nature-inspired
-soundscapes and use a focus/break timer without accounts, network requests, tracking,
-or downloaded audio.
+soundscapes and three gentle instrument melodies with a focus/break timer, without
+accounts, network requests, tracking, or downloaded audio.
 
 ## Install
 
@@ -16,6 +16,8 @@ or downloaded audio.
 
 - Soft rain, forest birds, ocean waves, flowing stream, mountain wind, campfire,
   distant thunder, and summer-night crickets.
+- Gentle piano, acoustic guitar, and peaceful flute: original, synthesized
+  32-second melodies with soft echoes and looping note releases.
 - Layer sounds with independent volume sliders and a master volume.
 - Four quick mixes: Woodland, Rainy day, Coastline, and Cozy cabin.
 - A 25-minute focus timer and 5-minute break, with customizable durations
@@ -25,8 +27,13 @@ or downloaded audio.
 - Optional completion notifications and a toolbar badge during a running timer.
 - Mixes, settings, and timer state are saved automatically.
 
-Audio is **procedurally synthesized with Web Audio**, not field recordings.
-The sounds are nature-inspired textures; no third-party sound assets are used.
+Audio is **procedurally synthesized with Web Audio**, not field or instrument recordings.
+The sounds are nature-inspired textures and instrument-inspired melodies;
+no third-party sound assets are used. All three instruments share a compatible
+musical scale and can be layered with the nature sounds or played individually.
+Existing saved mixes keep their volumes when updating; new instruments start muted.
+Rain uses an equal-power overlap at its loop boundary to maintain continuous
+sound without a fade-to-silence between repeats.
 Sound selection does not start playback automatically. Sliders apply when released.
 Muting every sound or setting master volume to zero pauses playback.
 
@@ -67,3 +74,8 @@ For a Chrome smoke test:
    notification, **Break** mode, and incremented session count.
 4. Pause/resume/reset a timer, and verify audio remains independent.
 5. Restart Chrome; verify audio is paused and any timer deadline is restored.
+6. Play rain alone for at least 50 seconds. Verify there is no volume dip or
+   interruption at the 16-second loop boundaries.
+7. Scroll down to the instrument cards. Play each instrument alone for at least
+   65 seconds, then mix it with rain. Verify individual volumes, smooth phrase
+   repeats, and playback continuing after closing the popup.

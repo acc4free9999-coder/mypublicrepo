@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Still — Nature Sounds & Focus",
-  "version": "1.0.0",
-  "description": "Find your flow with eight locally generated nature soundscapes and a distraction-free focus timer.",
+  "version": "1.1.0",
+  "description": "Find your flow with nature soundscapes, gentle piano, guitar and flute melodies, and a distraction-free focus timer.",
   "permissions": ["storage", "offscreen", "alarms", "notifications"],
   "background": {
     "service_worker": "background.js"
