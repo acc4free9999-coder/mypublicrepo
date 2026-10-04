@@ -15,7 +15,7 @@ npm run build
 
 **Symbols:** XAUUSD (default), EURUSD, AUDUSD, BTCUSD, ETHUSD, SPX. Each one has its own price precision (FX pairs use 5 decimals), contract size, default lot size, volatility and trading session (FX, gold and SPX pause at weekends; crypto trades 24/7).
 
-**Timeframes:** 15m · 1H · 4H · 1D · 1W (Monday-aligned) · 1M (calendar months).
+**Timeframes:** 5M · 15m · 1H · 4H · 1D · 1W (Monday-aligned) · 1M (calendar months).
 
 **Data:** real OHLC bars only. They come from built-in MT5 exports (XAUUSD, Jan–Sep 2026), from Twelve Data on demand, or from an imported MT5 / MT4 / TradingView / Dukascopy / Binance / CSV export. Data is saved in the browser. There is no simulated data and no live stream. See [Built-in MT5 data](#built-in-mt5-data-mt5mt5data), [Real market data](#real-market-data-twelve-data) and [Importing files](#importing-files-mt5-mt4-tradingview-csv).
 
@@ -193,7 +193,7 @@ src/
 │   ├── trading/BottomPanel.tsx    Positions (inline SL/TP edit) · Orders · History · Journal
 │   └── layout/{Dashboard,TopBar,DataSourceMenu,ImportPanel}.tsx
 tests/                             Vitest: matching engine, aggregation, indicators, drawings, trade lines, data import
-mt5/GonyExportBars.mq5             MetaTrader 5 script: export all 6 timeframes as importable CSV
+mt5/GonyExportBars.mq5             MetaTrader 5 script: export all 7 timeframes as importable CSV
 mt5/Mt5Data/                       Built-in MT5 Bars exports shipped with the app
 public/favicon.svg                 App icon (candles inside a replay arrow); apple-touch-icon.png is a 180px render
 scripts/sync-mt5-data.mjs          Copies mt5/Mt5Data → public/data (+ manifest) before dev/build
@@ -203,7 +203,9 @@ Dockerfile · docker-compose.yml    Node build → Nginx container
 
 ## Built-in MT5 data (`mt5/Mt5Data`)
 
-MT5 **Export Bars** files in [`mt5/Mt5Data/`](mt5/Mt5Data) ship with the app. There are currently six XAUUSD files (Exness `XAUUSDm`): M15, H1, H4, Daily, Weekly and Monthly, from 2026-01-01 to 2026-09-25. On a first visit the chart shows them straight away, with no API key and no import needed.
+MT5 **Export Bars** files in [`mt5/Mt5Data/`](mt5/Mt5Data) ship with the app. There are currently seven XAUUSD files (Exness `XAUUSDm`): M5, M15, H1, H4, Daily, Weekly and Monthly, from 2026-01-01 to 2026-09-25. On a first visit the chart shows them straight away, with no API key and no import needed.
+
+**5M data:** the bundled M5 export contains 51,970 bars, from January 1 at 23:05 to September 25 at 00:45 (2026, broker timestamps treated as UTC). To extend it, export M5 from MT5 and import it through **Market data → Import file (MT5…)**, or replace/add a file in `mt5/Mt5Data/` (e.g. `XAUUSDm_M5.csv`) and rebuild/redeploy. Twelve Data fetches also include 5M. The app never synthesizes 5-minute bars from coarser data.
 
 - `npm run dev` and `npm run build` first run `scripts/sync-mt5-data.mjs`. It copies the folder to `public/data/mt5/` and writes `public/data/manifest.json`. Both are generated and git-ignored.
 - On startup the app fetches the manifest and files and parses them with the import parser. The symbol comes from the file name and the timeframe from the bar spacing. The files are assumed to be in UTC broker time (Exness), and MT5's Sunday-dated weekly bars are moved to Monday.
@@ -215,7 +217,7 @@ MT5 **Export Bars** files in [`mt5/Mt5Data/`](mt5/Mt5Data) ship with the app. Th
 The **Load data / Market data** button at the right of the top bar opens the *Market data* panel, which has two tabs: **Twelve Data API** and **Import file (MT5…)**. If a symbol has no saved data, the chart shows a **Load ⟨symbol⟩ data** button, and Replay and trading stay disabled until data is loaded.
 
 1. Get a free API key at [twelvedata.com](https://twelvedata.com/pricing) and paste it in. The key is stored only in this browser's `localStorage`.
-2. Click **Fetch ⟨symbol⟩ · 6 timeframes**. This sends one request per timeframe (15m, 1H, 4H, 1D, 1W, 1M), 6 API credits in total, each returning up to 5,000 bars. The free plan allows 8 requests/min and 800/day.
+2. Click **Fetch ⟨symbol⟩ · 7 timeframes**. This sends one request per timeframe (5M, 15m, 1H, 4H, 1D, 1W, 1M), 7 API credits in total, each returning up to 5,000 bars. The free plan allows 8 requests/min and 800/day.
 3. The bars are saved in IndexedDB and shown straight away after a page reload, with no new request. **Nothing is fetched automatically and nothing streams**; click **Refresh** whenever you want newer bars. The trash icon deletes a symbol's saved data.
 
 Symbols map to `XAU/USD`, `EUR/USD`, `AUD/USD`, `BTC/USD`, `ETH/USD` and `SPX`. Some symbols (e.g. indices) may need a paid plan. The panel shows the API error and keeps whatever timeframes did load.
@@ -233,14 +235,14 @@ Open **Market data → Import file (MT5…)**, then drop one or more `.csv`/`.tx
 
 ### Exporting from MetaTrader 5
 
-**Option A: script (all 6 timeframes at once, recommended)**
+**Option A: script (all 7 timeframes at once, recommended)**
 
 1. Copy [`mt5/GonyExportBars.mq5`](mt5/GonyExportBars.mq5) to `MQL5/Scripts/` (MT5: *File → Open Data Folder*). Compile it in MetaEditor (F7).
 2. Drag the script onto a chart. Inputs:
    - `InpSymbols`: comma list, e.g. `XAUUSD,EURUSD`; empty means the chart symbol.
    - `InpMaxBars`: default 50000.
    - `InpToUtc`: default on.
-3. It writes `MQL5/Files/GonyBarReplay/<SYMBOL>_<M15|H1|H4|D1|W1|MN1>.csv` with `time,open,high,low,close,volume`. Import all six files in one go; the symbol is taken from the file name, and broker suffixes such as `XAUUSDm` or `GOLD` are recognised.
+3. It writes `MQL5/Files/GonyBarReplay/<SYMBOL>_<M5|M15|H1|H4|D1|W1|MN1>.csv` with `time,open,high,low,close,volume`. Import all seven files in one go; the symbol is taken from the file name, and broker suffixes such as `XAUUSDm` or `GOLD` are recognised.
 
 With `InpToUtc` on, intraday times are converted from broker server time to UTC using the server's *current* offset. Past DST changes are not corrected, so bars from the other DST season can be off by an hour. D1/W1/MN1 keep their trading date. Volume is real volume when the broker provides it, otherwise tick volume. The history you get is limited by *Tools → Options → Charts → Max bars in chart*.
 
@@ -262,8 +264,8 @@ Open *View → Symbols* (Ctrl+U) → **Bars** tab. Pick the symbol, the timefram
 Parsing details:
 
 - **Dates** can be `YYYY-MM-DD`, `YYYY.MM.DD`, `DD.MM.YYYY`, `MM/DD/YYYY` (day/month order is detected per file), `YYYYMMDD`, ISO with a zone, or unix s/ms.
-- **Timeframe** is detected from the bar spacing. 1m/5m files are aggregated into 15m, 30m into 1H, 2H into 4H, and 12H into 1D. You can also force a coarser timeframe, e.g. import M15 bars as 1H.
-- If you import only one timeframe, the other timeframes are aggregated from it. For example, M15 alone also gives 1H to 1M, and D1 alone gives 1D, 1W and 1M.
+- **Timeframe** is detected from the bar spacing. Native 5m files retain every bar; 1m files are aggregated into 5M, 30m into 1H, 2H into 4H, and 12H into 1D. You can also force a coarser timeframe, e.g. import M5 bars as 15m or M15 bars as 1H.
+- If you import only one timeframe, coarser timeframes are aggregated from it. For example, M5 alone also gives 15m to 1M, M15 gives 1H to 1M (not 5M), and D1 gives 1D, 1W and 1M.
 - **File time** (UTC−12 … UTC+14) applies only to zone-less intraday timestamps. Unix/ISO-with-zone times and D1+ bars are never shifted. Weekly bars dated Sunday (MT5/MT4) or Saturday are moved to the app's Monday-based weeks.
 - Rows are sorted and duplicates removed; unreadable rows are skipped and counted. High and low are widened to include open and close if needed.
 - **Merge** keeps the saved bars of that timeframe and adds the file's bars (the file wins on overlap), e.g. to extend history. Otherwise the timeframe is replaced.

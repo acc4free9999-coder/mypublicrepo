@@ -384,6 +384,7 @@ function NoDataOverlay() {
   const show = useTradingStore((s) => !hasData(s));
   const symbol = useTradingStore((s) => s.symbol);
   const loading = useTradingStore((s) => s.dataStatus.loading);
+  const timeframe = useTradingStore((s) => s.timeframe);
   if (!show) return null;
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0b0e14]/80">
@@ -392,7 +393,7 @@ function NoDataOverlay() {
       ) : (
         <div className="max-w-xs text-center text-sm">
           <Database size={28} className="mx-auto mb-2 text-slate-500" />
-          <p className="mb-1 font-semibold text-slate-200">No market data for {symbol}</p>
+          <p className="mb-1 font-semibold text-slate-200">No {TIMEFRAME_LABELS[timeframe]} market data for {symbol}</p>
           <p className="mb-3 text-xs text-slate-500">Fetch real bars from Twelve Data or import an MT5 / MT4 / TradingView / CSV export. Data is saved in this browser and reloaded automatically next time.</p>
           <button
             onClick={() => useTradingStore.getState().setDataPanelOpen(true)}

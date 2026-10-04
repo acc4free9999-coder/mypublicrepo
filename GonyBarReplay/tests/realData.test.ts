@@ -1,12 +1,28 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { nextCandleEndIndex, visibleCandles } from '@/data/aggregate';
-import { parseTdTime, parseTdValues } from '@/data/twelveData';
+import { fetchTimeSeries, parseTdTime, parseTdValues } from '@/data/twelveData';
 import { resolveBase, useTradingStore } from '@/store/useTradingStore';
 import type { Candle } from '@/types';
 
 const bar = (time: number, px = 100): Candle => ({ time, open: px, high: px + 1, low: px - 1, close: px, volume: 0 });
 
 describe('Twelve Data parsing', () => {
+  it('requests native 5-minute bars', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: 'ok',
+      values: ['00:00:00', '00:05:00'].map((time) => ({
+        datetime: `2026-09-25 ${time}`, open: '10', high: '12', low: '9', close: '11',
+      })),
+    })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const candles = await fetchTimeSeries('XAUUSD', '5m', 'test-key');
+      expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('interval')).toBe('5min');
+      expect(candles[1].time - candles[0].time).toBe(300);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('parses UTC datetimes and dates', () => {
     expect(parseTdTime('2026-09-25 20:45:00')).toBe(Date.UTC(2026, 8, 25, 20, 45) / 1000);
     expect(parseTdTime('2026-09-25')).toBe(Date.UTC(2026, 8, 25) / 1000);
@@ -87,6 +103,28 @@ describe('store: without fetched data', () => {
 });
 
 describe('store: importSeries', () => {
+  it('imports 5m, aggregates for 15m, and maps replay back to 5m without look-ahead', () => {
+    const st = useTradingStore;
+    st.setState({ realData: {}, replay: { status: 'off', cutoffIndex: null, cursor: -1, speed: 1 } });
+    st.getState().setSymbol('XAUUSD');
+    st.getState().setTimeframe('5m');
+    const m5 = Array.from({ length: 30 }, (_, i) => bar(i * 300, 100 + i));
+    st.getState().importSeries([{ symbol: 'XAUUSD', timeframe: '5m', candles: m5, source: 'MT5 · XAUUSD_M5.csv', merge: false }]);
+    expect(st.getState().baseTf).toBe('5m');
+    expect(st.getState().base).toEqual(m5);
+    st.getState().setTimeframe('15m');
+    expect(visibleCandles(st.getState().base, '15m', 29, '5m')).toHaveLength(10);
+    const m15 = visibleCandles(m5, '15m', 29, '5m');
+    st.getState().importSeries([{ symbol: 'XAUUSD', timeframe: '15m', candles: m15, source: 'MT5', merge: false }]);
+    st.getState().enterReplay();
+    st.getState().selectCutoff(900);
+    st.getState().setTimeframe('5m');
+    const s = st.getState();
+    expect(s.baseTf).toBe('5m');
+    expect(s.base[s.replay.cursor].time).toBe(1500);
+    expect(nextCandleEndIndex(s.base, '5m', s.replay.cursor, '5m')).toBe(s.replay.cursor + 1);
+    st.getState().exitReplay();
+  });
   it('stores imported bars, shows them for the current symbol and merges on request', () => {
     const st = useTradingStore;
     st.setState({ realData: {} });

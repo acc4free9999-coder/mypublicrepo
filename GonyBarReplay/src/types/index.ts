@@ -1,14 +1,15 @@
 /** Unix timestamp in SECONDS (UTC) — the native time unit of Lightweight Charts. */
 export type UnixTime = number;
 
-export type Timeframe = '15m' | '1h' | '4h' | '1d' | '1w' | '1M';
+export type Timeframe = '5m' | '15m' | '1h' | '4h' | '1d' | '1w' | '1M';
 
-export const TIMEFRAMES: Timeframe[] = ['15m', '1h', '4h', '1d', '1w', '1M'];
+export const TIMEFRAMES: Timeframe[] = ['5m', '15m', '1h', '4h', '1d', '1w', '1M'];
 
-export const TIMEFRAME_LABELS: Record<Timeframe, string> = { '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D', '1w': '1W', '1M': '1M' };
+export const TIMEFRAME_LABELS: Record<Timeframe, string> = { '5m': '5M', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D', '1w': '1W', '1M': '1M' };
 
 /** Nominal bar duration. Weeks start Monday 00:00 UTC; months are calendar months (≈30d here). */
 export const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
+  '5m': 300,
   '15m': 900,
   '1h': 3600,
   '4h': 14400,

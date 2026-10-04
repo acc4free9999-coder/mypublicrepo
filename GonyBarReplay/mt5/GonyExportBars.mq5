@@ -1,13 +1,13 @@
 //+------------------------------------------------------------------+
 //|                                               GonyExportBars.mq5 |
-//|   Exports M15 / H1 / H4 / D1 / W1 / MN1 bars as CSV files that   |
+//|   Exports M5 / M15 / H1 / H4 / D1 / W1 / MN1 bars as CSV files   |
 //|   GonyBarReplay imports directly ("Market data > Import file").  |
 //+------------------------------------------------------------------+
 #property copyright   "GonyBarReplay"
 #property version     "1.00"
 #property strict
 #property script_show_inputs
-#property description "Writes MQL5\\Files\\<folder>\\<SYMBOL>_<TF>.csv (time,open,high,low,close,volume) for M15, H1, H4, D1, W1 and MN1."
+#property description "Writes MQL5\\Files\\<folder>\\<SYMBOL>_<TF>.csv (time,open,high,low,close,volume) for M5, M15, H1, H4, D1, W1 and MN1."
 
 input group "Export"
 input string InpSymbols = "";              // Symbols, comma separated (empty = chart symbol)
@@ -15,8 +15,8 @@ input int    InpMaxBars = 50000;           // Max bars per timeframe
 input bool   InpToUtc   = true;            // Convert intraday bar times from server time to UTC
 input string InpFolder  = "GonyBarReplay"; // Sub-folder of MQL5\Files
 
-const ENUM_TIMEFRAMES g_tfs[]   = {PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1, PERIOD_W1, PERIOD_MN1};
-const string          g_names[] = {"M15", "H1", "H4", "D1", "W1", "MN1"};
+const ENUM_TIMEFRAMES g_tfs[]   = {PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1, PERIOD_W1, PERIOD_MN1};
+const string          g_names[] = {"M5", "M15", "H1", "H4", "D1", "W1", "MN1"};
 
 //+------------------------------------------------------------------+
 //| Broker server offset from UTC in seconds (rounded to 30 min).     |

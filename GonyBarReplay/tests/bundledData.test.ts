@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { BUNDLED_SOURCE, parseBundled, withBundled } from '@/data/bundledData';
 import { parseBarsFile } from '@/data/fileImport';
 import type { Candle } from '@/types';
@@ -10,6 +11,30 @@ const weekly = [W, '2026.09.06\t1\t2\t0.5\t1.5\t10\t0\t0', '2026.09.13\t1.5\t2\t
 const bar = (time: number, close: number): Candle => ({ time, open: close, high: close, low: close, close, volume: 0 });
 
 describe('built-in MT5 data', () => {
+  it('loads the actual bundled M5 history without dropping or aggregating bars', () => {
+    const name = 'XAUUSDm_M5_202601012305_202609250045.csv';
+    const text = readFileSync(new URL(`../mt5/Mt5Data/${name}`, import.meta.url), 'utf8');
+    const parsed = parseBarsFile(text);
+    expect(parsed.skipped).toBe(0);
+    expect(parsed.timeframe).toBe('5m');
+    const d = parseBundled([{ name, text }]);
+    const candles = d.XAUUSD.series['5m']!;
+    expect(candles).toHaveLength(51970);
+    expect(candles[0].time).toBe(Date.UTC(2026, 0, 1, 23, 5) / 1000);
+    expect(candles[candles.length - 1]).toMatchObject({
+      time: Date.UTC(2026, 8, 25, 0, 45) / 1000, close: 4273.167, volume: 832,
+    });
+  });
+  it('loads M5 exports as native 5m data', () => {
+    const text = [H,
+      '2026.09.25\t18:00:00\t4280\t4290\t4275\t4285\t100\t0\t160',
+      '2026.09.25\t18:05:00\t4285\t4295\t4280\t4290\t120\t0\t160',
+      '2026.09.25\t18:10:00\t4290\t4292\t4284\t4286\t90\t0\t160',
+    ].join('\n');
+    const d = parseBundled([{ name: 'mt5/XAUUSDm_M5.csv', text }]);
+    expect(d.XAUUSD.series['5m']).toHaveLength(3);
+    expect(d.XAUUSD.sources?.['5m']).toContain('XAUUSDm_M5.csv');
+  });
   it('parses files by symbol and timeframe from the file name', () => {
     const d = parseBundled([
       { name: 'mt5/XAUUSDm_H1_202609251800_202609252000.csv', text: h1 },

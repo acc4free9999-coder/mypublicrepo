@@ -17,6 +17,7 @@ export const TD_SYMBOLS: Record<string, string> = {
 };
 
 const TD_INTERVALS: Record<Timeframe, string> = {
+  '5m': '5min',
   '15m': '15min',
   '1h': '1h',
   '4h': '4h',
@@ -107,7 +108,7 @@ export interface FetchProgress {
 }
 
 /**
- * Fetches every chart timeframe for `symbol` sequentially (6 requests = 6 credits;
+ * Fetches every chart timeframe for `symbol` sequentially (7 requests = 7 credits;
  * the free plan allows 8/min). Returns what succeeded; throws only if nothing did.
  */
 export async function fetchAllTimeframes(

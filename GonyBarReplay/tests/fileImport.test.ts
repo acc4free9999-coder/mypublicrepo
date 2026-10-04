@@ -55,15 +55,35 @@ describe('parseBarsFile', () => {
     expect(r.candles[1].time).toBe(T('2026-09-22T00:00:00Z'));
   });
 
-  it('reads Binance klines (ms timestamps, no header) and aggregates 5m into 15m', () => {
+  it('preserves native Binance 5m bars and aggregates only when requested', () => {
     const t0 = T('2026-09-25T00:00:00Z') * 1000;
     const rows = Array.from({ length: 6 }, (_, i) => `${t0 + i * 300_000},${100 + i},${102 + i},${99 + i},${101 + i},10,${t0 + i * 300_000 + 299_999},1000,5,5,500,0`);
     const r = parseBarsFile(rows.join('\n'));
     expect(r.format).toBe('Binance');
-    expect(r.timeframe).toBe('15m');
-    expect(r.aggregatedFrom).toBe(6);
-    expect(r.candles).toHaveLength(2);
-    expect(r.candles[0]).toMatchObject({ open: 100, high: 104, low: 99, close: 103, volume: 30 });
+    expect(r.timeframe).toBe('5m');
+    expect(r.aggregatedFrom).toBeUndefined();
+    expect(r.candles).toHaveLength(6);
+    expect(r.candles[0]).toMatchObject({ open: 100, high: 102, low: 99, close: 101, volume: 10 });
+    const aggregated = parseBarsFile(rows.join('\n'), { timeframe: '15m' });
+    expect(aggregated.candles).toHaveLength(2);
+    expect(aggregated.candles[0]).toMatchObject({ open: 100, high: 104, low: 99, close: 103, volume: 30 });
+  });
+
+  it('detects MT5 M5 exports and aggregates one-minute input into 5m', () => {
+    const header = '<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>';
+    const rows = ['00:00:00', '00:05:00', '00:10:00'].map((time) =>
+      `2026.09.25\t${time}\t4250\t4255\t4249\t4252\t100`);
+    const native = parseBarsFile([header, ...rows].join('\n'));
+    expect(native.timeframe).toBe('5m');
+    expect(native.candles).toHaveLength(3);
+    expect(native.candles[1].time - native.candles[0].time).toBe(300);
+    const t0 = T('2026-09-25T00:00:00Z');
+    const minutes = 'time,open,high,low,close,volume\n' +
+      Array.from({ length: 10 }, (_, i) => `${t0 + i * 60},10,12,9,11,1`).join('\n');
+    const aggregated = parseBarsFile(minutes);
+    expect(aggregated.timeframe).toBe('5m');
+    expect(aggregated.candles).toHaveLength(2);
+    expect(aggregated.candles[0].volume).toBe(5);
   });
 
   it('handles semicolon files with decimal commas, ISO dates and header aliases', () => {
