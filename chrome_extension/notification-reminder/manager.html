@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reminder List</title>
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="manager.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><p class="eyebrow">A LITTLE NUDGE, RIGHT ON TIME</p><h1>Reminder List</h1>
+        <p class="subtitle">Your notes and images, on their own schedule.</p></div>
+      <span id="count" class="badge">Loading...</span>
+    </header>
+    <div id="error" class="notice error" role="alert" hidden></div>
+    <div id="notice" class="notice" hidden><span id="notice-text"></span><button id="dismiss" type="button">Dismiss</button></div>
+    <div class="layout">
+      <section class="panel editor" aria-labelledby="editor-title">
+        <h2 id="editor-title">New reminder</h2>
+        <p class="muted">Make room for what matters.</p>
+        <form id="reminder-form">
+          <label for="title">Title</label>
+          <input id="title" maxlength="100" placeholder="Time to stretch" required>
+          <label for="text">Reminder text</label>
+          <textarea id="text" rows="4" maxlength="1000" placeholder="Step away from your screen and take a deep breath."></textarea>
+          <label for="image">Image <span class="muted">(optional)</span></label>
+          <input id="image" type="file" accept="image/png,image/jpeg,image/webp">
+          <p class="hint">PNG, JPEG or WebP, up to 10 MB. Images are resized and stored locally.</p>
+          <div id="image-preview" hidden><img id="preview" alt="Selected reminder image"><button id="remove-image" type="button" class="secondary">Remove image</button></div>
+          <label for="interval">Repeat every <span class="muted">(minutes)</span></label>
+          <input id="interval" type="number" min="0.5" max="525600" step="any" value="30" required>
+          <p class="hint">Minimum 0.5 minutes (30 seconds). First reminder arrives after one interval.</p>
+          <label class="check"><input id="enabled" type="checkbox" checked> Reminder enabled</label>
+          <label class="check"><input id="sound" type="checkbox" checked> Play a gentle chime</label>
+          <div class="form-actions"><button id="save" type="submit">Add reminder</button><button id="cancel" type="button" class="secondary" hidden>Cancel edit</button></div>
+        </form>
+      </section>
+      <section aria-labelledby="list-title">
+        <div class="list-heading"><h2 id="list-title">Your reminders</h2><span class="muted">Saved on this device</span></div>
+        <div id="empty" class="panel empty" hidden><img src="icon.svg" alt="" width="56" height="56"><h3>A little reminder goes a long way.</h3><p>Add your first note or image to get started.</p></div>
+        <div id="list" aria-live="polite"></div>
+      </section>
+    </div>
+    <footer>Keep Chrome running to receive reminders. Sleep, browser shutdown and system notification settings may delay or hide them. Sound is controlled per reminder.</footer>
+  </main>
+  <template id="reminder-card">
+    <article class="panel card">
+      <div class="card-top"><h3></h3><span class="badge status"></span></div>
+      <p class="body-text"></p>
+      <img class="card-image" alt="Reminder image" hidden>
+      <p class="schedule"></p><p class="next muted"></p>
+      <div class="card-settings"><label class="check"><input class="enabled-toggle" type="checkbox"> Enabled</label><label class="check"><input class="sound-toggle" type="checkbox"> Sound</label></div>
+      <div class="card-actions"><button class="test secondary" type="button">Test now</button><button class="edit secondary" type="button">Edit</button><button class="delete danger" type="button">Delete</button></div>
+    </article>
+  </template>
+  <script type="module" src="manager.js"></script>
+</body>
+</html>

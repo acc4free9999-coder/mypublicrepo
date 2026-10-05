@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Reminder List",
+  "version": "1.0.0",
+  "description": "Recurring text and image reminders with individual intervals and sound controls.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "alarms", "notifications", "offscreen"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open Reminder List",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_ui": {
+    "page": "manager.html",
+    "open_in_tab": true
+  }
+}
