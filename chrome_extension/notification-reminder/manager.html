@@ -31,7 +31,10 @@
           <div id="image-preview" hidden><img id="preview" alt="Selected reminder image"><button id="remove-image" type="button" class="secondary">Remove image</button></div>
           <label for="interval">Repeat every <span class="muted">(minutes)</span></label>
           <input id="interval" type="number" min="0.5" max="525600" step="any" value="30" required>
-          <p class="hint">Minimum 0.5 minutes (30 seconds). First reminder arrives after one interval.</p>
+          <p class="hint">Minimum 0.5 minutes (30 seconds).</p>
+          <label for="start-minute">Start minute <span class="muted">(optional, 0-59)</span></label>
+          <input id="start-minute" type="number" min="0" max="59" step="1" placeholder="10" aria-describedby="start-minute-hint">
+          <p id="start-minute-hint" class="hint">10 starts at the next :10, then repeats at your interval. Leave blank to start after one interval. Uses local time; Chrome may delay alarms due within 30 seconds.</p>
           <label class="check"><input id="enabled" type="checkbox" checked> Reminder enabled</label>
           <label class="check"><input id="sound" type="checkbox" checked> Play a gentle chime</label>
           <div class="form-actions"><button id="save" type="submit">Add reminder</button><button id="cancel" type="button" class="secondary" hidden>Cancel edit</button></div>

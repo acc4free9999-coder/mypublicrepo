@@ -1,5 +1,15 @@
 export const ALARM_PREFIX = "reminder:";
 
+export function alarmOptions(reminder, now = Date.now()) {
+  if (reminder.startMinute == null) {
+    return { delayInMinutes: reminder.intervalMinutes, periodInMinutes: reminder.intervalMinutes };
+  }
+  const start = new Date(now);
+  start.setMinutes(reminder.startMinute, 0, 0);
+  if (start.getTime() <= now) start.setHours(start.getHours() + 1);
+  return { when: start.getTime(), periodInMinutes: reminder.intervalMinutes };
+}
+
 export function validateReminder(input, id) {
   if (!input || typeof input !== "object") throw new Error("Invalid reminder.");
   const title = typeof input.title === "string" ? input.title.trim() : "";
@@ -13,6 +23,10 @@ export function validateReminder(input, id) {
   if (typeof input.enabled !== "boolean" || typeof input.sound !== "boolean") {
     throw new Error("Choose valid reminder and sound settings.");
   }
+  const startMinute = input.startMinute ?? null;
+  if (startMinute !== null && (!Number.isInteger(startMinute) || startMinute < 0 || startMinute > 59)) {
+    throw new Error("Start minute must be a whole number from 0 to 59, or left blank.");
+  }
   for (const field of ["image", "imageIcon"]) {
     if (typeof input[field] !== "string" || input[field].length > 750000
       || (input[field] && !/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(input[field]))) {
@@ -22,7 +36,7 @@ export function validateReminder(input, id) {
   if (Boolean(input.image) !== Boolean(input.imageIcon)) throw new Error("Upload the image again.");
   if (!text && !input.image) throw new Error("Add reminder text or an image.");
   return {
-    id, title, text, intervalMinutes: input.intervalMinutes,
+    id, title, text, intervalMinutes: input.intervalMinutes, startMinute,
     enabled: input.enabled, sound: input.sound, image: input.image, imageIcon: input.imageIcon
   };
 }

@@ -1,4 +1,4 @@
-import { ALARM_PREFIX, validateReminder, notificationOptions } from "./reminders.js";
+import { ALARM_PREFIX, alarmOptions, validateReminder, notificationOptions } from "./reminders.js";
 
 let queue = Promise.resolve();
 let creatingOffscreen;
@@ -8,7 +8,7 @@ async function readReminders() {
   return reminders;
 }
 
-async function reconcile() {
+async function reconcile(resetId = null) {
   const reminders = await readReminders();
   const alarms = await chrome.alarms.getAll();
   const active = new Map(reminders.filter(item => item.enabled).map(item => [ALARM_PREFIX + item.id, item]));
@@ -19,11 +19,8 @@ async function reconcile() {
   }
   for (const [name, reminder] of active) {
     const alarm = alarms.find(item => item.name === name);
-    if (!alarm || alarm.periodInMinutes !== reminder.intervalMinutes) {
-      await chrome.alarms.create(name, {
-        delayInMinutes: reminder.intervalMinutes,
-        periodInMinutes: reminder.intervalMinutes
-      });
+    if (!alarm || alarm.periodInMinutes !== reminder.intervalMinutes || reminder.id === resetId) {
+      await chrome.alarms.create(name, alarmOptions(reminder));
     }
   }
 }
@@ -104,10 +101,11 @@ async function handleMessage(message) {
     if (message.id && index < 0) throw new Error("This reminder no longer exists. Refresh the list.");
     const id = message.id || crypto.randomUUID();
     const reminder = validateReminder(message.reminder, id);
+    const startChanged = index >= 0 && (reminders[index].startMinute ?? null) !== reminder.startMinute;
     if (index >= 0) reminders[index] = reminder;
     else reminders.push(reminder);
     await chrome.storage.local.set({ reminders });
-    await reconcile();
+    await reconcile(startChanged ? id : null);
   } else if (message.type === "toggle") {
     if (index < 0) throw new Error("This reminder no longer exists.");
     if (!["enabled", "sound"].includes(message.field) || typeof message.value !== "boolean") {

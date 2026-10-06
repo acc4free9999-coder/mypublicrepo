@@ -58,6 +58,7 @@ function edit(reminder) {
   $("title").value = reminder.title;
   $("text").value = reminder.text;
   $("interval").value = reminder.intervalMinutes;
+  $("start-minute").value = reminder.startMinute ?? "";
   $("enabled").checked = reminder.enabled;
   $("sound").checked = reminder.sound;
   $("editor-title").textContent = "Edit reminder";
@@ -84,6 +85,9 @@ function render(state) {
     img.hidden = !reminder.image;
     if (reminder.image) img.src = reminder.image;
     card.querySelector(".schedule").textContent = `Every ${reminder.intervalMinutes} minute${reminder.intervalMinutes === 1 ? "" : "s"}`;
+    if (reminder.startMinute != null) {
+      card.querySelector(".schedule").textContent += ` - Start minute :${String(reminder.startMinute).padStart(2, "0")}`;
+    }
     card.querySelector(".next").textContent = !reminder.enabled
       ? "Paused - no scheduled notification"
       : reminder.nextAt ? `Next: ${new Date(reminder.nextAt).toLocaleString()}`
@@ -162,6 +166,7 @@ $("reminder-form").addEventListener("submit", event => {
       reminder: {
         title: $("title").value, text: $("text").value,
         intervalMinutes: Number($("interval").value),
+        startMinute: $("start-minute").value === "" ? null : Number($("start-minute").value),
         enabled: $("enabled").checked, sound: $("sound").checked, image, imageIcon
       }
     });

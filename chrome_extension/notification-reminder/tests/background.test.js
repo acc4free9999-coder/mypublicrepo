@@ -39,7 +39,7 @@ globalThis.chrome = {
   alarms: {
     getAll: async () => structuredClone([...alarms.values()]),
     create: async (name, options) => {
-      alarms.set(name, { name, ...options, scheduledTime: Date.now() + options.delayInMinutes * 60000 });
+      alarms.set(name, { name, ...options, scheduledTime: options.when ?? Date.now() + options.delayInMinutes * 60000 });
     },
     clear: async name => alarms.delete(name),
     onAlarm: event("alarm")
@@ -186,4 +186,47 @@ test("toolbar and notification clicks open the manager", async () => {
   listeners.notificationClick("unrelated");
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(opened, 2);
+});
+
+test("start minute creates an anchored alarm and edits preserve or reset it as appropriate", async () => {
+  const now = new Date(2026, 9, 6, 13, 5).getTime();
+  const originalNow = Date.now;
+  Date.now = () => now;
+  try {
+    const reminder = { ...base, startMinute: 10, intervalMinutes: 60 };
+    const saved = await send({ type: "save", reminder });
+    assert.equal(saved.ok, true);
+    const id = saved.state.reminders.at(-1).id;
+    const name = `reminder:${id}`;
+    const at = (hour, minute) => new Date(2026, 9, 6, hour, minute).getTime();
+    assert.equal(alarms.get(name).when, at(13, 10));
+    assert.equal(alarms.get(name).periodInMinutes, 60);
+    assert.equal(saved.state.reminders.at(-1).startMinute, 10);
+    assert.equal(saved.state.reminders.at(-1).nextAt, at(13, 10));
+    alarms.get(name).scheduledTime = at(14, 10);
+    await send({ type: "save", id, reminder: { ...reminder, text: "Edited" } });
+    await send({ type: "toggle", id, field: "sound", value: true });
+    listeners.startup();
+    await state();
+    assert.equal(alarms.get(name).scheduledTime, at(14, 10));
+    await send({ type: "save", id, reminder: { ...reminder, startMinute: 20 } });
+    assert.equal(alarms.get(name).scheduledTime, at(13, 20));
+    await send({ type: "save", id, reminder: { ...reminder, startMinute: 20, intervalMinutes: 30 } });
+    assert.equal(alarms.get(name).when, at(13, 20));
+    assert.equal(alarms.get(name).periodInMinutes, 30);
+    await send({ type: "toggle", id, field: "enabled", value: false });
+    assert.equal(alarms.has(name), false);
+    Date.now = () => at(13, 25);
+    await send({ type: "toggle", id, field: "enabled", value: true });
+    assert.equal(alarms.get(name).when, at(14, 20));
+    alarms.delete(name);
+    listeners.startup();
+    await state();
+    assert.equal(alarms.get(name).when, at(14, 20));
+    await send({ type: "save", id, reminder: { ...reminder, startMinute: null } });
+    assert.equal(alarms.get(name).when, undefined);
+    assert.equal(alarms.get(name).scheduledTime, at(14, 25));
+  } finally {
+    Date.now = originalNow;
+  }
 });
