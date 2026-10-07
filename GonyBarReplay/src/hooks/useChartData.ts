@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { visibleCandles } from '@/data/aggregate';
+import { getAggregated, visibleCandles } from '@/data/aggregate';
 import { ema } from '@/indicators';
 import { useTradingStore } from '@/store/useTradingStore';
 
@@ -13,7 +13,9 @@ export function useChartData() {
   const emaCfg = useTradingStore((s) => s.indicators.ema);
 
   const candles = useMemo(() => visibleCandles(base, timeframe, cursor, baseTf), [base, timeframe, cursor, baseTf]);
+  // Drawing anchors need the complete trading calendar, not estimated times after the replay cutoff.
+  const drawingTimes = useMemo(() => getAggregated(base, timeframe, baseTf).map(({ time }) => ({ time })), [base, timeframe, baseTf]);
   const emaData = useMemo(() => (emaCfg.enabled ? ema(candles, emaCfg.period) : []), [candles, emaCfg]);
 
-  return { candles, emaData };
+  return { candles, drawingTimes, emaData };
 }

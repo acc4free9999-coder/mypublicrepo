@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { applyAnchor, hitBody, hitTestAll, type Viewport } from '@/drawings/geometry';
 import { TimeMapper } from '@/drawings/timeMapper';
+import { getAggregated, visibleCandles } from '@/data/aggregate';
+import type { Candle } from '@/types';
 import type { Drawing } from '@/drawings/types';
 
 const style = { color: '#fff', width: 1, dash: 'solid' as const };
@@ -31,6 +33,43 @@ describe('TimeMapper', () => {
     const e = new TimeMapper();
     expect(e.toLogical(0)).toBeNull();
     expect(e.toTime(0)).toBeNull();
+  });
+
+  it('keeps future and fractional anchors fixed as replay crosses market gaps', () => {
+    const base: Candle[] = [0, 3600, 4 * 3600, 5 * 3600, 54 * 3600, 55 * 3600]
+      .map((time, i) => ({ time, open: i, high: i + 10, low: i - 10, close: i + 1, volume: 1 }));
+    const mapper = new TimeMapper();
+    const timeline = getAggregated(base, '1h', '1h').map(({ time }) => ({ time }));
+    mapper.set(timeline, 3600);
+    const start = mapper.toTime(1)!;
+    const end = mapper.toTime(4)!;
+    const fractional = mapper.toTime(3.5)!;
+    expect(end).toBe(54 * 3600);
+
+    for (let cursor = 1; cursor < base.length; cursor++) {
+      const visible = visibleCandles(base, '1h', cursor, '1h');
+      mapper.set(timeline, 3600);
+      expect(mapper.toLogical(start)).toBe(1);
+      expect(mapper.toLogical(end)).toBe(4);
+      expect(mapper.toLogical(fractional)).toBe(3.5);
+      expect(visible).toHaveLength(cursor + 1);
+      expect(visible.at(-1)?.time).toBe(base[cursor].time);
+    }
+  });
+
+  it('uses the same bar indices on aggregated timeframes without revealing future prices', () => {
+    const base: Candle[] = [0, 3600, 4 * 3600, 5 * 3600, 72 * 3600, 73 * 3600]
+      .map((time, i) => ({ time, open: i, high: i + 10, low: i - 10, close: i + 1, volume: 1 }));
+    const mapper = new TimeMapper();
+    mapper.set(getAggregated(base, '4h', '1h').map(({ time }) => ({ time })), 4 * 3600);
+    const end = mapper.toTime(2)!;
+    expect(end).toBe(72 * 3600);
+    for (let cursor = 0; cursor < base.length; cursor++) {
+      const visible = visibleCandles(base, '4h', cursor, '1h');
+      expect(mapper.toLogical(end)).toBe(2);
+      expect(visible.at(-1)?.close).toBe(base[cursor].close);
+      expect(visible.at(-1)?.high).toBe(base[cursor].high);
+    }
   });
 });
 

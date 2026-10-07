@@ -77,6 +77,7 @@ These are TradingView-style tools in the left toolbar: trend line (`Alt+T`), ray
   - Outside replay: **Start replay from this bar**. During replay: **Stop replay · show latest data**.
   - Always: reset the chart view (re-enables Auto), scroll to the latest bar, hide/show drawings, and **Remove all drawings** (undo with `Ctrl/⌘+Z`).
 - Drawings are stored per symbol in `(time, price)` coordinates and persisted to `localStorage`. They survive timeframe switches and can extend into the future area.
+- During replay, drawing anchors use the loaded trading calendar, so stepping across overnight or weekend gaps does not shift future endpoints onto earlier bars. Future candles and indicator values remain hidden.
 - Drawings are rendered by a native Lightweight Charts series primitive (`src/drawings/DrawingsPrimitive.ts`), so they pan and zoom with the chart and show their prices and times on the axes.
 
 ---

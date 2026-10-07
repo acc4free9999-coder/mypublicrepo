@@ -2,9 +2,9 @@ import type { UnixTime } from '@/types';
 
 /**
  * Converts between wall-clock time and fractional logical bar index for the
- * series currently on screen. Times outside the data range are extrapolated
- * one timeframe per bar, so drawings can extend into the (hidden) future and
- * survive timeframe switches.
+ * complete loaded series, including timestamps hidden during replay. Only
+ * times outside the loaded range are extrapolated one timeframe per bar.
+ * Using the complete calendar keeps future anchors stable across session gaps.
  */
 export class TimeMapper {
   private times: { time: number }[] = [];

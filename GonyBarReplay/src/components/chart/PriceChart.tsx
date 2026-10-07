@@ -85,7 +85,7 @@ export function PriceChart() {
   const indicators = useTradingStore((s) => s.indicators);
   const orderHistory = useTradingStore((s) => s.book.orderHistory);
   const closedTrades = useTradingStore((s) => s.book.closedTrades);
-  const { candles, emaData } = useChartData();
+  const { candles, drawingTimes, emaData } = useChartData();
   const pp = usePricePrecision();
 
   const [legend, setLegend] = useState<Legend | null>(null);
@@ -261,7 +261,7 @@ export function PriceChart() {
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !candleRef.current) return;
-    mapperRef.current.set(candles, TIMEFRAME_SECONDS[timeframe]);
+    mapperRef.current.set(drawingTimes, TIMEFRAME_SECONDS[timeframe]);
     candlesRef.current = candles;
     const ds = `${symbol}|${timeframe}|${dataKey}`;
     const full = syncSeries(candleRef.current, candles, mapCandle, ds, sync.current.candle);
@@ -286,7 +286,7 @@ export function PriceChart() {
         );
       }
     }
-  }, [candles, emaData, symbol, timeframe, indicators, dataKey, status]);
+  }, [candles, drawingTimes, emaData, symbol, timeframe, indicators, dataKey, status]);
 
   // ───────────── per-symbol price format ─────────────
   useEffect(() => {
