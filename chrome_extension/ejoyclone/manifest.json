@@ -23,7 +23,8 @@
     "https://translate.googleapis.com/*",
     "https://clients5.google.com/*",
     "https://en.wiktionary.org/*",
-    "https://api.dictionaryapi.dev/*"
+    "https://api.dictionaryapi.dev/*",
+    "https://*.supabase.co/*"
   ],
   "content_scripts": [
     {

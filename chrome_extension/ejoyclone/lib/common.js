@@ -24,21 +24,40 @@
 
   EJ.getSettings = async () => ({ ...EJ.DEFAULT_SETTINGS, ...(await chrome.storage.sync.get(null)) });
 
-  EJ.getVocab = async () => (await chrome.storage.local.get({ vocab: {} })).vocab;
-  EJ.setVocab = (vocab) => chrome.storage.local.set({ vocab });
+  const snapshots = {};
+  const baselines = new WeakMap();
+  EJ.rememberData = (kind, data) => {
+    const copy = structuredClone(data);
+    snapshots[kind] = copy;
+    baselines.set(data, copy);
+    return data;
+  };
+  EJ.getVocab = async () => EJ.rememberData('vocab', (await chrome.storage.local.get({ vocab: {} })).vocab);
+  EJ.writeData = async (kind, data) => {
+    if (typeof importScripts === 'function') return g.SharedSync.write(kind, data);
+    try {
+      await EJ.send({ type: 'writeData', kind, data, base: baselines.get(data) || snapshots[kind] || {} });
+    } catch (err) {
+      alert(`Could not save notebook changes: ${err.message}`);
+      throw err;
+    }
+  };
+  EJ.setVocab = (vocab) => EJ.writeData('vocab', vocab);
 
   // ---------- Collections (many-to-many: word.collections = [collectionId, ...]) ----------
   EJ.DEFAULT_COLLECTION_ID = 'default';
   EJ.newCollectionId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
   EJ.getCollections = async () => {
-    const { collections } = await chrome.storage.local.get({ collections: null });
-    if (collections && Object.keys(collections).length) return collections;
+    const { collections, syncSeeded } = await chrome.storage.local.get({ collections: null, syncSeeded: false });
+    if (collections && Object.keys(collections).length) return EJ.rememberData('collections', collections);
+    if (typeof importScripts !== 'function') return EJ.rememberData('collections', await EJ.send({ type: 'ensureCollections' }));
     const fresh = { [EJ.DEFAULT_COLLECTION_ID]: { id: EJ.DEFAULT_COLLECTION_ID, name: 'My Words', createdAt: Date.now() } };
-    await chrome.storage.local.set({ collections: fresh });
+    if (syncSeeded) await EJ.setCollections(fresh);
+    else await chrome.storage.local.set({ collections: fresh });
     return fresh;
   };
-  EJ.setCollections = (collections) => chrome.storage.local.set({ collections });
+  EJ.setCollections = (collections) => EJ.writeData('collections', collections);
   EJ.sortedCollections = (collections) => Object.values(collections).sort((a, b) => a.createdAt - b.createdAt);
 
   // Words saved before collections existed have no list; they belong to the default collection.

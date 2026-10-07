@@ -1,4 +1,5 @@
 importScripts('lib/common.js');
+importScripts('supabase-config.js', 'lib/notebook-sync.js', 'lib/supabase-api.js', 'lib/supabase-runtime.js');
 
 const cache = new Map();
 const CACHE_LIMIT = 200;
@@ -517,11 +518,24 @@ async function updateBadge() {
 }
 
 const handlers = {
+  writeData: (m) => exclusive(() => SharedSync.write(m.kind, m.data, m.base)),
+  ensureCollections: () => exclusive(() => EJ.getCollections()),
+  syncInfo: () => SharedSync.info(),
+  syncSignIn: (m) => SharedSync.signIn(m),
+  syncSignUp: (m) => SharedSync.signUp(m),
+  syncSignOut: () => SharedSync.signOut(),
+  syncGroups: () => SharedSync.groups(),
+  syncCreate: (m) => SharedSync.create(m),
+  syncJoin: (m) => SharedSync.join(m),
+  syncInvite: (m) => SharedSync.invite(m),
+  syncRevoke: (m) => SharedSync.revoke(m),
+  syncPause: () => SharedSync.pause(),
+  syncResume: () => SharedSync.resume(),
   lookupPart: (m) => lookupPart(m.text, m.part),
   save: (m) => saveWord(m),
   update: (m) => updateWord(m),
   remove: (m) => removeWord(m),
-  wordState: (m) => wordState(m.text),
+  wordState: (m) => exclusive(() => wordState(m.text)),
   toggleCollection: (m) => toggleCollection(m),
   createCollection: (m) => createCollection(m),
   backfillPronunciations: () => backfillPronunciations(),
@@ -532,11 +546,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target === 'offscreen') return false;
   const handler = handlers[msg?.type];
   if (!handler) return false;
+  if ((msg.type.startsWith('sync') || ['writeData', 'ensureCollections'].includes(msg.type)) &&
+      (!_sender.url?.startsWith(chrome.runtime.getURL('')) || _sender.id !== chrome.runtime.id)) {
+    sendResponse({ ok: false, error: 'This action is only available from extension pages.' });
+    return false;
+  }
   Promise.resolve(handler(msg))
     .then((value) => sendResponse({ ok: true, value }))
     .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
   return true;
 });
+
+SharedSync.init(exclusive);
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({ id: 'ej-lookup', title: 'Look up “%s”', contexts: ['selection'] });

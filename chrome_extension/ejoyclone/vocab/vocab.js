@@ -26,6 +26,10 @@ window.addEventListener('hashchange', showTab);
 let collections = {};
 let selected = localStorage.getItem('ej-selected') || 'all'; // 'all' | 'unsorted' | collection id
 let openPicker = null; // word key whose collection picker is expanded
+let sharedNotebook = false;
+chrome.storage.local.get('syncGroup').then(({ syncGroup }) => { sharedNotebook = Boolean(syncGroup); })
+  .catch((err) => alert(`Could not read sync settings: ${err.message}`));
+const sharedWarning = () => sharedNotebook ? '\n\nThis deletion syncs to all notebook members, including after resuming sync.' : '';
 
 const isRealCollection = (id) => Boolean(collections[id]);
 const memberOf = (w) => EJ.wordCollections(w).filter((id) => collections[id]);
@@ -100,7 +104,7 @@ $('#deleteColl').addEventListener('click', async () => {
   const msg =
     `Delete collection “${c.name}”?\n\nIts ${words.length} word(s) stay in your notebook` +
     (only ? ` (${only} will become Unsorted).` : '.');
-  if (!confirm(msg)) return;
+  if (!confirm(msg + sharedWarning())) return;
   for (const w of words) w.collections = EJ.wordCollections(w).filter((id) => id !== c.id);
   delete collections[c.id];
   const { lastCollection } = await chrome.storage.local.get('lastCollection');
@@ -232,7 +236,7 @@ $('#list').addEventListener('click', async (e) => {
     renderList();
   }
   if (act === 'unlink') await setMembership(key, selected, false);
-  if (act === 'delete' && confirm(`Delete “${vocab[key].word}” from your notebook and all collections?`)) {
+  if (act === 'delete' && confirm(`Delete “${vocab[key].word}” from your notebook and all collections?${sharedWarning()}`)) {
     delete vocab[key];
     await EJ.setVocab(vocab);
   }
@@ -326,8 +330,9 @@ $('#importCsv').addEventListener('change', async (e) => {
     };
     added++;
   }
+  const importedVocab = vocab;
   await EJ.setCollections(collections);
-  await EJ.setVocab(vocab);
+  await EJ.setVocab(importedVocab);
   EJ.send({ type: 'backfillPronunciations' }).catch(() => {});
   e.target.value = '';
   alert(`Imported ${added} word(s).`);
@@ -355,16 +360,17 @@ async function initSettings() {
 }
 
 $('#clearAll').addEventListener('click', async () => {
-  if (!confirm('Delete ALL saved words? Export a CSV first if you want a backup.')) return;
+  if (!confirm(`Delete ALL saved words? Export a CSV first if you want a backup.${sharedWarning()}`)) return;
   vocab = {};
   await EJ.setVocab(vocab);
 });
 
 // ---------- Init ----------
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.syncGroup) sharedNotebook = Boolean(changes.syncGroup.newValue);
   if (area !== 'local' || !(changes.vocab || changes.collections)) return;
-  if (changes.vocab) vocab = changes.vocab.newValue || {};
-  if (changes.collections) collections = changes.collections.newValue || {};
+  if (changes.vocab) vocab = EJ.rememberData('vocab', changes.vocab.newValue || {});
+  if (changes.collections) collections = EJ.rememberData('collections', changes.collections.newValue || {});
   renderNotebook();
   renderReviewOptions();
 });

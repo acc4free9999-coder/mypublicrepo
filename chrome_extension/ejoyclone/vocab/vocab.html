@@ -91,6 +91,56 @@
         <label><input type="checkbox" name="reminders" /> Show number of due words on the toolbar icon</label>
         <p class="muted" id="savedMsg"></p>
       </form>
+      <section class="settings shared-settings" id="sharedSettings">
+        <h2>Supabase shared notebook</h2>
+        <p>Sign in with your own account, then create a notebook or join one by invitation.
+          Words and collections sync automatically. Review schedules and game progress stay personal.</p>
+        <p id="syncStatus" role="status" aria-live="polite">Loading sync settings...</p>
+        <p id="syncNotice" role="alert"></p>
+        <form id="syncAuth">
+          <label>Email <input name="email" type="email" autocomplete="username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <div class="toolbar">
+            <button type="submit" class="primary">Sign in</button>
+            <button type="button" id="syncSignUp">Create account</button>
+          </div>
+        </form>
+        <div id="syncAccount" hidden>
+          <p>Signed in as <strong id="syncEmail"></strong></p>
+          <div class="toolbar">
+            <button id="syncSignOut" type="button">Sign out</button>
+            <button id="syncPause" type="button">Pause sync</button>
+            <button id="syncResume" type="button">Resume auto-sync</button>
+          </div>
+          <p id="syncNotebook"></p>
+          <form id="syncCreate">
+            <label>New notebook name <input name="name" type="text" maxlength="80" required /></label>
+            <button type="submit">Create shared notebook</button>
+          </form>
+          <form id="syncJoin">
+            <label>Notebook ID from the owner <input name="group" type="text" required /></label>
+            <button type="submit">Join invited notebook</button>
+          </form>
+          <form id="syncExisting">
+            <label>Your notebooks <select name="group" id="syncGroups" required></select></label>
+            <button type="submit">Connect notebook</button>
+          </form>
+          <div id="syncOwner" hidden>
+            <p>Owner: invite a member by their account email, then send them the notebook ID.
+              Invitations do not send an email automatically.</p>
+            <form id="syncInvite">
+              <label>Member email <input name="email" type="email" required /></label>
+              <div class="toolbar">
+                <button type="submit">Invite member</button>
+                <button id="syncRevoke" type="button">Revoke access</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <p class="muted">Export a CSV backup before connecting. Saved sentences and source URLs are
+          shared with all members. Deletions affect everyone. Offline edits retry automatically while
+          Chrome runs. Pause/sign-out keeps local data and queued edits; resuming shares those edits.</p>
+      </section>
       <div class="danger">
         <button id="clearAll">🗑 Delete all saved words</button>
       </div>
@@ -100,5 +150,6 @@
   <script src="../lib/common.js"></script>
   <script src="vocab.js"></script>
   <script src="game.js"></script>
+  <script src="sync.js"></script>
 </body>
 </html>
