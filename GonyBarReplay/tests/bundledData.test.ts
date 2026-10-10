@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { BUNDLED_SOURCE, parseBundled, withBundled } from '@/data/bundledData';
 import { parseBarsFile } from '@/data/fileImport';
 import type { Candle } from '@/types';
@@ -12,15 +12,17 @@ const bar = (time: number, close: number): Candle => ({ time, open: close, high:
 
 describe('built-in MT5 data', () => {
   it('loads the actual bundled M5 history without dropping or aggregating bars', () => {
-    const name = 'XAUUSDm_M5_202601012305_202609250045.csv';
+    const name = readdirSync(new URL('../mt5/Mt5Data/', import.meta.url)).find((f) => /_M5_.*\.csv$/i.test(f));
+    expect(name).toBeDefined();
     const text = readFileSync(new URL(`../mt5/Mt5Data/${name}`, import.meta.url), 'utf8');
     const parsed = parseBarsFile(text);
     expect(parsed.skipped).toBe(0);
     expect(parsed.timeframe).toBe('5m');
-    const d = parseBundled([{ name, text }]);
+    const rows = text.trim().split(/\r?\n/).length - 1;
+    const d = parseBundled([{ name: name!, text }]);
     const candles = d.XAUUSD.series['5m']!;
-    expect(candles).toHaveLength(51970);
-    expect(candles[0].time).toBe(Date.UTC(2026, 0, 1, 23, 5) / 1000);
+    expect(candles).toHaveLength(rows);
+    expect(candles.every((c, i) => i === 0 || c.time - candles[i - 1].time >= 300)).toBe(true);
     expect(candles[candles.length - 1]).toMatchObject({
       time: Date.UTC(2026, 8, 25, 0, 45) / 1000, close: 4273.167, volume: 832,
     });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Database, Download, Eye, EyeOff, Loader2, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/format';
+import { useDisplayStore } from '@/store/useDisplayStore';
 import { ImportPanel } from './ImportPanel';
 import { hasData, isReplayActive, useTradingStore } from '@/store/useTradingStore';
 import { TIMEFRAME_LABELS, TIMEFRAMES } from '@/types';
@@ -27,7 +28,10 @@ export function DataSourceMenu() {
   return (
     <>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          useDisplayStore.getState().setSettingsOpen(false);
+          setOpen(!open);
+        }}
         aria-expanded={open}
         title={hasBars ? `Market data saved ${fetchedAt ? fmtStamp(fetchedAt) : ''}` : `No data loaded for ${symbol} yet`}
         className={cn(

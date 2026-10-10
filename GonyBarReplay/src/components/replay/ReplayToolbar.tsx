@@ -1,12 +1,14 @@
 import { History, Pause, Play, RotateCcw, Scissors, Shuffle, SkipForward, Square } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn, fmtTime } from '@/lib/format';
+import { useTimeZone } from '@/store/useDisplayStore';
 import { hasData, isReplayActive, stopReplay, useTradingStore } from '@/store/useTradingStore';
 import { REPLAY_SPEEDS } from '@/types';
 
 export function ReplayToolbar() {
   const replay = useTradingStore((s) => s.replay);
   const base = useTradingStore((s) => s.base);
+  useTimeZone();
   const ready = useTradingStore(hasData);
   const a = useTradingStore.getState();
 

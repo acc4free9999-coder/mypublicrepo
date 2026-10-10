@@ -13,6 +13,7 @@ import {
   type ISeriesMarkersPluginApi,
   type MouseEventParams,
   type SeriesMarker,
+  type TickMarkType,
   type Time,
 } from 'lightweight-charts';
 import { Database, Download, Loader2, Maximize2, MoveHorizontal } from 'lucide-react';
@@ -25,6 +26,9 @@ import { TimeMapper } from '@/drawings/timeMapper';
 import { drawingsFor, useDrawingStore } from '@/store/useDrawingStore';
 import { useChartData } from '@/hooks/useChartData';
 import { cn, fmtPrice } from '@/lib/format';
+import { sessionAt, type SessionRange } from '@/lib/sessions';
+import { formatCrosshair, formatTick, offsetLabel, zoneOffsetMinutes, type TimeZoneId } from '@/lib/time';
+import { useDisplayStore } from '@/store/useDisplayStore';
 import { hasData, isReplayActive, marketPrice, ticketLots, usePricePrecision, useTradingStore } from '@/store/useTradingStore';
 import { attachTradeInteractions } from '@/tradelines/interactions';
 import { TradeLinesPrimitive } from '@/tradelines/TradeLinesPrimitive';
@@ -58,8 +62,19 @@ const readAutoScale = () => {
 const DEFAULT_VISIBLE_BARS = 160;
 
 const mapCandle = (c: Candle) => ({ time: asTime(c.time), open: c.open, high: c.high, low: c.low, close: c.close });
+
+/** Candle mapper that applies the colors of the session range containing each candle's open time. */
+function sessionCandleMapper(ranges: readonly SessionRange[], zone: TimeZoneId) {
+  return (c: Candle) => {
+    const r = sessionAt(c.time, ranges, zone);
+    if (!r) return mapCandle(c);
+    const color = c.close >= c.open ? r.upColor : r.downColor;
+    return { ...mapCandle(c), color, borderColor: color, wickColor: color };
+  };
+}
 const mapVolume = (c: Candle) => ({ time: asTime(c.time), value: c.volume, color: c.close >= c.open ? 'rgba(38,166,154,0.45)' : 'rgba(239,83,80,0.45)' });
 const mapLine = (p: LinePoint) => ({ time: asTime(p.time), value: p.value });
+const lastCandleTime = (c: Candle[]) => c[c.length - 1]?.time ?? Math.floor(Date.now() / 1000);
 
 export function PriceChart() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,6 +86,7 @@ export function PriceChart() {
   const mapperRef = useRef(new TimeMapper());
   const primitiveRef = useRef<DrawingsPrimitive | null>(null);
   const candlesRef = useRef<Candle[]>([]);
+  const candleDs = useRef('');
   const sync = useRef<Record<string, { current: SyncMarker | null }>>({
     candle: { current: null },
     volume: { current: null },
@@ -87,6 +103,11 @@ export function PriceChart() {
   const closedTrades = useTradingStore((s) => s.book.closedTrades);
   const { candles, drawingTimes, emaData } = useChartData();
   const pp = usePricePrecision();
+  const timeZone = useDisplayStore((s) => s.timeZone);
+  const sessionColors = useDisplayStore((s) => s.sessionColors);
+  const intraday = TIMEFRAME_SECONDS[timeframe] < 86400;
+  const colorSessions = sessionColors.enabled && intraday && sessionColors.ranges.some((r) => r.enabled);
+  const zoneLabel = offsetLabel(zoneOffsetMinutes(timeZone, lastCandleTime(candles)));
 
   const [legend, setLegend] = useState<Legend | null>(null);
   const [menu, setMenu] = useState<ContextTarget | null>(null);
@@ -264,7 +285,16 @@ export function PriceChart() {
     mapperRef.current.set(drawingTimes, TIMEFRAME_SECONDS[timeframe]);
     candlesRef.current = candles;
     const ds = `${symbol}|${timeframe}|${dataKey}`;
-    const full = syncSeries(candleRef.current, candles, mapCandle, ds, sync.current.candle);
+    const candleMap = colorSessions ? sessionCandleMapper(sessionColors.ranges, timeZone) : mapCandle;
+    const candleKey = colorSessions ? `${ds}|${timeZone}|${JSON.stringify(sessionColors.ranges)}` : ds;
+    // Recoloring the same bars must not reset the user's zoom and scroll position.
+    const prevCandle = sync.current.candle.current;
+    if (candleDs.current === ds && prevCandle && prevCandle.key !== candleKey && prevCandle.length === candles.length) {
+      candleRef.current.setData(candles.map(candleMap));
+      sync.current.candle.current = { ...prevCandle, key: candleKey };
+    }
+    candleDs.current = ds;
+    const full = syncSeries(candleRef.current, candles, candleMap, candleKey, sync.current.candle);
     syncSeries(volumeRef.current!, indicators.volume.enabled ? candles : [], mapVolume, `${ds}|${indicators.volume.enabled}`, sync.current.volume);
     syncSeries(emaRef.current!, emaData, mapLine, `${ds}|${indicators.ema.enabled}|${indicators.ema.period}`, sync.current.ema);
 
@@ -286,7 +316,16 @@ export function PriceChart() {
         );
       }
     }
-  }, [candles, drawingTimes, emaData, symbol, timeframe, indicators, dataKey, status]);
+  }, [candles, drawingTimes, emaData, symbol, timeframe, indicators, dataKey, status, colorSessions, sessionColors, timeZone]);
+
+  // ───────────── display time zone ─────────────
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      localization: { timeFormatter: (t: Time) => formatCrosshair(t as number, timeZone, intraday) },
+      timeScale: { tickMarkFormatter: (t: Time, type: TickMarkType) => formatTick(t as number, type, timeZone, intraday) },
+    });
+    primitiveRef.current?.requestUpdate();
+  }, [timeZone, intraday]);
 
   // ───────────── per-symbol price format ─────────────
   useEffect(() => {
@@ -353,7 +392,7 @@ export function PriceChart() {
       {/* Legend */}
       <div className="pointer-events-none absolute left-3 top-2 z-10 space-y-0.5 text-[11px] font-mono">
         <div className="flex gap-3">
-          <span className="font-semibold text-slate-100">{symbol} · {TIMEFRAME_LABELS[timeframe]}</span>
+          <span className="font-semibold text-slate-100">{symbol} · {TIMEFRAME_LABELS[timeframe]} <span className="font-normal text-slate-500">· {zoneLabel}</span></span>
           {shown && (
             <span className={chg >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
               O {fmtPrice(shown.o, pp)} H {fmtPrice(shown.h, pp)} L {fmtPrice(shown.l, pp)} C {fmtPrice(shown.c, pp)} V {shown.v.toFixed(1)}

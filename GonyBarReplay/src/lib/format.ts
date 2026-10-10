@@ -1,3 +1,5 @@
+import { formatDateTime, getDisplayZone } from './time';
+
 export const fmtPrice = (v: number | undefined, p = 2) =>
   v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-US', { minimumFractionDigits: p, maximumFractionDigits: p });
 
@@ -10,11 +12,8 @@ export const fmtUsd = (v: number, signed = false) => {
 
 export const fmtQty = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 6 });
 
-export const fmtTime = (t: number) => {
-  const d = new Date(t * 1000);
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
-};
+/** `YYYY-MM-DD HH:mm` in the chart display time zone (UTC unless changed). */
+export const fmtTime = (t: number, zone = getDisplayZone()) => formatDateTime(t, zone);
 
 export const pnlClass = (v: number) => (v > 0 ? 'text-emerald-400' : v < 0 ? 'text-rose-400' : 'text-slate-300');
 

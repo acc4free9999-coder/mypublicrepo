@@ -62,6 +62,22 @@ Once a trade is closed, a **balance chart** and a stats grid appear above the tr
 
 **Shortcuts:** `Space` play/pause · `→` step one candle · `Esc` cancel the bar selection or drawing tool · `Delete` remove the selected drawing · `Ctrl/⌘+Z` undo a drawing change.
 
+### Time zone & session colors
+
+Bars are stored in **UTC**. The bundled MT5 files are Exness `XAUUSDm`, whose server time is GMT+0, so they need no conversion. Only the *display* is converted:
+
+- Click the **clock button** in the top bar (it shows the current offset, e.g. `UTC+7`). Under **Chart time zone**, pick *Local* (your browser zone, e.g. Asia/Saigon UTC+7, which is the default), *UTC*, a DST-aware market zone (New York, London, Tokyo, …) or a fixed offset (UTC−12 … UTC+14).
+- The zone applies to the time axis, crosshair, legend, replay clock, trade markers and trade history. Data, drawings and replay positions don't change. Daily and longer bars keep their trading date.
+- Example: an H1 bar at 00:00 UTC shows as 07:00 at UTC+7.
+- For *imported* broker files with a server-time offset (e.g. UTC+2/+3), set **File time** in the import panel. That converts the file to UTC once; the chart time zone then controls how it is shown.
+
+**Color candles by time range** (same panel) colors intraday candles by the session their **open time** falls in:
+
+- **Presets** add Tokyo 09:00–18:00 (Asia/Tokyo), London 08:00–17:00 (Europe/London) and New York 08:00–17:00 (America/New_York). Each range is evaluated in its own zone, so DST is handled automatically. At GMT+7, Tokyo is 07:00–16:00 and London is 14:00–23:00 in summer or 15:00–00:00 in winter.
+- **Add range** creates a custom range. Each range has a name, start/end (`HH:MM`; it can wrap past midnight, e.g. 22:00–02:00), a zone (*Chart time zone*, UTC or any listed zone) and up/down colors.
+- Where ranges overlap, the higher one in the list wins. Use ↑/↓ to reorder; for example, add a "London/NY overlap" range on top. Candles outside every range keep the default colors.
+- Settings are saved in `localStorage` (`gony-bar-replay:display`).
+
 ### Drawing tools
 
 These are TradingView-style tools in the left toolbar: trend line (`Alt+T`), ray, extended line, horizontal line (`Alt+H`), horizontal ray (`Alt+J`), vertical line (`Alt+V`), rectangle (`Alt+Shift+R`), Fib retracement (`Alt+F`), price range / measure (`Alt+M`), text (`Alt+X`) and callout (`Alt+C`, a text bubble with a pointer: the first click sets the tip, the second sets the bubble).
@@ -191,6 +207,9 @@ src/
 │   └── interactions.ts            Drag to move SL/TP/orders/preview, × to close / cancel
 ├── store/useTradingStore.ts       Zustand store: replay state machine + trading actions
 ├── store/useDrawingStore.ts       Zustand (persisted): drawings per symbol, tool, undo stack
+├── store/useDisplayStore.ts       Zustand (persisted): chart time zone + session color ranges
+├── lib/time.ts                    Time-zone offsets (Intl, DST-aware) and axis/crosshair formatting
+├── lib/sessions.ts                Session ranges, presets and candle-to-session matching
 ├── hooks/
 │   ├── useReplayLoop.ts           Replay clock (interval = 1000 / speed)
 │   ├── useChartData.ts            Memoised visible candles + indicators
@@ -206,7 +225,7 @@ src/
 │   ├── trading/AccountSummary.tsx
 │   ├── trading/BottomPanel.tsx    Positions (inline SL/TP edit) · Orders · History (+ stats) · Journal
 │   ├── trading/BalanceChart.tsx   SVG balance curve shown in the History tab
-│   └── layout/{Dashboard,TopBar,DataSourceMenu,ImportPanel}.tsx
+│   └── layout/{Dashboard,TopBar,DataSourceMenu,ImportPanel,ChartSettingsPanel}.tsx
 tests/                             Vitest: matching engine, aggregation, indicators, drawings, trade lines, data import
 mt5/GonyExportBars.mq5             MetaTrader 5 script: export all 7 timeframes as importable CSV
 mt5/Mt5Data/                       Built-in MT5 Bars exports shipped with the app

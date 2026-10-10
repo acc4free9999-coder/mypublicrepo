@@ -3,6 +3,7 @@ import { Check, Pencil, X } from 'lucide-react';
 import { balanceCurve, tradeStats } from '@/engine/stats';
 import { BalanceChart } from './BalanceChart';
 import { cn, fmtPrice, fmtQty, fmtTime, fmtUsd, pnlClass } from '@/lib/format';
+import { useTimeZone } from '@/store/useDisplayStore';
 import { usePricePrecision, useTradingStore } from '@/store/useTradingStore';
 import type { ClosedTrade, Position } from '@/types';
 
@@ -11,6 +12,7 @@ type Tab = 'positions' | 'orders' | 'history' | 'journal';
 export function BottomPanel() {
   const [tab, setTab] = useState<Tab>('positions');
   const pp = usePricePrecision();
+  useTimeZone(); // re-render formatted times when the display zone changes
   const book = useTradingStore((s) => s.book);
   const events = useTradingStore((s) => s.events);
   const { cancelOrder, closePosition, closeAllPositions } = useTradingStore.getState();

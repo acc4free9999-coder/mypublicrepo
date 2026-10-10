@@ -1,6 +1,10 @@
+import { Clock } from 'lucide-react';
 import { SYMBOLS } from '@/data/generator';
 import { cn } from '@/lib/format';
+import { offsetLabel, zoneOffsetMinutes } from '@/lib/time';
+import { useDisplayStore } from '@/store/useDisplayStore';
 import { useTradingStore } from '@/store/useTradingStore';
+import { ChartSettingsPanel } from './ChartSettingsPanel';
 import { TIMEFRAME_LABELS, TIMEFRAMES } from '@/types';
 import { DataSourceMenu } from './DataSourceMenu';
 
@@ -53,7 +57,31 @@ export function TopBar() {
           Volume
         </label>
       </div>
+      <div className="mx-1 h-5 w-px bg-slate-700" />
+      <TimeSettingsButton />
       <DataSourceMenu />
+      <ChartSettingsPanel />
     </header>
+  );
+}
+
+function TimeSettingsButton() {
+  const open = useDisplayStore((s) => s.settingsOpen);
+  const zone = useDisplayStore((s) => s.timeZone);
+  const sessionsOn = useDisplayStore((s) => s.sessionColors.enabled);
+  const label = offsetLabel(zoneOffsetMinutes(zone, Math.floor(Date.now() / 1000)));
+  return (
+    <button
+      onClick={() => {
+        useTradingStore.getState().setDataPanelOpen(false);
+        useDisplayStore.getState().setSettingsOpen(!open);
+      }}
+      aria-expanded={open}
+      title="Chart time zone and session candle colors"
+      className={cn('flex items-center gap-1.5 rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800', open && 'bg-slate-800')}
+    >
+      <Clock size={14} /> {label}
+      {sessionsOn && <span className="rounded bg-blue-600/30 px-1 text-[10px] text-blue-200">Sessions</span>}
+    </button>
   );
 }
