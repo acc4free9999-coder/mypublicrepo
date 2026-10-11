@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CandlestickSeries,
   ColorType,
@@ -21,9 +22,9 @@ import { lastIndexAtOrBefore } from '@/data/aggregate';
 import { getSymbolSpec } from '@/data/generator';
 import { DrawingsPrimitive } from '@/drawings/DrawingsPrimitive';
 import { hitTestAll } from '@/drawings/geometry';
-import { attachDrawingInteractions } from '@/drawings/interactions';
+import { attachDrawingInteractions, type DrawingLayer } from '@/drawings/interactions';
 import { TimeMapper } from '@/drawings/timeMapper';
-import { drawingsFor, useDrawingStore } from '@/store/useDrawingStore';
+import { useDrawingStore } from '@/store/useDrawingStore';
 import { useChartData } from '@/hooks/useChartData';
 import { cn, fmtPrice } from '@/lib/format';
 import { sessionAt, type SessionRange } from '@/lib/sessions';
@@ -41,6 +42,10 @@ import { initializePriceScale } from './priceScaleInit';
 const UP = '#26a69a';
 const DOWN = '#ef5350';
 const EMA_COLOR = '#7c9cff';
+const RSI_COLOR = '#b388ff';
+const RSI_PANE = 1;
+/** RSI pane height relative to the price pane (stretch factor 1). */
+const RSI_STRETCH = 0.28;
 
 interface Legend {
   o: number;
@@ -48,6 +53,8 @@ interface Legend {
   l: number;
   c: number;
   v: number;
+  /** RSI at the hovered bar (undefined when RSI is off or not yet defined). */
+  rsi?: number;
 }
 
 const AUTO_SCALE_KEY = 'gony-bar-replay:auto-scale';
@@ -82,15 +89,18 @@ export function PriceChart() {
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const emaRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const rsiRef = useRef<ISeriesApi<'Line'> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const mapperRef = useRef(new TimeMapper());
   const primitiveRef = useRef<DrawingsPrimitive | null>(null);
+  const rsiPrimitiveRef = useRef<DrawingsPrimitive | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const candleDs = useRef('');
   const sync = useRef<Record<string, { current: SyncMarker | null }>>({
     candle: { current: null },
     volume: { current: null },
     ema: { current: null },
+    rsi: { current: null },
   });
 
   const symbol = useTradingStore((s) => s.symbol);
@@ -101,7 +111,7 @@ export function PriceChart() {
   const indicators = useTradingStore((s) => s.indicators);
   const orderHistory = useTradingStore((s) => s.book.orderHistory);
   const closedTrades = useTradingStore((s) => s.book.closedTrades);
-  const { candles, drawingTimes, emaData } = useChartData();
+  const { candles, drawingTimes, emaData, rsiData } = useChartData();
   const pp = usePricePrecision();
   const timeZone = useDisplayStore((s) => s.timeZone);
   const sessionColors = useDisplayStore((s) => s.sessionColors);
@@ -111,6 +121,7 @@ export function PriceChart() {
 
   const [legend, setLegend] = useState<Legend | null>(null);
   const [menu, setMenu] = useState<ContextTarget | null>(null);
+  const [rsiPaneEl, setRsiPaneEl] = useState<HTMLElement | null>(null);
   // "Auto (fits data to screen)": price scale follows the visible candles. Dragging the price axis turns it off.
   const [autoScale, setAutoScaleState] = useState(readAutoScale);
   const autoScalePreference = useRef(autoScale);
@@ -197,13 +208,41 @@ export function PriceChart() {
     const unsubTrading = useTradingStore.subscribe((s, prev) => {
       if (s.book !== prev.book || s.ticket !== prev.ticket || s.replay !== prev.replay || s.account !== prev.account) trade.requestUpdate();
     });
-    const detachDrawing = attachDrawingInteractions({ container: el, chart, series: candle, primitive, mapper: mapperRef.current, candles: () => candlesRef.current });
-    const unsubDrawings = useDrawingStore.subscribe(() => primitive.requestUpdate());
+    const priceLayer: DrawingLayer = {
+      pane: 'price',
+      series: candle,
+      primitive,
+      snapValues: (i) => {
+        const c = candlesRef.current[i];
+        return c ? [c.open, c.high, c.low, c.close] : [];
+      },
+    };
+    const drawingLayers = (): DrawingLayer[] => {
+      const rsiSeries = rsiRef.current;
+      const rsiPrimitive = rsiPrimitiveRef.current;
+      if (!rsiSeries || !rsiPrimitive) return [priceLayer];
+      const rsiLayer: DrawingLayer = {
+        pane: 'rsi',
+        series: rsiSeries,
+        primitive: rsiPrimitive,
+        snapValues: (i) => {
+          const v = (rsiSeries.dataByIndex(i) as { value?: number } | null)?.value;
+          return v == null ? [] : [v];
+        },
+      };
+      return [priceLayer, rsiLayer];
+    };
+    const detachDrawing = attachDrawingInteractions({ container: el, chart, mapper: mapperRef.current, layers: drawingLayers });
+    const unsubDrawings = useDrawingStore.subscribe(() => {
+      primitive.requestUpdate();
+      rsiPrimitiveRef.current?.requestUpdate();
+    });
 
     const onMove = (p: MouseEventParams<Time>) => {
       const d = p.seriesData.get(candle) as { open: number; high: number; low: number; close: number } | undefined;
       const v = p.seriesData.get(volume) as { value: number } | undefined;
-      setLegend(d ? { o: d.open, h: d.high, l: d.low, c: d.close, v: v?.value ?? 0 } : null);
+      const r = rsiRef.current ? (p.seriesData.get(rsiRef.current) as { value?: number } | undefined) : undefined;
+      setLegend(d ? { o: d.open, h: d.high, l: d.low, c: d.close, v: v?.value ?? 0, rsi: r?.value } : null);
     };
     const onClick = (p: MouseEventParams<Time>) => {
       const s = useTradingStore.getState();
@@ -226,10 +265,18 @@ export function PriceChart() {
       const bar = logical == null ? undefined : bars[Math.max(0, Math.min(bars.length - 1, Math.round(logical)))];
       const price = inPane ? (candle.coordinateToPrice(y) as number | null) : null;
       let drawingId: string | null = null;
-      const vp = primitive.viewport();
       const ds = useDrawingStore.getState();
-      if (inPane && vp && !ds.hidden) {
-        drawingId = hitTestAll(drawingsFor(ds, useTradingStore.getState().symbol), vp, { x, y }, ds.selectedId)?.id ?? null;
+      const inX = x >= 0 && x <= chart.timeScale().width();
+      if (inX && !ds.hidden) {
+        // Hit-test the pane under the pointer in that pane's own coordinates.
+        for (const layer of drawingLayers()) {
+          const top = layer.series.getPane().getHTMLElement()?.getBoundingClientRect().top ?? r.top;
+          const py = e.clientY - top;
+          const vp = layer.primitive.viewport();
+          if (!vp || py < 0 || py > vp.height) continue;
+          drawingId = hitTestAll(layer.primitive.drawings(), vp, { x, y: py }, ds.selectedId)?.id ?? null;
+          break;
+        }
         if (drawingId) ds.select(drawingId);
       }
       setMenu({ x, y, price: price != null && Number.isFinite(price) ? price : null, barTime: inPane && bar ? bar.time : null, drawingId });
@@ -274,9 +321,64 @@ export function PriceChart() {
       chart.unsubscribeClick(onClick);
       chart.remove();
       chartRef.current = null;
+      rsiRef.current = null;
+      rsiPrimitiveRef.current = null;
+      setRsiPaneEl(null);
       for (const r of Object.values(sync.current)) r.current = null;
     };
   }, []);
+
+  // ───────────── RSI pane (must run before the data sync below) ─────────────
+  const rsiEnabled = indicators.rsi.enabled;
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !rsiEnabled) return;
+    const series = chart.addSeries(
+      LineSeries,
+      {
+        color: RSI_COLOR,
+        lineWidth: 2,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+      },
+      RSI_PANE,
+    );
+    // Grid ticks (0/20/40…) would overlap the 70/30 level labels, so only the labels are shown on this axis.
+    series.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.08 }, textColor: 'transparent' });
+    for (const [price, title] of [[70, ''], [50, ''], [30, '']] as const) {
+      series.createPriceLine({ price, title, color: price === 50 ? '#334155' : '#64748b', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: price !== 50 });
+    }
+    // LWC gives the default pane a stretch factor of 2; normalise so the RSI pane gets a predictable share.
+    chart.panes()[0]?.setStretchFactor(1);
+    const pane = chart.panes()[RSI_PANE];
+    pane?.setStretchFactor(RSI_STRETCH);
+    const rsiPrimitive = new DrawingsPrimitive(mapperRef.current, {
+      symbol: () => useTradingStore.getState().symbol,
+      precision: () => 2,
+      pane: 'rsi',
+      statsPercent: false,
+    });
+    series.attachPrimitive(rsiPrimitive);
+    rsiRef.current = series;
+    rsiPrimitiveRef.current = rsiPrimitive;
+    sync.current.rsi.current = null;
+    // The pane's DOM row is created on the next chart render; the legend goes into its plot cell (left axis, plot, right axis).
+    const raf = requestAnimationFrame(() => setRsiPaneEl(pane?.getHTMLElement()?.querySelector<HTMLElement>(':scope > td:nth-child(2) > div') ?? null));
+    return () => {
+      cancelAnimationFrame(raf);
+      setRsiPaneEl(null);
+      rsiRef.current = null;
+      rsiPrimitiveRef.current = null;
+      sync.current.rsi.current = null;
+      // A half-drawn RSI drawing can't be finished once its pane is gone.
+      const ds = useDrawingStore.getState();
+      if (ds.draft?.pane === 'rsi') ds.setDraft(null);
+      // Removing the pane's only series also removes the pane. The chart may already be gone on unmount.
+      if (chartRef.current === chart) chart.removeSeries(series);
+    };
+  }, [rsiEnabled]);
 
   // ───────────── data sync (runs every replay tick) ─────────────
   useEffect(() => {
@@ -297,6 +399,7 @@ export function PriceChart() {
     const full = syncSeries(candleRef.current, candles, candleMap, candleKey, sync.current.candle);
     syncSeries(volumeRef.current!, indicators.volume.enabled ? candles : [], mapVolume, `${ds}|${indicators.volume.enabled}`, sync.current.volume);
     syncSeries(emaRef.current!, emaData, mapLine, `${ds}|${indicators.ema.enabled}|${indicators.ema.period}`, sync.current.ema);
+    if (rsiRef.current) syncSeries(rsiRef.current, rsiData, mapLine, `${ds}|${indicators.rsi.period}`, sync.current.rsi);
 
     // Leaving a replay jumps back to the latest bars, even when the chart only appended them.
     const stopped = isReplayActive(prevStatus.current) && status === 'off';
@@ -316,7 +419,7 @@ export function PriceChart() {
         );
       }
     }
-  }, [candles, drawingTimes, emaData, symbol, timeframe, indicators, dataKey, status, colorSessions, sessionColors, timeZone]);
+  }, [candles, drawingTimes, emaData, rsiData, symbol, timeframe, indicators, dataKey, status, colorSessions, sessionColors, timeZone]);
 
   // ───────────── display time zone ─────────────
   useEffect(() => {
@@ -325,6 +428,7 @@ export function PriceChart() {
       timeScale: { tickMarkFormatter: (t: Time, type: TickMarkType) => formatTick(t as number, type, timeZone, intraday) },
     });
     primitiveRef.current?.requestUpdate();
+    rsiPrimitiveRef.current?.requestUpdate();
   }, [timeZone, intraday]);
 
   // ───────────── per-symbol price format ─────────────
@@ -403,6 +507,13 @@ export function PriceChart() {
           {indicators.ema.enabled && <span style={{ color: EMA_COLOR }}>EMA {indicators.ema.period} {fmtPrice(emaData[emaData.length - 1]?.value, pp)}</span>}
         </div>
       </div>
+      {rsiPaneEl &&
+        createPortal(
+          <div className="pointer-events-none absolute left-3 top-1 z-10 font-mono text-[11px]" style={{ color: RSI_COLOR }}>
+            RSI {indicators.rsi.period} {(legend ? legend.rsi : rsiData[rsiData.length - 1]?.value)?.toFixed(2) ?? '—'}
+          </div>,
+          rsiPaneEl,
+        )}
 
       {/* Chart controls */}
       <div className="absolute bottom-8 left-3 z-10 flex gap-1">

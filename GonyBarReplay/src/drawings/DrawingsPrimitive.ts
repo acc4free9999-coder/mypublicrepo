@@ -30,13 +30,17 @@ import {
   type Viewport,
 } from './geometry';
 import type { TimeMapper } from './timeMapper';
-import { FIB_LEVELS, statsVisible, type AnchorPoint, type Drawing, type LineDash } from './types';
+import { FIB_LEVELS, paneOf, statsVisible, type AnchorPoint, type Drawing, type DrawingPane, type LineDash } from './types';
 
 type CanvasRenderingTarget2D = Parameters<IPrimitivePaneRenderer['draw']>[0];
 
 export interface DrawingContext {
   symbol(): string;
   precision(): number;
+  /** Pane whose drawings this primitive renders (default `price`). */
+  pane?: DrawingPane;
+  /** Show the % change in trend-line stats (meaningless for oscillators such as RSI). Default true. */
+  statsPercent?: boolean;
 }
 
 const withAlpha = (hex: string, alpha: number) =>
@@ -79,12 +83,12 @@ export function fmtDuration(seconds: number) {
 export const screenAngle = (a: Px, b: Px) => (Math.atan2(a.y - b.y, b.x - a.x) * 180) / Math.PI;
 
 /** Text lines of a trend-line stats label. */
-export function trendStats(p0: AnchorPoint, p1: AnchorPoint, bars: number, angleDeg: number, precision: number): string[] {
+export function trendStats(p0: AnchorPoint, p1: AnchorPoint, bars: number, angleDeg: number, precision: number, percent = true): string[] {
   const diff = p1.price - p0.price;
   const pct = p0.price !== 0 ? (diff / p0.price) * 100 : 0;
   const sign = (v: number) => (v >= 0 ? '+' : '');
   return [
-    `${sign(diff)}${fmtPrice(diff, precision)} (${sign(pct)}${pct.toFixed(2)}%)`,
+    percent ? `${sign(diff)}${fmtPrice(diff, precision)} (${sign(pct)}${pct.toFixed(2)}%)` : `${sign(diff)}${fmtPrice(diff, precision)}`,
     `${bars} bars, ${fmtDuration(p1.time - p0.time)}`,
     `∠ ${angleDeg.toFixed(1)}°`,
   ];
@@ -170,7 +174,7 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
     const ts = chart.timeScale();
     return {
       width: width ?? ts.width(),
-      height: height ?? chart.panes()[0]?.getHeight() ?? 0,
+      height: height ?? series.getPane().getHeight(),
       toX: (t) => {
         const l = this.mapper.toLogical(t);
         return l == null ? null : ts.logicalToCoordinate(l as Logical);
@@ -179,11 +183,21 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
     };
   }
 
+  get pane(): DrawingPane {
+    return this.ctx.pane ?? 'price';
+  }
+
+  /** Saved drawings of the active symbol that belong to this pane. */
+  drawings(): Drawing[] {
+    const pane = this.pane;
+    return drawingsFor(useDrawingStore.getState(), this.ctx.symbol()).filter((d) => paneOf(d) === pane);
+  }
+
   private visibleDrawings(): Drawing[] {
     const s = useDrawingStore.getState();
     if (s.hidden) return [];
-    const list = drawingsFor(s, this.ctx.symbol());
-    return s.draft ? [...list, s.draft] : list;
+    const list = this.drawings();
+    return s.draft && paneOf(s.draft) === this.pane ? [...list, s.draft] : list;
   }
 
   // ───────────── hover / cursor ─────────────
@@ -193,7 +207,7 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
     if (s.tool !== 'cursor') return { externalId: 'drawing-tool', zOrder: 'top', cursorStyle: 'crosshair' };
     const vp = this.viewport();
     if (!vp || s.hidden) return null;
-    const list = drawingsFor(s, this.ctx.symbol());
+    const list = this.drawings();
     const hit = hitTestAll(list, vp, { x, y }, s.selectedId);
     if (!hit) return null;
     const locked = list.find((d) => d.id === hit.id)?.locked;
@@ -295,7 +309,7 @@ export class DrawingsPrimitive implements ISeriesPrimitive<Time> {
         if (statsVisible(d)) {
           const l0 = this.mapper.toLogical(d.points[0].time) ?? 0;
           const l1 = this.mapper.toLogical(d.points[1].time) ?? 0;
-          statsBox(ctx, trendStats(d.points[0], d.points[1], Math.round(l1 - l0), screenAngle(a, b), pp), a, b, color, vp);
+          statsBox(ctx, trendStats(d.points[0], d.points[1], Math.round(l1 - l0), screenAngle(a, b), pp, this.ctx.statsPercent ?? true), a, b, color, vp);
         }
         return;
       }

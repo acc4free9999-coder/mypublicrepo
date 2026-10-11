@@ -28,7 +28,7 @@ describe('price scale initialization', () => {
 
 describe('indicator persistence', () => {
   it('restores saved values and falls back to defaults for bad input', () => {
-    expect(loadIndicators(JSON.stringify({ ema: { enabled: false, period: 21 }, volume: { enabled: false } }))).toEqual({ ema: { enabled: false, period: 21 }, volume: { enabled: false } });
+    expect(loadIndicators(JSON.stringify({ ema: { enabled: false, period: 21 }, volume: { enabled: false } }))).toEqual({ ema: { enabled: false, period: 21 }, volume: { enabled: false }, rsi: { enabled: true, period: 14 } });
     expect(loadIndicators(JSON.stringify({ ema: { period: 9000 } })).ema).toEqual({ enabled: true, period: 500 });
     expect(loadIndicators('not json')).toEqual(DEFAULT_INDICATORS);
     expect(loadIndicators(null)).toEqual(DEFAULT_INDICATORS);
@@ -89,5 +89,13 @@ describe('stopReplay', () => {
     expect(s.replay).toMatchObject({ status: 'off', cutoffIndex: null, cursor: 49 });
     expect(s.book.positions).toHaveLength(0);
     expect(stopReplay(() => true)).toBe(false);
+  });
+});
+
+describe('RSI settings', () => {
+  it('restores the RSI toggle and clamps its period', () => {
+    expect(loadIndicators(JSON.stringify({ rsi: { enabled: false, period: 7 } })).rsi).toEqual({ enabled: false, period: 7 });
+    expect(loadIndicators(JSON.stringify({ rsi: { period: 0 } })).rsi).toEqual({ enabled: true, period: 14 });
+    expect(loadIndicators(JSON.stringify({ rsi: { period: 9000 } })).rsi).toEqual({ enabled: true, period: 500 });
   });
 });

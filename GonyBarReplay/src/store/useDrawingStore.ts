@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AnchorPoint, Drawing, DrawingStyle, DrawingTool, DrawingType } from '@/drawings/types';
+import type { AnchorPoint, Drawing, DrawingPane, DrawingStyle, DrawingTool, DrawingType } from '@/drawings/types';
 
 const MAX_UNDO = 100;
 
@@ -26,7 +26,7 @@ export interface DrawingStore {
   toggleHidden: () => void;
   setDraft: (d: Drawing | null) => void;
   setDefaultStyle: (patch: Partial<DrawingStyle>) => void;
-  create: (symbol: string, type: DrawingType, points: AnchorPoint[]) => Drawing;
+  create: (symbol: string, type: DrawingType, points: AnchorPoint[], pane?: DrawingPane) => Drawing;
   add: (d: Drawing) => void;
   /** Snapshot current state onto the undo stack (call once before a drag). */
   checkpoint: () => void;
@@ -71,7 +71,7 @@ export const useDrawingStore = create<DrawingStore>()(
       setDraft: (draft) => set({ draft }),
       setDefaultStyle: (patch) => set((s) => ({ defaultStyle: { ...s.defaultStyle, ...patch } })),
 
-      create: (symbol, type, points) => {
+      create: (symbol, type, points, pane = 'price') => {
         const { defaultStyle } = get();
         return {
           id: newId(),
@@ -81,6 +81,7 @@ export const useDrawingStore = create<DrawingStore>()(
           style: { ...defaultStyle, color: type === 'text' ? '#e2e8f0' : defaultStyle.color, dash: type === 'fib' ? 'dashed' : defaultStyle.dash },
           text: type === 'text' ? 'Text' : type === 'callout' ? 'Callout' : undefined,
           fontSize: type === 'text' ? 16 : type === 'callout' ? 14 : undefined,
+          ...(pane !== 'price' && { pane }),
           createdAt: Date.now(),
         };
       },
@@ -111,7 +112,7 @@ export const useDrawingStore = create<DrawingStore>()(
       duplicate: (id) => {
         const d = get().find(id);
         if (!d) return;
-        const copy = get().create(d.symbol, d.type, d.points.map((p) => ({ ...p })));
+        const copy = get().create(d.symbol, d.type, d.points.map((p) => ({ ...p })), d.pane);
         get().add({ ...copy, style: { ...d.style }, text: d.text, fontSize: d.fontSize, showStats: d.showStats });
       },
 

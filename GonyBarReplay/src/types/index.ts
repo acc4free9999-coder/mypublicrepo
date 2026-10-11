@@ -163,6 +163,8 @@ export interface ReplayState {
 export interface IndicatorSettings {
   ema: { enabled: boolean; period: number };
   volume: { enabled: boolean };
+  /** Shown in a separate pane below the price chart, with 70 / 30 levels. */
+  rsi: { enabled: boolean; period: number };
 }
 
 export interface LinePoint {

@@ -19,7 +19,7 @@ npm run build
 
 **Data:** real OHLC bars only. They come from built-in MT5 exports (XAUUSD, Jan–Sep 2026), from Twelve Data on demand, or from an imported MT5 / MT4 / TradingView / Dukascopy / Binance / CSV export. Data is saved in the browser. There is no simulated data and no live stream. See [Built-in MT5 data](#built-in-mt5-data-mt5mt5data), [Real market data](#real-market-data-twelve-data) and [Importing files](#importing-files-mt5-mt4-tradingview-csv).
 
-**Indicators:** EMA (configurable period) and Volume. The on/off state and the EMA period are saved in `localStorage` (`gony-bar-replay:indicators`) and restored on reload.
+**Indicators:** EMA (configurable period), Volume and RSI (default 14, Wilder's smoothing like TradingView's `ta.rsi`). RSI has its own pane below the price chart, with dashed 70 / 30 overbought and oversold levels and a 50 midline. The pane's legend shows the value at the hovered bar, or the latest bar. Drag the pane separator to resize it. The on/off states and periods are saved in `localStorage` (`gony-bar-replay:indicators`) and restored on reload.
 
 ### Paper account & position sizing
 
@@ -83,7 +83,7 @@ Bars are stored in **UTC**. The bundled MT5 files are Exness `XAUUSDm`, whose se
 These are TradingView-style tools in the left toolbar: trend line (`Alt+T`), ray, extended line, horizontal line (`Alt+H`), horizontal ray (`Alt+J`), vertical line (`Alt+V`), rectangle (`Alt+Shift+R`), Fib retracement (`Alt+F`), price range / measure (`Alt+M`), text (`Alt+X`) and callout (`Alt+C`, a text bubble with a pointer: the first click sets the tip, the second sets the bubble).
 
 - To place a drawing, click twice or click and drag. In cursor mode, select a drawing to drag its handles or move it. Double-click a text or callout drawing to edit it. Right-click cancels the active tool (otherwise it opens the chart menu).
-- **Magnet** snaps points to the bar's OHLC. **Stay in drawing mode** keeps the tool active after each drawing. You can also hide all drawings, undo, or remove all.
+- **Magnet** snaps points to the bar's OHLC (or to the RSI value in the RSI pane). **Stay in drawing mode** keeps the tool active after each drawing. You can also hide all drawings, undo, or remove all.
 - The floating properties bar lets you change color, width, line style, font size and text, and lock, clone or delete the drawing.
 - **Trend line stats:** a trend line shows a label at its end point with the price change (and %), the number of bars and duration, and the slope angle (∠, measured on screen, so it changes with zoom like TradingView's). It's on by default for trend lines and optional for rays and extended lines. Toggle it with the ruler button in the properties bar or from the right-click menu.
 - **Right-click menu** on the chart:
@@ -92,6 +92,11 @@ These are TradingView-style tools in the left toolbar: trend line (`Alt+T`), ray
   - During replay: **Buy / Sell limit or stop @ price**. This fills the order ticket and shows the preview lines. Confirm with ✓ or the panel button.
   - Outside replay: **Start replay from this bar**. During replay: **Stop replay · show latest data**.
   - Always: reset the chart view (re-enables Auto), scroll to the latest bar, hide/show drawings, and **Remove all drawings** (undo with `Ctrl/⌘+Z`).
+- **Drawing on the RSI pane:** every tool also works in the RSI pane. Pick a tool and click inside the RSI pane, so you can draw RSI trend lines, divergence lines, or horizontal levels such as 60/40. These drawings use RSI values (0–100), not prices:
+  - The magnet snaps to the RSI value of the bar.
+  - Trend-line stats show the RSI change in points, without a %.
+  - A drawing stays in the pane where it was started.
+  - RSI drawings are hidden while RSI is turned off and come back when it is turned on.
 - Drawings are stored per symbol in `(time, price)` coordinates and persisted to `localStorage`. They survive timeframe switches and can extend into the future area.
 - During replay, drawing anchors use the loaded trading calendar, so stepping across overnight or weekend gaps does not shift future endpoints onto earlier bars. Future candles and indicator values remain hidden.
 - Drawings are rendered by a native Lightweight Charts series primitive (`src/drawings/DrawingsPrimitive.ts`), so they pan and zoom with the chart and show their prices and times on the axes.
@@ -190,7 +195,7 @@ src/
 │   ├── fileImport.ts              MT5 / MT4 / TradingView / Dukascopy / Binance / CSV parser (format + timeframe detection)
 │   ├── bundledData.ts             Loads the built-in MT5 files (public/data) and layers saved data over them
 │   └── realDataCache.ts           IndexedDB persistence of fetched / imported series
-├── indicators/index.ts            EMA
+├── indicators/index.ts            EMA, RSI (Wilder)
 ├── engine/
 │   ├── matchingEngine.ts          Pure order book + intra-bar matching (limit / stop / SL / TP)
 │   ├── risk.ts                    Ticket validation, margin checks, account computation, risk-% lot sizing
@@ -215,7 +220,7 @@ src/
 │   ├── useChartData.ts            Memoised visible candles + indicators
 │   └── useKeyboardShortcuts.ts
 ├── components/
-│   ├── chart/PriceChart.tsx       Lightweight Charts: candles, volume, EMA, trade lines, markers
+│   ├── chart/PriceChart.tsx       Lightweight Charts: candles, volume, EMA, RSI pane, trade lines, markers
 │   ├── chart/seriesSync.ts        update()-vs-setData() diffing
 │   ├── chart/DrawingToolbar.tsx   Left drawing toolbar
 │   ├── chart/DrawingProperties.tsx Floating style editor for the selected drawing

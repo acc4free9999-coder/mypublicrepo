@@ -83,19 +83,23 @@ const writeLS = (k: string, v: string | null) => {
   }
 };
 
-export const DEFAULT_INDICATORS: IndicatorSettings = { ema: { enabled: true, period: 50 }, volume: { enabled: true } };
+export const DEFAULT_INDICATORS: IndicatorSettings = { ema: { enabled: true, period: 50 }, volume: { enabled: true }, rsi: { enabled: true, period: 14 } };
+
+const loadPeriod = (v: unknown, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 1 ? Math.min(500, Math.round(n)) : fallback;
+};
+const loadFlag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
 
 /** Saved indicator settings merged over the defaults (tolerates missing / malformed fields). */
 export function loadIndicators(raw = readLS(INDICATORS_KEY)): IndicatorSettings {
   try {
     const v = raw ? (JSON.parse(raw) as Partial<IndicatorSettings>) : {};
-    const period = Number(v.ema?.period);
+    const d = DEFAULT_INDICATORS;
     return {
-      ema: {
-        enabled: typeof v.ema?.enabled === 'boolean' ? v.ema.enabled : DEFAULT_INDICATORS.ema.enabled,
-        period: Number.isFinite(period) && period >= 1 ? Math.min(500, Math.round(period)) : DEFAULT_INDICATORS.ema.period,
-      },
-      volume: { enabled: typeof v.volume?.enabled === 'boolean' ? v.volume.enabled : DEFAULT_INDICATORS.volume.enabled },
+      ema: { enabled: loadFlag(v.ema?.enabled, d.ema.enabled), period: loadPeriod(v.ema?.period, d.ema.period) },
+      volume: { enabled: loadFlag(v.volume?.enabled, d.volume.enabled) },
+      rsi: { enabled: loadFlag(v.rsi?.enabled, d.rsi.enabled), period: loadPeriod(v.rsi?.period, d.rsi.period) },
     };
   } catch {
     return DEFAULT_INDICATORS;

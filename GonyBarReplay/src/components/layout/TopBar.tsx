@@ -56,6 +56,19 @@ export function TopBar() {
           <input type="checkbox" checked={indicators.volume.enabled} onChange={(e) => setIndicators({ volume: { enabled: e.target.checked } })} className="accent-blue-500" />
           Volume
         </label>
+        <label className={cn('flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs', indicators.rsi.enabled ? 'border-slate-600 text-slate-200' : 'border-slate-800 text-slate-500')}>
+          <input type="checkbox" checked={indicators.rsi.enabled} onChange={(e) => setIndicators({ rsi: { enabled: e.target.checked } })} className="accent-blue-500" />
+          RSI
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={indicators.rsi.period}
+            onChange={(e) => setIndicators({ rsi: { period: Number(e.target.value) } })}
+            className="w-9 rounded bg-slate-900 px-1 text-right text-xs outline-none focus:ring-1 focus:ring-blue-500"
+            aria-label="RSI period"
+          />
+        </label>
       </div>
       <div className="mx-1 h-5 w-px bg-slate-700" />
       <TimeSettingsButton />

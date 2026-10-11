@@ -118,3 +118,31 @@ describe('callout', () => {
     expect(hitBody(c, vp, { x: 600, y: 600 })).toBe(false);
   });
 });
+
+describe('RSI pane drawings', () => {
+  it('tags drawings with their pane; old drawings default to the price pane', async () => {
+    const { useDrawingStore } = await import('@/store/useDrawingStore');
+    const { paneOf } = await import('@/drawings/types');
+    const s = useDrawingStore.getState();
+    const price = s.create('XAUUSD', 'trendline', [{ time: 0, price: 1 }, { time: 60, price: 2 }]);
+    const rsi = s.create('XAUUSD', 'hline', [{ time: 0, price: 70 }], 'rsi');
+    expect(price.pane).toBeUndefined();
+    expect(paneOf(price)).toBe('price');
+    expect(paneOf(rsi)).toBe('rsi');
+
+    s.add(rsi);
+    useDrawingStore.getState().duplicate(rsi.id);
+    const list = useDrawingStore.getState().bySymbol.XAUUSD;
+    expect(list).toHaveLength(2);
+    expect(list.every((d) => d.pane === 'rsi')).toBe(true);
+    useDrawingStore.getState().removeAll('XAUUSD');
+  });
+
+  it('trend stats omit the % change on the RSI pane', async () => {
+    const { trendStats } = await import('@/drawings/DrawingsPrimitive');
+    const a = { time: 0, price: 40 };
+    const b = { time: 3600, price: 60 };
+    expect(trendStats(a, b, 1, 10, 2)[0]).toBe('+20.00 (+50.00%)');
+    expect(trendStats(a, b, 1, 10, 2, false)[0]).toBe('+20.00');
+  });
+});

@@ -17,6 +17,9 @@ export type DrawingTool = 'cursor' | DrawingType;
 
 export type LineDash = 'solid' | 'dashed' | 'dotted';
 
+/** Chart pane a drawing lives in. Prices of `rsi` drawings are RSI values (0–100). */
+export type DrawingPane = 'price' | 'rsi';
+
 /** A point in data space. `time` may fall between bars or beyond the last bar. */
 export interface AnchorPoint {
   time: UnixTime;
@@ -40,8 +43,12 @@ export interface Drawing {
   locked?: boolean;
   /** Trend-line stats label (price change, bars, angle) at the end point. Undefined = default for the type. */
   showStats?: boolean;
+  /** Undefined = the price pane (drawings saved before panes existed). */
+  pane?: DrawingPane;
   createdAt: number;
 }
+
+export const paneOf = (d: Pick<Drawing, 'pane'>): DrawingPane => d.pane ?? 'price';
 
 export const POINT_COUNT: Record<DrawingType, 1 | 2> = {
   trendline: 2,
