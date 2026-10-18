@@ -1,0 +1,78 @@
+.source-exercise .source-question-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: none;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: manipulation;
+  border: 1px solid var(--line, #d8dfd5);
+  background: white;
+}
+
+.source-exercise .source-chart-marker circle {
+  fill: #fff;
+  stroke: #98255d;
+  stroke-width: 3px;
+}
+
+.source-exercise .source-chart-marker path {
+  fill: none;
+  stroke: #98255d;
+  stroke-width: 2px;
+}
+
+.source-exercise .source-chart-target {
+  fill: #147d6933;
+  stroke: #075b4b;
+  stroke-width: 3px;
+  stroke-dasharray: 7 4;
+}
+
+.source-exercise .source-x,
+.source-exercise .source-y {
+  width: 8rem;
+  max-width: 100%;
+  min-height: 44px;
+  margin: .4rem;
+  padding: .45rem;
+  border: 1px solid #738580;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.source-exercise button {
+  min-height: 44px;
+  margin: .3rem .3rem .3rem 0;
+  white-space: normal;
+}
+
+.source-exercise .source-chart-feedback {
+  min-height: 1.7em;
+  margin: .75rem 0;
+  overflow-wrap: anywhere;
+}
+
+.source-exercise .source-chart-feedback[data-result="error"],
+.source-exercise .source-chart-feedback[data-result="revise"] {
+  color: #923515;
+}
+
+.source-exercise .source-chart-feedback[data-result="correct"] {
+  color: #075b4b;
+}
+
+@media (max-width: 480px) {
+  .source-exercise .source-x,
+  .source-exercise .source-y { width: 6rem; }
+}
+
+@media print {
+  .source-exercise .source-x,
+  .source-exercise .source-y,
+  .source-exercise button { display: none; }
+  .source-exercise .source-question-chart { break-inside: avoid; }
+  .source-exercise .source-chart-target { fill: none; }
+  .source-exercise .source-chart-feedback { color: #000; }
+  .source-exercise .print-response { display: block; overflow-wrap: anywhere; }
+}

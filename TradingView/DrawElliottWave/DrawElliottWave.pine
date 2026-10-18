@@ -1,0 +1,651 @@
+//@version=6
+indicator("Elliott Wave Structure Detector", shorttitle="EW", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// Configurable source timeframes. Lower-than-chart pivots are processed from intrabar arrays.
+int pivotLeft = input.int(5, "Pivot left bars", minval=1, group="Swing detection")
+int pivotRight = input.int(5, "Pivot right bars", minval=1, group="Swing detection")
+bool enable5m = input.bool(true, "5m", inline="source1", group="Wave timeframes")
+bool enable15m = input.bool(true, "15m", inline="source1", group="Wave timeframes")
+bool enable1h = input.bool(true, "1h", inline="source2", group="Wave timeframes")
+bool enable4h = input.bool(true, "4h", inline="source2", group="Wave timeframes")
+bool enable1d = input.bool(true, "1D", inline="source3", group="Wave timeframes")
+bool enable1w = input.bool(true, "1W", inline="source3", group="Wave timeframes")
+bool includeChartTimeframe = input.bool(false, "Include chart timeframe", tooltip="Adds an independent chart-timeframe count unless it duplicates an enabled source timeframe.", group="Wave timeframes")
+string swingFilter = input.string("ATR", "Minimum swing filter", options=["ATR", "Percent", "Absolute"], group="Swing detection")
+float minSwingInput = input.float(1.0, "Minimum swing size", minval=0.0, step=0.1, tooltip="ATR multiplier, percentage, or price units according to the filter above.", group="Swing detection")
+int atrLength = input.int(14, "ATR length", minval=1, group="Swing detection")
+string labelMode = input.string("Confirmed only", "Wave labels", options=["Confirmed only", "Show provisional swing"], tooltip="Confirmed pivots require the configured right bars. Provisional swings are live estimates and can move or disappear; available only for the chart-timeframe count.", group="Swing detection")
+bool showBullish = input.bool(true, "Show bullish structures", group="Visibility")
+bool showBearish = input.bool(true, "Show bearish structures", group="Visibility")
+bool showImpulse = input.bool(true, "Show impulse patterns", group="Visibility")
+bool showDiagonal = input.bool(true, "Show diagonal candidates", group="Visibility")
+bool showCorrection = input.bool(true, "Show corrective patterns", group="Visibility")
+bool showTriangle = input.bool(true, "Show triangle candidates", group="Visibility")
+bool showFib = input.bool(true, "Show Fibonacci levels and ratios", group="Visibility")
+bool showTargets = input.bool(false, "Show projected Wave 3 / 5 / C targets", group="Visibility")
+bool showInvalidation = input.bool(true, "Show impulse invalidation level", group="Visibility")
+int historicalPatterns = input.int(8, "Historical drawing limit", minval=1, maxval=20, group="Visibility")
+int lineWidth = input.int(2, "Line width", minval=1, maxval=4, group="Style")
+string labelSizeInput = input.string("Small", "Label size", options=["Tiny", "Small", "Normal", "Large"], group="Style")
+color bullColor = input.color(color.rgb(0, 150, 136), "Bullish color", group="Style")
+color bearColor = input.color(color.rgb(220, 70, 70), "Bearish color", group="Style")
+color fibColor = input.color(color.rgb(255, 170, 0), "Fibonacci color", group="Style")
+
+bool useHtf = input.bool(false, "Use higher-timeframe context", group="Filters and scoring")
+string htf = input.timeframe("D", "Higher timeframe", group="Filters and scoring")
+int htfEmaLength = input.int(50, "Higher-timeframe EMA length", minval=1, group="Filters and scoring")
+bool useMomentum = input.bool(false, "Use RSI momentum filter", group="Filters and scoring")
+int rsiLength = input.int(14, "RSI length", minval=1, group="Filters and scoring")
+int scoreThreshold = input.int(55, "Minimum displayed pattern score", minval=0, maxval=100, group="Filters and scoring")
+bool filterAlerts = input.bool(false, "Filter alerts by trend and price action", tooltip="When enabled, an event also needs matching higher-timeframe trend (if enabled) and a directional close; RSI is additionally required when enabled.", group="Alerts")
+
+// Drawing registries allow all enabled timeframes to share a bounded object budget.
+var array<line> ownedLines = array.new_line()
+var array<label> ownedLabels = array.new_label()
+var label provisionalLabel = na
+float atr = ta.atr(atrLength)
+float rsi = ta.rsi(close, rsiLength)
+float chartPivotHigh = ta.pivothigh(high, pivotLeft, pivotRight)
+float chartPivotLow = ta.pivotlow(low, pivotLeft, pivotRight)
+float htfClose = request.security(syminfo.tickerid, htf, close[1], lookahead=barmerge.lookahead_on)
+float htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, htfEmaLength)[1], lookahead=barmerge.lookahead_on)
+bool htfBull = htfClose > htfEma
+bool htfBear = htfClose < htfEma
+
+type WaveState
+    array<float> pivotPrices
+    array<int> pivotTimes
+    array<int> pivotTypes
+    line lastSwingLine
+    int lastInputTime
+    int lastImpulseDrawTime
+    int lastCorrectionDrawTime
+    int lastDiagonalDrawTime
+    int lastTriangleDrawTime
+    float activeOrigin
+    bool activeImpulseBull
+    bool activeImpulse
+    string latestPhase
+    string latestPhaseType
+    color latestPhaseColor
+    int latestPhaseTime
+
+f_newState() =>
+    WaveState.new(array.new_float(), array.new_int(), array.new_int(), na, na, na, na, na, na, na, false, false, "Waiting for confirmed pattern", "N/A", color.gray, na)
+
+f_labelSize(string value) =>
+    value == "Tiny" ? size.tiny : value == "Normal" ? size.normal : value == "Large" ? size.large : size.small
+
+f_minSwing(float referencePrice, float sourceAtr) =>
+    swingFilter == "ATR" ? sourceAtr * minSwingInput : swingFilter == "Percent" ? math.abs(referencePrice) * minSwingInput / 100.0 : minSwingInput
+
+f_impulseValid(array<float> prices, array<int> types, int first) =>
+    bool valid = false
+    bool bullish = array.get(types, first) == -1
+    bool sequence = true
+    for offset = 0 to 5
+        int expected = bullish ? (offset % 2 == 0 ? -1 : 1) : (offset % 2 == 0 ? 1 : -1)
+        if array.get(types, first + offset) != expected
+            sequence := false
+    if sequence
+        float p0 = array.get(prices, first)
+        float p1 = array.get(prices, first + 1)
+        float p2 = array.get(prices, first + 2)
+        float p3 = array.get(prices, first + 3)
+        float p4 = array.get(prices, first + 4)
+        float p5 = array.get(prices, first + 5)
+        float w1 = math.abs(p1 - p0)
+        float w2 = math.abs(p2 - p1)
+        float w3 = math.abs(p3 - p2)
+        float w4 = math.abs(p4 - p3)
+        float w5 = math.abs(p5 - p4)
+        bool wave2Valid = bullish ? p2 > p0 : p2 < p0
+        bool wave3Progress = bullish ? p3 > p1 : p3 < p1
+        bool wave4NoOverlap = bullish ? p4 > p1 : p4 < p1
+        bool wave5Progress = bullish ? p5 > p3 : p5 < p3
+        bool wave3NotShortest = w3 >= math.min(w1, w5)
+        valid := w1 > 0 and w3 > 0 and wave2Valid and wave3Progress and wave4NoOverlap and wave5Progress and wave3NotShortest
+    valid
+
+f_fibScore(float w1, float w2, float w3, float w4, float w5) =>
+    float r2 = w1 > 0 ? w2 / w1 : 0.0
+    float r3 = w1 > 0 ? w3 / w1 : 0.0
+    float r4 = w3 > 0 ? w4 / w3 : 0.0
+    float r5 = w1 > 0 ? w5 / w1 : 0.0
+    int points = 0
+    points += r2 >= 0.382 and r2 <= 0.786 ? 7 : r2 >= 0.236 and r2 <= 0.886 ? 4 : 0
+    points += r3 >= 1.0 and r3 <= 2.618 ? 7 : r3 >= 0.8 ? 4 : 0
+    points += r4 >= 0.236 and r4 <= 0.5 ? 5 : r4 > 0.5 and r4 <= 0.618 ? 3 : 0
+    points += r5 >= 0.618 and r5 <= 1.618 ? 6 : r5 >= 0.5 ? 3 : 0
+    points
+
+f_score(int fibPoints, bool trendAligned, bool clearStructure, bool momentumAligned) =>
+    40 + fibPoints + (trendAligned ? 15 : 0) + (clearStructure ? 10 : 5) + (momentumAligned ? 10 : 0)
+
+f_alertAllowed(bool bullish, bool htfIsBull, bool htfIsBear, bool useHtfFilter, bool useFilters, bool useMomentumFilter, float currentRsi, float currentClose, float previousClose) =>
+    not useFilters or ((not useHtfFilter or (bullish ? htfIsBull : htfIsBear)) and (bullish ? currentClose > previousClose : currentClose < previousClose) and (not useMomentumFilter or (bullish ? currentRsi > 50 : currentRsi < 50)))
+
+f_trackLine(line item) =>
+    array.push(ownedLines, item)
+
+f_trackLabel(label item) =>
+    array.push(ownedLabels, item)
+
+f_addLine(int x1, float y1, int x2, float y2, color lineColor, string styleName, int width) =>
+    line item = line.new(x1, y1, x2, y2, xloc=xloc.bar_time, color=lineColor, width=width, style=styleName == "dashed" ? line.style_dashed : line.style_solid)
+    f_trackLine(item)
+    item
+
+f_addLabel(int x, float y, string labelText, color textColor, bool below) =>
+    label item = label.new(x, y, labelText, xloc=xloc.bar_time, style=below ? label.style_label_up : label.style_label_down, color=color.new(textColor, 78), textcolor=textColor, size=f_labelSize(labelSizeInput))
+    f_trackLabel(item)
+    item
+
+f_sourcePivots(string sourceTf, bool requestSource) =>
+    float requestedHigh = na
+    float requestedLow = na
+    int requestedTime = na
+    float requestedAtr = na
+    float requestedRsi = na
+    if requestSource
+        [sourceHigh, sourceLow, sourceTime, sourceAtr, sourceRsi] = request.security(syminfo.tickerid, sourceTf, [ta.pivothigh(high, pivotLeft, pivotRight)[1], ta.pivotlow(low, pivotLeft, pivotRight)[1], time[pivotRight + 1], ta.atr(atrLength)[1], ta.rsi(close, rsiLength)[1]], gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_on)
+        requestedHigh := sourceHigh
+        requestedLow := sourceLow
+        requestedTime := sourceTime
+        requestedAtr := sourceAtr
+        requestedRsi := sourceRsi
+    [requestedHigh, requestedLow, requestedTime, requestedAtr, requestedRsi]
+
+f_sourceIntrabars(string sourceTf, bool requestSource) =>
+    array<float> requestedHighs = array.new_float()
+    array<float> requestedLows = array.new_float()
+    array<int> requestedTimes = array.new_int()
+    array<float> requestedAtrs = array.new_float()
+    array<float> requestedRsis = array.new_float()
+    if requestSource
+        [sourceHighs, sourceLows, sourceTimes, sourceAtrs, sourceRsis] = request.security_lower_tf(syminfo.tickerid, sourceTf, [ta.pivothigh(high, pivotLeft, pivotRight)[1], ta.pivotlow(low, pivotLeft, pivotRight)[1], time[pivotRight + 1], ta.atr(atrLength)[1], ta.rsi(close, rsiLength)[1]])
+        int sourceCount = array.size(sourceTimes)
+        if sourceCount > 0
+            for sample = 0 to sourceCount - 1
+                float sourceHigh = array.get(sourceHighs, sample)
+                float sourceLow = array.get(sourceLows, sample)
+                if not na(sourceHigh) or not na(sourceLow)
+                    array.push(requestedHighs, sourceHigh)
+                    array.push(requestedLows, sourceLow)
+                    array.push(requestedTimes, array.get(sourceTimes, sample))
+                    array.push(requestedAtrs, array.get(sourceAtrs, sample))
+                    array.push(requestedRsis, array.get(sourceRsis, sample))
+    [requestedHighs, requestedLows, requestedTimes, requestedAtrs, requestedRsis]
+
+f_processFrame(WaveState state, bool enabled, string sourceTf, float confirmedHigh, float confirmedLow, int confirmedPivotTime, float sourceAtr, float waveRsi, int waveTargetOffsetMs) =>
+    bool newPotentialWave2 = false
+    bool newPotentialWave3 = false
+    bool newPotentialWave4 = false
+    bool newPotentialWave5 = false
+    bool newPotentialCorrection = false
+    bool newInvalidation = false
+    if enabled
+        int newPivotType = 0
+        float newPivotPrice = na
+        int newPivotTime = na
+        bool acceptedPivot = false
+        if not na(confirmedHigh) and na(confirmedLow)
+            newPivotType := 1
+            newPivotPrice := confirmedHigh
+            newPivotTime := confirmedPivotTime
+        else if not na(confirmedLow) and na(confirmedHigh)
+            newPivotType := -1
+            newPivotPrice := confirmedLow
+            newPivotTime := confirmedPivotTime
+
+        if newPivotType != 0 and (na(state.lastInputTime) or newPivotTime != state.lastInputTime)
+            state.lastInputTime := newPivotTime
+            int count = array.size(state.pivotPrices)
+            if count == 0
+                array.push(state.pivotPrices, newPivotPrice)
+                array.push(state.pivotTimes, newPivotTime)
+                array.push(state.pivotTypes, newPivotType)
+                acceptedPivot := true
+            else
+                int lastIndex = count - 1
+                int previousType = array.get(state.pivotTypes, lastIndex)
+                float previousPrice = array.get(state.pivotPrices, lastIndex)
+                bool moreExtreme = newPivotType == 1 ? newPivotPrice > previousPrice : newPivotPrice < previousPrice
+                if newPivotType == previousType and moreExtreme
+                    array.set(state.pivotPrices, lastIndex, newPivotPrice)
+                    array.set(state.pivotTimes, lastIndex, newPivotTime)
+                    if not na(state.lastSwingLine)
+                        line.set_xy2(state.lastSwingLine, newPivotTime, newPivotPrice)
+                else if newPivotType != previousType and math.abs(newPivotPrice - previousPrice) >= f_minSwing(previousPrice, sourceAtr)
+                    array.push(state.pivotPrices, newPivotPrice)
+                    array.push(state.pivotTimes, newPivotTime)
+                    array.push(state.pivotTypes, newPivotType)
+                    acceptedPivot := true
+                    if array.size(state.pivotPrices) > 80
+                        array.shift(state.pivotPrices)
+                        array.shift(state.pivotTimes)
+                        array.shift(state.pivotTypes)
+
+            int updatedCount = array.size(state.pivotPrices)
+            if acceptedPivot and updatedCount >= 2
+                int endIndex = updatedCount - 1
+                int startIndex = endIndex - 1
+                state.lastSwingLine := f_addLine(array.get(state.pivotTimes, startIndex), array.get(state.pivotPrices, startIndex), array.get(state.pivotTimes, endIndex), array.get(state.pivotPrices, endIndex), color.new(color.gray, 15), "solid", lineWidth)
+
+            // Confirmed partial counts: these are candidate milestones, not trade instructions.
+            updatedCount := array.size(state.pivotPrices)
+            if acceptedPivot and updatedCount >= 3
+                int i = updatedCount - 3
+                bool bullPartial = array.get(state.pivotTypes, i) == -1 and array.get(state.pivotTypes, i + 1) == 1 and array.get(state.pivotTypes, i + 2) == -1
+                bool bearPartial = array.get(state.pivotTypes, i) == 1 and array.get(state.pivotTypes, i + 1) == -1 and array.get(state.pivotTypes, i + 2) == 1
+                if bullPartial
+                    float a = array.get(state.pivotPrices, i)
+                    float b = array.get(state.pivotPrices, i + 1)
+                    float c = array.get(state.pivotPrices, i + 2)
+                    newPotentialWave2 := c > a and b > a and c < b and f_alertAllowed(true, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+                if bearPartial
+                    float a = array.get(state.pivotPrices, i)
+                    float b = array.get(state.pivotPrices, i + 1)
+                    float c = array.get(state.pivotPrices, i + 2)
+                    newPotentialWave2 := c < a and b < a and c > b and f_alertAllowed(false, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+            if acceptedPivot and updatedCount >= 4
+                int i = updatedCount - 4
+                bool bullThree = array.get(state.pivotTypes, i) == -1 and array.get(state.pivotTypes, i + 1) == 1 and array.get(state.pivotTypes, i + 2) == -1 and array.get(state.pivotTypes, i + 3) == 1
+                bool bearThree = array.get(state.pivotTypes, i) == 1 and array.get(state.pivotTypes, i + 1) == -1 and array.get(state.pivotTypes, i + 2) == 1 and array.get(state.pivotTypes, i + 3) == -1
+                if bullThree
+                    newPotentialWave3 := array.get(state.pivotPrices, i + 3) > array.get(state.pivotPrices, i + 1) and array.get(state.pivotPrices, i + 2) > array.get(state.pivotPrices, i) and f_alertAllowed(true, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+                if bearThree
+                    newPotentialWave3 := array.get(state.pivotPrices, i + 3) < array.get(state.pivotPrices, i + 1) and array.get(state.pivotPrices, i + 2) < array.get(state.pivotPrices, i) and f_alertAllowed(false, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+            if acceptedPivot and updatedCount >= 5
+                int i = updatedCount - 5
+                bool bullFour = array.get(state.pivotTypes, i) == -1 and array.get(state.pivotTypes, i + 1) == 1 and array.get(state.pivotTypes, i + 2) == -1 and array.get(state.pivotTypes, i + 3) == 1 and array.get(state.pivotTypes, i + 4) == -1
+                bool bearFour = array.get(state.pivotTypes, i) == 1 and array.get(state.pivotTypes, i + 1) == -1 and array.get(state.pivotTypes, i + 2) == 1 and array.get(state.pivotTypes, i + 3) == -1 and array.get(state.pivotTypes, i + 4) == 1
+                if bullFour
+                    newPotentialWave4 := array.get(state.pivotPrices, i + 2) > array.get(state.pivotPrices, i) and array.get(state.pivotPrices, i + 3) > array.get(state.pivotPrices, i + 1) and array.get(state.pivotPrices, i + 4) > array.get(state.pivotPrices, i + 1) and f_alertAllowed(true, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+                if bearFour
+                    newPotentialWave4 := array.get(state.pivotPrices, i + 2) < array.get(state.pivotPrices, i) and array.get(state.pivotPrices, i + 3) < array.get(state.pivotPrices, i + 1) and array.get(state.pivotPrices, i + 4) < array.get(state.pivotPrices, i + 1) and f_alertAllowed(false, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+
+            // Full six-pivot impulse validation (Wave 0 through Wave 5).
+            if acceptedPivot and updatedCount >= 6
+                int first = updatedCount - 6
+                if f_impulseValid(state.pivotPrices, state.pivotTypes, first)
+                    bool bullish = array.get(state.pivotTypes, first) == -1
+                    bool visibleDirection = bullish ? showBullish : showBearish
+                    state.latestPhase := "Motive Phase"
+                    state.latestPhaseType := bullish ? "Bullish impulse (1-5)" : "Bearish impulse (1-5)"
+                    state.latestPhaseTime := time
+                    state.latestPhaseColor := bullish ? bullColor : bearColor
+                    float p0 = array.get(state.pivotPrices, first)
+                    float p1 = array.get(state.pivotPrices, first + 1)
+                    float p2 = array.get(state.pivotPrices, first + 2)
+                    float p3 = array.get(state.pivotPrices, first + 3)
+                    float p4 = array.get(state.pivotPrices, first + 4)
+                    float p5 = array.get(state.pivotPrices, first + 5)
+                    int w2time = array.get(state.pivotTimes, first + 2)
+                    int w4time = array.get(state.pivotTimes, first + 4)
+                    int w5time = array.get(state.pivotTimes, first + 5)
+                    float wave1 = math.abs(p1 - p0)
+                    float wave2 = math.abs(p2 - p1)
+                    float wave3 = math.abs(p3 - p2)
+                    float wave4 = math.abs(p4 - p3)
+                    float wave5 = math.abs(p5 - p4)
+                    state.activeOrigin := p0
+                    state.activeImpulseBull := bullish
+                    state.activeImpulse := true
+                    int fibPoints = f_fibScore(wave1, wave2, wave3, wave4, wave5)
+                    bool trendAligned = bullish ? htfBull : htfBear
+                    bool momentumAligned = bullish ? waveRsi > 50 : waveRsi < 50
+                    bool clearStructure = math.min(math.min(wave1, wave2), math.min(wave3, math.min(wave4, wave5))) >= f_minSwing(p0, sourceAtr) * 1.5
+                    int score = f_score(fibPoints, useHtf ? trendAligned : true, clearStructure, useMomentum ? momentumAligned : true)
+                    bool alertDirection = f_alertAllowed(bullish, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+                    if showImpulse and visibleDirection and score >= scoreThreshold and (na(state.lastImpulseDrawTime) or state.lastImpulseDrawTime != w5time)
+                        color patternColor = bullish ? bullColor : bearColor
+                        array<string> waveNames = array.from("0", "1", "2", "3", "4", "5")
+                        for offset = 0 to 5
+                            int px = array.get(state.pivotTimes, first + offset)
+                            float py = array.get(state.pivotPrices, first + offset)
+                            if offset > 0
+                                f_addLine(array.get(state.pivotTimes, first + offset - 1), array.get(state.pivotPrices, first + offset - 1), px, py, patternColor, "solid", lineWidth)
+                            f_addLabel(px, py, array.get(waveNames, offset), patternColor, array.get(state.pivotTypes, first + offset) == -1)
+                        float ratio2 = wave1 > 0 ? wave2 / wave1 : 0.0
+                        float ratio3 = wave1 > 0 ? wave3 / wave1 : 0.0
+                        float ratio4 = wave3 > 0 ? wave4 / wave3 : 0.0
+                        float ratio5 = wave1 > 0 ? wave5 / wave1 : 0.0
+                        string ratioText = showFib ? "\nW2/W1 " + str.tostring(ratio2, "#.###") + " | W3/W1 " + str.tostring(ratio3, "#.###") + "\nW4/W3 " + str.tostring(ratio4, "#.###") + " | W5/W1 " + str.tostring(ratio5, "#.###") : ""
+                        f_addLabel(w5time, p5, "Motive Phase (" + sourceTf + ") | " + (bullish ? "Bullish 1-5" : "Bearish 1-5") + " | " + str.tostring(score) + "/100" + ratioText, patternColor, not bullish)
+                        if showFib
+                            for fibRatio in array.from(0.382, 0.5, 0.618)
+                                float level = bullish ? p1 - wave1 * fibRatio : p1 + wave1 * fibRatio
+                                f_addLine(w2time, level, w5time, level, color.new(fibColor, 15), "dashed", 1)
+                        if showTargets
+                            float wave3Target = bullish ? p2 + wave1 * 1.618 : p2 - wave1 * 1.618
+                            float wave5Target = bullish ? p4 + wave1 : p4 - wave1
+                            f_addLine(w2time, wave3Target, w2time + waveTargetOffsetMs, wave3Target, color.new(patternColor, 35), "dashed", 1)
+                            f_addLine(w4time, wave5Target, w4time + waveTargetOffsetMs, wave5Target, color.new(patternColor, 35), "dashed", 1)
+                        if showInvalidation
+                            line invalidationLine = line.new(w5time, p0, w5time + waveTargetOffsetMs, p0, xloc=xloc.bar_time, extend=extend.right, color=color.new(color.red, 20), width=1, style=line.style_dashed)
+                            f_trackLine(invalidationLine)
+                        state.lastImpulseDrawTime := w5time
+                    if score >= scoreThreshold and alertDirection
+                        newPotentialWave5 := true
+
+            // Diagonals are candidate motive patterns: wave 4 overlaps wave 1 while waves 2, 3, and 5 progress.
+            if acceptedPivot and showDiagonal and updatedCount >= 6
+                int first = updatedCount - 6
+                bool bullish = array.get(state.pivotTypes, first) == -1
+                bool diagonalSequence = true
+                for offset = 0 to 5
+                    int expected = bullish ? (offset % 2 == 0 ? -1 : 1) : (offset % 2 == 0 ? 1 : -1)
+                    if array.get(state.pivotTypes, first + offset) != expected
+                        diagonalSequence := false
+                if diagonalSequence and not f_impulseValid(state.pivotPrices, state.pivotTypes, first)
+                    float p0 = array.get(state.pivotPrices, first)
+                    float p1 = array.get(state.pivotPrices, first + 1)
+                    float p2 = array.get(state.pivotPrices, first + 2)
+                    float p3 = array.get(state.pivotPrices, first + 3)
+                    float p4 = array.get(state.pivotPrices, first + 4)
+                    float p5 = array.get(state.pivotPrices, first + 5)
+                    bool diagonalShape = bullish ? p2 > p0 and p3 > p1 and p4 > p2 and p4 < p1 and p5 > p3 : p2 < p0 and p3 < p1 and p4 < p2 and p4 > p1 and p5 < p3
+                    bool visibleDirection = bullish ? showBullish : showBearish
+                    int diagonalEndTime = array.get(state.pivotTimes, first + 5)
+                    if diagonalShape and visibleDirection
+                        state.latestPhase := "Motive Phase"
+                        state.latestPhaseType := bullish ? "Bullish diagonal candidate (1-5)" : "Bearish diagonal candidate (1-5)"
+                        state.latestPhaseTime := time
+                        state.latestPhaseColor := bullish ? bullColor : bearColor
+                        if na(state.lastDiagonalDrawTime) or state.lastDiagonalDrawTime != diagonalEndTime
+                            color patternColor = bullish ? bullColor : bearColor
+                            array<string> waveNames = array.from("0", "1", "2", "3", "4", "5")
+                            for offset = 0 to 5
+                                int pointTime = array.get(state.pivotTimes, first + offset)
+                                float pointPrice = array.get(state.pivotPrices, first + offset)
+                                if offset > 0
+                                    f_addLine(array.get(state.pivotTimes, first + offset - 1), array.get(state.pivotPrices, first + offset - 1), pointTime, pointPrice, patternColor, "solid", lineWidth)
+                                f_addLabel(pointTime, pointPrice, array.get(waveNames, offset), patternColor, array.get(state.pivotTypes, first + offset) == -1)
+                            f_addLabel(diagonalEndTime, p5, "Motive Phase (" + sourceTf + ") | " + (bullish ? "Bullish diagonal candidate" : "Bearish diagonal candidate"), patternColor, not bullish)
+                            state.lastDiagonalDrawTime := diagonalEndTime
+
+            // Three-wave corrective patterns after a valid impulse: zigzag or flat.
+            if acceptedPivot and updatedCount >= 9
+                int first = updatedCount - 9
+                if f_impulseValid(state.pivotPrices, state.pivotTypes, first)
+                    bool bullishImpulse = array.get(state.pivotTypes, first) == -1
+                    bool visibleDirection = bullishImpulse ? showBullish : showBearish
+                    int aType = bullishImpulse ? -1 : 1
+                    int bType = -aType
+                    int cType = aType
+                    bool correctionSequence = array.get(state.pivotTypes, first + 6) == aType and array.get(state.pivotTypes, first + 7) == bType and array.get(state.pivotTypes, first + 8) == cType
+                    float startCorrection = array.get(state.pivotPrices, first + 5)
+                    float aPrice = array.get(state.pivotPrices, first + 6)
+                    float bPrice = array.get(state.pivotPrices, first + 7)
+                    float cPrice = array.get(state.pivotPrices, first + 8)
+                    float aLength = math.abs(aPrice - startCorrection)
+                    float bRetracement = aLength > 0 ? math.abs(bPrice - aPrice) / aLength : 0.0
+                    bool bZigzag = bullishImpulse ? bPrice < startCorrection and bPrice > aPrice : bPrice > startCorrection and bPrice < aPrice
+                    bool zigzagShape = bZigzag and bRetracement >= 0.382 and bRetracement < 0.9 and (bullishImpulse ? cPrice < aPrice : cPrice > aPrice)
+                    bool flatB = bullishImpulse ? bPrice > aPrice and bPrice >= startCorrection - aLength * 0.1 : bPrice < aPrice and bPrice <= startCorrection + aLength * 0.1
+                    bool flatShape = flatB and (bullishImpulse ? cPrice < aPrice : cPrice > aPrice)
+                    string correctionName = zigzagShape ? "Zigzag" : flatShape ? "Flat" : ""
+                    bool validThreeWaveCorrection = correctionSequence and (zigzagShape or flatShape)
+                    if validThreeWaveCorrection
+                        state.latestPhase := "Corrective Phase"
+                        state.latestPhaseType := (bullishImpulse ? "Bearish " : "Bullish ") + correctionName + " (A-B-C)"
+                        state.latestPhaseTime := time
+                        state.latestPhaseColor := bullishImpulse ? bullColor : bearColor
+                        int aTime = array.get(state.pivotTimes, first + 6)
+                        int bTime = array.get(state.pivotTimes, first + 7)
+                        int cTime = array.get(state.pivotTimes, first + 8)
+                        if showCorrection and visibleDirection and (na(state.lastCorrectionDrawTime) or state.lastCorrectionDrawTime != cTime)
+                            color correctionColor = bullishImpulse ? bullColor : bearColor
+                            f_addLine(array.get(state.pivotTimes, first + 5), startCorrection, aTime, aPrice, correctionColor, "solid", lineWidth)
+                            f_addLine(aTime, aPrice, bTime, bPrice, correctionColor, "solid", lineWidth)
+                            f_addLine(bTime, bPrice, cTime, cPrice, correctionColor, "solid", lineWidth)
+                            f_addLabel(aTime, aPrice, "A", correctionColor, aType == -1)
+                            f_addLabel(bTime, bPrice, "B", correctionColor, bType == -1)
+                            f_addLabel(cTime, cPrice, "C", correctionColor, cType == -1)
+                            float correctionRatio = math.abs(cPrice - bPrice) / math.max(math.abs(aPrice - startCorrection), syminfo.mintick)
+                            f_addLabel(cTime, cPrice, "Corrective Phase (" + sourceTf + ") | " + correctionName + " A-B-C | C/A " + str.tostring(correctionRatio, "#.###"), correctionColor, cType == -1)
+                            if showTargets
+                                float cTarget = bullishImpulse ? bPrice - math.abs(aPrice - startCorrection) : bPrice + math.abs(aPrice - startCorrection)
+                                f_addLine(bTime, cTarget, bTime + waveTargetOffsetMs, cTarget, color.new(correctionColor, 35), "dashed", 1)
+                            state.lastCorrectionDrawTime := cTime
+                        newPotentialCorrection := f_alertAllowed(not bullishImpulse, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+
+            // Contracting five-pivot corrective triangles after an impulse.
+            if acceptedPivot and updatedCount >= 11
+                int first = updatedCount - 11
+                if f_impulseValid(state.pivotPrices, state.pivotTypes, first)
+                    bool bullishImpulse = array.get(state.pivotTypes, first) == -1
+                    int aType = bullishImpulse ? -1 : 1
+                    int bType = -aType
+                    bool triangleSequence = array.get(state.pivotTypes, first + 6) == aType and array.get(state.pivotTypes, first + 7) == bType and array.get(state.pivotTypes, first + 8) == aType and array.get(state.pivotTypes, first + 9) == bType and array.get(state.pivotTypes, first + 10) == aType
+                    float startPrice = array.get(state.pivotPrices, first + 5)
+                    float aPrice = array.get(state.pivotPrices, first + 6)
+                    float bPrice = array.get(state.pivotPrices, first + 7)
+                    float cPrice = array.get(state.pivotPrices, first + 8)
+                    float dPrice = array.get(state.pivotPrices, first + 9)
+                    float ePrice = array.get(state.pivotPrices, first + 10)
+                    bool contractingTriangle = bullishImpulse ? aPrice < startPrice and aPrice < cPrice and cPrice < ePrice and bPrice > dPrice and ePrice < dPrice : aPrice > startPrice and aPrice > cPrice and cPrice > ePrice and bPrice < dPrice and ePrice > dPrice
+                    bool visibleDirection = bullishImpulse ? showBullish : showBearish
+                    int triangleEndTime = array.get(state.pivotTimes, first + 10)
+                    if triangleSequence and contractingTriangle
+                        state.latestPhase := "Corrective Phase"
+                        state.latestPhaseType := (bullishImpulse ? "Bearish " : "Bullish ") + "contracting Triangle (A-E)"
+                        state.latestPhaseTime := time
+                        state.latestPhaseColor := bullishImpulse ? bullColor : bearColor
+                        if showTriangle and visibleDirection and (na(state.lastTriangleDrawTime) or state.lastTriangleDrawTime != triangleEndTime)
+                            color patternColor = bullishImpulse ? bullColor : bearColor
+                            array<string> waveNames = array.from("A", "B", "C", "D", "E")
+                            for offset = 0 to 4
+                                int pointTime = array.get(state.pivotTimes, first + 6 + offset)
+                                float pointPrice = array.get(state.pivotPrices, first + 6 + offset)
+                                if offset > 0
+                                    f_addLine(array.get(state.pivotTimes, first + 5 + offset), array.get(state.pivotPrices, first + 5 + offset), pointTime, pointPrice, patternColor, "solid", lineWidth)
+                                f_addLabel(pointTime, pointPrice, array.get(waveNames, offset), patternColor, array.get(state.pivotTypes, first + 6 + offset) == -1)
+                            f_addLabel(triangleEndTime, ePrice, "Corrective Phase (" + sourceTf + ") | Contracting triangle A-E", patternColor, aType == -1)
+                            state.lastTriangleDrawTime := triangleEndTime
+                        newPotentialCorrection := f_alertAllowed(not bullishImpulse, htfBull, htfBear, useHtf, filterAlerts, useMomentum, waveRsi, close, close[1])
+
+        newInvalidation := state.activeImpulse and (state.activeImpulseBull ? ta.crossunder(close, state.activeOrigin) : ta.crossover(close, state.activeOrigin))
+        if newInvalidation
+            state.activeImpulse := false
+    [newPotentialWave2, newPotentialWave3, newPotentialWave4, newPotentialWave5, newPotentialCorrection, newInvalidation]
+
+f_processIntrabars(WaveState state, bool enabled, string sourceTf, array<float> pivotHighs, array<float> pivotLows, array<int> pivotTimes, array<float> sourceAtrs, array<float> waveRsis, int waveTargetOffsetMs) =>
+    bool newPotentialWave2 = false
+    bool newPotentialWave3 = false
+    bool newPotentialWave4 = false
+    bool newPotentialWave5 = false
+    bool newPotentialCorrection = false
+    bool newInvalidation = false
+    int sampleCount = array.size(pivotTimes)
+    bool crossedOrigin = state.activeImpulseBull ? ta.crossunder(close, state.activeOrigin) : ta.crossover(close, state.activeOrigin)
+    if enabled and sampleCount > 0
+        for sample = 0 to sampleCount - 1
+            [wave2Event, wave3Event, wave4Event, wave5Event, correctionEvent, invalidationEvent] = f_processFrame(state, true, sourceTf, array.get(pivotHighs, sample), array.get(pivotLows, sample), array.get(pivotTimes, sample), array.get(sourceAtrs, sample), array.get(waveRsis, sample), waveTargetOffsetMs)
+            newPotentialWave2 := newPotentialWave2 or wave2Event
+            newPotentialWave3 := newPotentialWave3 or wave3Event
+            newPotentialWave4 := newPotentialWave4 or wave4Event
+            newPotentialWave5 := newPotentialWave5 or wave5Event
+            newPotentialCorrection := newPotentialCorrection or correctionEvent
+            newInvalidation := newInvalidation or invalidationEvent
+    if enabled and not newInvalidation
+        newInvalidation := state.activeImpulse and crossedOrigin
+        if newInvalidation
+            state.activeImpulse := false
+    [newPotentialWave2, newPotentialWave3, newPotentialWave4, newPotentialWave5, newPotentialCorrection, newInvalidation]
+
+int chartSeconds = timeframe.in_seconds()
+int seconds5m = timeframe.in_seconds("5")
+int seconds15m = timeframe.in_seconds("15")
+int seconds1h = timeframe.in_seconds("60")
+int seconds4h = timeframe.in_seconds("240")
+int seconds1d = timeframe.in_seconds("D")
+int seconds1w = timeframe.in_seconds("W")
+bool valid5m = enable5m and not na(chartSeconds)
+bool valid15m = enable15m and not na(chartSeconds)
+bool valid1h = enable1h and not na(chartSeconds)
+bool valid4h = enable4h and not na(chartSeconds)
+bool valid1d = enable1d and not na(chartSeconds)
+bool valid1w = enable1w and not na(chartSeconds)
+[request5High, request5Low, request5Time, request5Atr, request5Rsi] = f_sourcePivots("5", valid5m and seconds5m > chartSeconds)
+[request15High, request15Low, request15Time, request15Atr, request15Rsi] = f_sourcePivots("15", valid15m and seconds15m > chartSeconds)
+[request1hHigh, request1hLow, request1hTime, request1hAtr, request1hRsi] = f_sourcePivots("60", valid1h and seconds1h > chartSeconds)
+[request4hHigh, request4hLow, request4hTime, request4hAtr, request4hRsi] = f_sourcePivots("240", valid4h and seconds4h > chartSeconds)
+[request1dHigh, request1dLow, request1dTime, request1dAtr, request1dRsi] = f_sourcePivots("D", valid1d and seconds1d > chartSeconds)
+[request1wHigh, request1wLow, request1wTime, request1wAtr, request1wRsi] = f_sourcePivots("W", valid1w and seconds1w > chartSeconds)
+[intrabar5Highs, intrabar5Lows, intrabar5Times, intrabar5Atrs, intrabar5Rsis] = f_sourceIntrabars("5", valid5m and seconds5m < chartSeconds)
+[intrabar15Highs, intrabar15Lows, intrabar15Times, intrabar15Atrs, intrabar15Rsis] = f_sourceIntrabars("15", valid15m and seconds15m < chartSeconds)
+[intrabar1hHighs, intrabar1hLows, intrabar1hTimes, intrabar1hAtrs, intrabar1hRsis] = f_sourceIntrabars("60", valid1h and seconds1h < chartSeconds)
+[intrabar4hHighs, intrabar4hLows, intrabar4hTimes, intrabar4hAtrs, intrabar4hRsis] = f_sourceIntrabars("240", valid4h and seconds4h < chartSeconds)
+[intrabar1dHighs, intrabar1dLows, intrabar1dTimes, intrabar1dAtrs, intrabar1dRsis] = f_sourceIntrabars("D", valid1d and seconds1d < chartSeconds)
+[intrabar1wHighs, intrabar1wLows, intrabar1wTimes, intrabar1wAtrs, intrabar1wRsis] = f_sourceIntrabars("W", valid1w and seconds1w < chartSeconds)
+
+var WaveState state5m = f_newState()
+var WaveState state15m = f_newState()
+var WaveState state1h = f_newState()
+var WaveState state4h = f_newState()
+var WaveState state1d = f_newState()
+var WaveState state1w = f_newState()
+bool chartDuplicatesSource = (enable5m and chartSeconds == seconds5m) or (enable15m and chartSeconds == seconds15m) or (enable1h and chartSeconds == seconds1h) or (enable4h and chartSeconds == seconds4h) or (enable1d and chartSeconds == seconds1d) or (enable1w and chartSeconds == seconds1w)
+bool validChart = includeChartTimeframe and not chartDuplicatesSource and not na(chartSeconds)
+var WaveState chartState = f_newState()
+float high5m = seconds5m == chartSeconds ? chartPivotHigh : request5High
+float low5m = seconds5m == chartSeconds ? chartPivotLow : request5Low
+int time5m = seconds5m == chartSeconds ? time[pivotRight] : request5Time
+float atr5m = seconds5m == chartSeconds ? atr : request5Atr
+float rsi5m = seconds5m == chartSeconds ? rsi : request5Rsi
+float high15m = seconds15m == chartSeconds ? chartPivotHigh : request15High
+float low15m = seconds15m == chartSeconds ? chartPivotLow : request15Low
+int time15m = seconds15m == chartSeconds ? time[pivotRight] : request15Time
+float atr15m = seconds15m == chartSeconds ? atr : request15Atr
+float rsi15m = seconds15m == chartSeconds ? rsi : request15Rsi
+float high1h = seconds1h == chartSeconds ? chartPivotHigh : request1hHigh
+float low1h = seconds1h == chartSeconds ? chartPivotLow : request1hLow
+int time1h = seconds1h == chartSeconds ? time[pivotRight] : request1hTime
+float atr1h = seconds1h == chartSeconds ? atr : request1hAtr
+float rsi1h = seconds1h == chartSeconds ? rsi : request1hRsi
+float high4h = seconds4h == chartSeconds ? chartPivotHigh : request4hHigh
+float low4h = seconds4h == chartSeconds ? chartPivotLow : request4hLow
+int time4h = seconds4h == chartSeconds ? time[pivotRight] : request4hTime
+float atr4h = seconds4h == chartSeconds ? atr : request4hAtr
+float rsi4h = seconds4h == chartSeconds ? rsi : request4hRsi
+float high1d = seconds1d == chartSeconds ? chartPivotHigh : request1dHigh
+float low1d = seconds1d == chartSeconds ? chartPivotLow : request1dLow
+int time1d = seconds1d == chartSeconds ? time[pivotRight] : request1dTime
+float atr1d = seconds1d == chartSeconds ? atr : request1dAtr
+float rsi1d = seconds1d == chartSeconds ? rsi : request1dRsi
+float high1w = seconds1w == chartSeconds ? chartPivotHigh : request1wHigh
+float low1w = seconds1w == chartSeconds ? chartPivotLow : request1wLow
+int time1w = seconds1w == chartSeconds ? time[pivotRight] : request1wTime
+float atr1w = seconds1w == chartSeconds ? atr : request1wAtr
+float rsi1w = seconds1w == chartSeconds ? rsi : request1wRsi
+
+[wave2_5m, wave3_5m, wave4_5m, wave5_5m, correction_5m, invalidation_5m] = f_processFrame(state5m, valid5m and seconds5m >= chartSeconds, "5m", high5m, low5m, time5m, atr5m, rsi5m, seconds5m * 1000 * pivotRight * 4)
+[wave2_15m, wave3_15m, wave4_15m, wave5_15m, correction_15m, invalidation_15m] = f_processFrame(state15m, valid15m and seconds15m >= chartSeconds, "15m", high15m, low15m, time15m, atr15m, rsi15m, seconds15m * 1000 * pivotRight * 4)
+[wave2_1h, wave3_1h, wave4_1h, wave5_1h, correction_1h, invalidation_1h] = f_processFrame(state1h, valid1h and seconds1h >= chartSeconds, "1h", high1h, low1h, time1h, atr1h, rsi1h, seconds1h * 1000 * pivotRight * 4)
+[wave2_4h, wave3_4h, wave4_4h, wave5_4h, correction_4h, invalidation_4h] = f_processFrame(state4h, valid4h and seconds4h >= chartSeconds, "4h", high4h, low4h, time4h, atr4h, rsi4h, seconds4h * 1000 * pivotRight * 4)
+[wave2_1d, wave3_1d, wave4_1d, wave5_1d, correction_1d, invalidation_1d] = f_processFrame(state1d, valid1d and seconds1d >= chartSeconds, "1D", high1d, low1d, time1d, atr1d, rsi1d, seconds1d * 1000 * pivotRight * 4)
+[wave2_1w, wave3_1w, wave4_1w, wave5_1w, correction_1w, invalidation_1w] = f_processFrame(state1w, valid1w and seconds1w >= chartSeconds, "1W", high1w, low1w, time1w, atr1w, rsi1w, seconds1w * 1000 * pivotRight * 4)
+[wave2_5m_lower, wave3_5m_lower, wave4_5m_lower, wave5_5m_lower, correction_5m_lower, invalidation_5m_lower] = f_processIntrabars(state5m, valid5m and seconds5m < chartSeconds, "5m", intrabar5Highs, intrabar5Lows, intrabar5Times, intrabar5Atrs, intrabar5Rsis, seconds5m * 1000 * pivotRight * 4)
+[wave2_15m_lower, wave3_15m_lower, wave4_15m_lower, wave5_15m_lower, correction_15m_lower, invalidation_15m_lower] = f_processIntrabars(state15m, valid15m and seconds15m < chartSeconds, "15m", intrabar15Highs, intrabar15Lows, intrabar15Times, intrabar15Atrs, intrabar15Rsis, seconds15m * 1000 * pivotRight * 4)
+[wave2_1h_lower, wave3_1h_lower, wave4_1h_lower, wave5_1h_lower, correction_1h_lower, invalidation_1h_lower] = f_processIntrabars(state1h, valid1h and seconds1h < chartSeconds, "1h", intrabar1hHighs, intrabar1hLows, intrabar1hTimes, intrabar1hAtrs, intrabar1hRsis, seconds1h * 1000 * pivotRight * 4)
+[wave2_4h_lower, wave3_4h_lower, wave4_4h_lower, wave5_4h_lower, correction_4h_lower, invalidation_4h_lower] = f_processIntrabars(state4h, valid4h and seconds4h < chartSeconds, "4h", intrabar4hHighs, intrabar4hLows, intrabar4hTimes, intrabar4hAtrs, intrabar4hRsis, seconds4h * 1000 * pivotRight * 4)
+[wave2_1d_lower, wave3_1d_lower, wave4_1d_lower, wave5_1d_lower, correction_1d_lower, invalidation_1d_lower] = f_processIntrabars(state1d, valid1d and seconds1d < chartSeconds, "1D", intrabar1dHighs, intrabar1dLows, intrabar1dTimes, intrabar1dAtrs, intrabar1dRsis, seconds1d * 1000 * pivotRight * 4)
+[wave2_1w_lower, wave3_1w_lower, wave4_1w_lower, wave5_1w_lower, correction_1w_lower, invalidation_1w_lower] = f_processIntrabars(state1w, valid1w and seconds1w < chartSeconds, "1W", intrabar1wHighs, intrabar1wLows, intrabar1wTimes, intrabar1wAtrs, intrabar1wRsis, seconds1w * 1000 * pivotRight * 4)
+[wave2_chart, wave3_chart, wave4_chart, wave5_chart, correction_chart, invalidation_chart] = f_processFrame(chartState, validChart, timeframe.period, chartPivotHigh, chartPivotLow, time[pivotRight], atr, rsi, chartSeconds * 1000 * pivotRight * 4)
+
+bool newPotentialWave2 = wave2_5m or wave2_15m or wave2_1h or wave2_4h or wave2_1d or wave2_1w or wave2_chart or wave2_5m_lower or wave2_15m_lower or wave2_1h_lower or wave2_4h_lower or wave2_1d_lower or wave2_1w_lower
+bool newPotentialWave3 = wave3_5m or wave3_15m or wave3_1h or wave3_4h or wave3_1d or wave3_1w or wave3_chart or wave3_5m_lower or wave3_15m_lower or wave3_1h_lower or wave3_4h_lower or wave3_1d_lower or wave3_1w_lower
+bool newPotentialWave4 = wave4_5m or wave4_15m or wave4_1h or wave4_4h or wave4_1d or wave4_1w or wave4_chart or wave4_5m_lower or wave4_15m_lower or wave4_1h_lower or wave4_4h_lower or wave4_1d_lower or wave4_1w_lower
+bool newPotentialWave5 = wave5_5m or wave5_15m or wave5_1h or wave5_4h or wave5_1d or wave5_1w or wave5_chart or wave5_5m_lower or wave5_15m_lower or wave5_1h_lower or wave5_4h_lower or wave5_1d_lower or wave5_1w_lower
+bool newPotentialCorrection = correction_5m or correction_15m or correction_1h or correction_4h or correction_1d or correction_1w or correction_chart or correction_5m_lower or correction_15m_lower or correction_1h_lower or correction_4h_lower or correction_1d_lower or correction_1w_lower
+bool newInvalidation = invalidation_5m or invalidation_15m or invalidation_1h or invalidation_4h or invalidation_1d or invalidation_1w or invalidation_chart or invalidation_5m_lower or invalidation_15m_lower or invalidation_1h_lower or invalidation_4h_lower or invalidation_1d_lower or invalidation_1w_lower
+
+// A chart-timeframe provisional marker is independent of confirmed source counts.
+if barstate.islast
+    if not na(provisionalLabel)
+        label.delete(provisionalLabel)
+        provisionalLabel := na
+    if labelMode == "Show provisional swing" and validChart and array.size(chartState.pivotPrices) > 0
+        int lastType = array.get(chartState.pivotTypes, array.size(chartState.pivotTypes) - 1)
+        bool provisionalHigh = lastType == -1
+        provisionalLabel := label.new(bar_index, provisionalHigh ? high : low, provisionalHigh ? "provisional high" : "provisional low", xloc=xloc.bar_index, style=provisionalHigh ? label.style_label_down : label.style_label_up, color=color.new(color.gray, 70), textcolor=color.gray, size=size.tiny)
+
+// Keep ample headroom below TradingView's object ceilings, including all enabled sources.
+int objectLimit = math.min(450, historicalPatterns * 24)
+while array.size(ownedLines) > objectLimit
+    line.delete(array.shift(ownedLines))
+while array.size(ownedLabels) > objectLimit
+    label.delete(array.shift(ownedLabels))
+
+string latestPhase = "Waiting for confirmed pattern"
+string latestPhaseType = "N/A"
+color latestPhaseColor = color.gray
+int latestPhaseTime = na
+string latestSource = "N/A"
+if not na(state5m.latestPhaseTime) and (na(latestPhaseTime) or state5m.latestPhaseTime > latestPhaseTime)
+    latestPhase := state5m.latestPhase
+    latestPhaseType := state5m.latestPhaseType
+    latestPhaseColor := state5m.latestPhaseColor
+    latestPhaseTime := state5m.latestPhaseTime
+    latestSource := "5m"
+if not na(state15m.latestPhaseTime) and (na(latestPhaseTime) or state15m.latestPhaseTime > latestPhaseTime)
+    latestPhase := state15m.latestPhase
+    latestPhaseType := state15m.latestPhaseType
+    latestPhaseColor := state15m.latestPhaseColor
+    latestPhaseTime := state15m.latestPhaseTime
+    latestSource := "15m"
+if not na(state1h.latestPhaseTime) and (na(latestPhaseTime) or state1h.latestPhaseTime > latestPhaseTime)
+    latestPhase := state1h.latestPhase
+    latestPhaseType := state1h.latestPhaseType
+    latestPhaseColor := state1h.latestPhaseColor
+    latestPhaseTime := state1h.latestPhaseTime
+    latestSource := "1h"
+if not na(state4h.latestPhaseTime) and (na(latestPhaseTime) or state4h.latestPhaseTime > latestPhaseTime)
+    latestPhase := state4h.latestPhase
+    latestPhaseType := state4h.latestPhaseType
+    latestPhaseColor := state4h.latestPhaseColor
+    latestPhaseTime := state4h.latestPhaseTime
+    latestSource := "4h"
+if not na(state1d.latestPhaseTime) and (na(latestPhaseTime) or state1d.latestPhaseTime > latestPhaseTime)
+    latestPhase := state1d.latestPhase
+    latestPhaseType := state1d.latestPhaseType
+    latestPhaseColor := state1d.latestPhaseColor
+    latestPhaseTime := state1d.latestPhaseTime
+    latestSource := "1D"
+if not na(state1w.latestPhaseTime) and (na(latestPhaseTime) or state1w.latestPhaseTime > latestPhaseTime)
+    latestPhase := state1w.latestPhase
+    latestPhaseType := state1w.latestPhaseType
+    latestPhaseColor := state1w.latestPhaseColor
+    latestPhaseTime := state1w.latestPhaseTime
+    latestSource := "1W"
+if not na(chartState.latestPhaseTime) and (na(latestPhaseTime) or chartState.latestPhaseTime > latestPhaseTime)
+    latestPhase := chartState.latestPhase
+    latestPhaseType := chartState.latestPhaseType
+    latestPhaseColor := chartState.latestPhaseColor
+    latestPhaseTime := chartState.latestPhaseTime
+    latestSource := timeframe.period
+
+string enabledSources = (valid5m ? "5m " : "") + (valid15m ? "15m " : "") + (valid1h ? "1h " : "") + (valid4h ? "4h " : "") + (valid1d ? "1D " : "") + (valid1w ? "1W " : "") + (validChart ? timeframe.period : "")
+var table biasTable = table.new(position.top_right, 2, 5, border_width=1)
+if barstate.islast
+    table.cell(biasTable, 0, 0, "HTF bias", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(biasTable, 1, 0, useHtf ? htf : "Off", text_color=color.white, bgcolor=color.new(color.black, 0))
+    string biasText = htfBull ? "Bullish" : htfBear ? "Bearish" : "Neutral"
+    color biasColor = htfBull ? bullColor : htfBear ? bearColor : color.gray
+    table.cell(biasTable, 0, 1, "Confirmed", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(biasTable, 1, 1, useHtf ? biasText : "Disabled", text_color=color.white, bgcolor=color.new(biasColor, 35))
+    table.cell(biasTable, 0, 2, "Latest phase", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(biasTable, 1, 2, latestPhase, text_color=color.white, bgcolor=color.new(latestPhaseColor, 35))
+    table.cell(biasTable, 0, 3, "Wave type", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(biasTable, 1, 3, latestPhaseType + " (" + latestSource + ")", text_color=color.white, bgcolor=color.new(latestPhaseColor, 35))
+    table.cell(biasTable, 0, 4, "Enabled sources", text_color=color.white, bgcolor=color.new(color.black, 0))
+    table.cell(biasTable, 1, 4, enabledSources == "" ? "None (lower TFs skipped)" : enabledSources, text_color=color.white, bgcolor=color.new(color.black, 0))
+
+alertcondition(newPotentialWave2 and barstate.isconfirmed, "Potential Wave 2 completion", "A confirmed swing may complete Wave 2. This is a candidate count, not a trade signal.")
+alertcondition(newPotentialWave3 and barstate.isconfirmed, "Potential Wave 3 continuation", "A confirmed swing has advanced beyond Wave 1. This is a candidate count, not a trade signal.")
+alertcondition(newPotentialWave4 and barstate.isconfirmed, "Potential Wave 4 completion", "A confirmed swing may complete Wave 4. This is a candidate count, not a trade signal.")
+alertcondition(newPotentialWave5 and barstate.isconfirmed, "Confirmed Wave 5 completion", "A valid pivot-based five-wave impulse has completed.")
+alertcondition(newPotentialCorrection and barstate.isconfirmed, "Potential corrective pattern completion", "A confirmed zigzag, flat, or contracting triangle correction candidate has completed.")
+alertcondition(newInvalidation and barstate.isconfirmed, "Wave count invalidated", "Price crossed the active impulse origin.")

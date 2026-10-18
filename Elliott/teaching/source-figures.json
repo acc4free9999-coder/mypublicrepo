@@ -1,0 +1,25 @@
+{
+  "source": "data/Elliott-waves-made-simple-mast-steve-sinclair.pdf",
+  "referenceSize": [660, 854],
+  "figures": [
+    {"id":"cycle","page":10,"image":1,"crop":[180,85,290,235],"title":"Chu kỳ motive–corrective / Motive–corrective cycle"},
+    {"id":"internals","page":15,"image":5,"crop":[195,140,285,230],"title":"Impulse và cấu trúc con / Impulse and subdivisions"},
+    {"id":"extension","page":21,"image":10,"crop":[105,75,450,405],"title":"Gold Daily: wave 1 mở rộng / Extended first wave"},
+    {"id":"leading","page":24,"image":12,"crop":[78,75,505,320],"title":"EUR/USD: leading diagonal candidate"},
+    {"id":"ending","page":26,"image":14,"crop":[105,402,455,350],"title":"EUR/USD: ending diagonal candidate"},
+    {"id":"zigzag","page":30,"image":16,"crop":[240,80,165,275],"title":"Zigzag: phân biệt A–B–C và sóng con"},
+    {"id":"regular-flat","page":34,"image":20,"crop":[230,85,205,250],"title":"Regular flat: 3–3–5"},
+    {"id":"expanded-flat","page":36,"image":22,"crop":[220,90,210,260],"title":"Expanded flat: B vượt gốc A"},
+    {"id":"running-flat","page":38,"image":24,"crop":[215,110,220,240],"title":"Running flat: C chưa vượt đáy A"},
+    {"id":"contracting","page":45,"image":31,"crop":[78,75,505,380],"title":"USD/JPY H4: contracting triangle"},
+    {"id":"running-triangle","page":46,"image":32,"crop":[100,75,465,415],"title":"Gold H4: running triangle"},
+    {"id":"combination","page":52,"image":36,"crop":[150,85,345,255],"title":"Triple three: W–X–Y–X–Z"},
+    {"id":"retracement","page":59,"image":40,"crop":[100,75,465,380],"title":"Fibonacci: hai điểm neo và mức hồi"},
+    {"id":"divergence","page":73,"image":54,"crop":[78,75,505,470],"title":"Gold Daily: price và RSI divergence"},
+    {"id":"wave3-plan","page":79,"image":58,"crop":[165,150,335,310],"title":"Kế hoạch wave 3: origin, wave 2 và targets"},
+    {"id":"wave5-plan","page":81,"image":59,"crop":[140,85,390,385],"title":"Kế hoạch wave 5: pullback wave 4"},
+    {"id":"wavec-plan","page":89,"image":63,"crop":[140,95,365,300],"title":"Kế hoạch wave C: vùng B, stop và target"},
+    {"id":"source-case","page":91,"image":64,"crop":[78,170,500,395],"title":"USD/CHF: ví dụ kế hoạch wave C trong sách"},
+    {"id":"wave5-case","page":97,"image":70,"crop":[78,75,505,420],"title":"USD/MXN: ví dụ wave 5 và kế hoạch trên chart"}
+  ]
+}

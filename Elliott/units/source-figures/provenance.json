@@ -1,0 +1,277 @@
+{
+  "coordinateOrigin" : "top-left",
+  "figures" : [
+    {
+      "crop" : [
+        180,
+        85,
+        290,
+        235
+      ],
+      "height" : 705,
+      "id" : "cycle",
+      "image" : 1,
+      "page" : 10,
+      "sha256" : "80c7071b10845c6af2f748cacb2246e68047d477e0a02cc0906e261c5f1812e4",
+      "width" : 871
+    },
+    {
+      "crop" : [
+        195,
+        140,
+        285,
+        230
+      ],
+      "height" : 691,
+      "id" : "internals",
+      "image" : 5,
+      "page" : 15,
+      "sha256" : "e01ade382f137512ce23595ce20267e2d8253db628253d6bd317ea6f7075883d",
+      "width" : 856
+    },
+    {
+      "crop" : [
+        105,
+        75,
+        450,
+        405
+      ],
+      "height" : 1215,
+      "id" : "extension",
+      "image" : 10,
+      "page" : 21,
+      "sha256" : "22b9d3e331e6ac16bd7fc2e599bbb0d1ed82057a08104dbebb3682a6e17e2152",
+      "width" : 1351
+    },
+    {
+      "crop" : [
+        78,
+        75,
+        505,
+        320
+      ],
+      "height" : 960,
+      "id" : "leading",
+      "image" : 12,
+      "page" : 24,
+      "sha256" : "aeeb48630a8adecbabf8f6b8ef185ec8afa9f4d58501bcebe16344d72887bb8d",
+      "width" : 1516
+    },
+    {
+      "crop" : [
+        105,
+        402,
+        455,
+        350
+      ],
+      "height" : 1050,
+      "id" : "ending",
+      "image" : 14,
+      "page" : 26,
+      "sha256" : "2a8bebafc3d5932101a74e8520b71c0bcd97e57dc14240df551b17fd94fc1339",
+      "width" : 1366
+    },
+    {
+      "crop" : [
+        240,
+        80,
+        165,
+        275
+      ],
+      "height" : 826,
+      "id" : "zigzag",
+      "image" : 16,
+      "page" : 30,
+      "sha256" : "d4183af5b3626813324c7b9c19a0de66ae9101c8fdc84c952e9094d3572a99ce",
+      "width" : 496
+    },
+    {
+      "crop" : [
+        230,
+        85,
+        205,
+        250
+      ],
+      "height" : 750,
+      "id" : "regular-flat",
+      "image" : 20,
+      "page" : 34,
+      "sha256" : "ccbf0ef0ea1f25e1a10d057230c73a773918fd0833b185bec31899e2733cfd04",
+      "width" : 616
+    },
+    {
+      "crop" : [
+        220,
+        90,
+        210,
+        260
+      ],
+      "height" : 780,
+      "id" : "expanded-flat",
+      "image" : 22,
+      "page" : 36,
+      "sha256" : "97fc677fa4003a845133f2bea7640c9f6ffd5948741c73aa718ddc85f557d931",
+      "width" : 631
+    },
+    {
+      "crop" : [
+        215,
+        110,
+        220,
+        240
+      ],
+      "height" : 720,
+      "id" : "running-flat",
+      "image" : 24,
+      "page" : 38,
+      "sha256" : "c471271c5e922ff3f8148b0765ca04269b5f8175751b8c85cce081aa7f99f2ec",
+      "width" : 661
+    },
+    {
+      "crop" : [
+        78,
+        75,
+        505,
+        380
+      ],
+      "height" : 1140,
+      "id" : "contracting",
+      "image" : 31,
+      "page" : 45,
+      "sha256" : "1a327e1419b135a841d07173139e6ad151bad92706491aee91088670c90f8ade",
+      "width" : 1516
+    },
+    {
+      "crop" : [
+        100,
+        75,
+        465,
+        415
+      ],
+      "height" : 1245,
+      "id" : "running-triangle",
+      "image" : 32,
+      "page" : 46,
+      "sha256" : "47a2d56788ab1d7900aef30e55fcda4fc86d9a1c7a8cdbf8a0e4fcf5985df508",
+      "width" : 1396
+    },
+    {
+      "crop" : [
+        150,
+        85,
+        345,
+        255
+      ],
+      "height" : 765,
+      "id" : "combination",
+      "image" : 36,
+      "page" : 52,
+      "sha256" : "901fdedb2dd3a37d8d4a1099e69f8cb13fde11bfc9bcbc8cc6f73ff63320649a",
+      "width" : 1036
+    },
+    {
+      "crop" : [
+        100,
+        75,
+        465,
+        380
+      ],
+      "height" : 1140,
+      "id" : "retracement",
+      "image" : 40,
+      "page" : 59,
+      "sha256" : "e8342fbd7c99996af139dd62e3040884c0b05c799d66e4eab945e35220fdfe22",
+      "width" : 1396
+    },
+    {
+      "crop" : [
+        78,
+        75,
+        505,
+        470
+      ],
+      "height" : 1410,
+      "id" : "divergence",
+      "image" : 54,
+      "page" : 73,
+      "sha256" : "e94661b7470776f9c8ab2ef4b9948784f87f2244b806b452e9fcee2274b3c9ae",
+      "width" : 1516
+    },
+    {
+      "crop" : [
+        165,
+        150,
+        335,
+        310
+      ],
+      "height" : 930,
+      "id" : "wave3-plan",
+      "image" : 58,
+      "page" : 79,
+      "sha256" : "70b33462b9beb13d9411632a72dfba9cf8bfc9db6051241ad4228c7f49cf2dff",
+      "width" : 1006
+    },
+    {
+      "crop" : [
+        140,
+        85,
+        390,
+        385
+      ],
+      "height" : 1155,
+      "id" : "wave5-plan",
+      "image" : 59,
+      "page" : 81,
+      "sha256" : "476d7286f27e6b7faae7aebea589b20a8bba3950e466f6cbe865d1fbec1c78bd",
+      "width" : 1171
+    },
+    {
+      "crop" : [
+        140,
+        95,
+        365,
+        300
+      ],
+      "height" : 900,
+      "id" : "wavec-plan",
+      "image" : 63,
+      "page" : 89,
+      "sha256" : "b940050923077093f4579bbfb9978b3cd86fa5131aea43f9234675e2c60146d0",
+      "width" : 1096
+    },
+    {
+      "crop" : [
+        78,
+        170,
+        500,
+        395
+      ],
+      "height" : 1185,
+      "id" : "source-case",
+      "image" : 64,
+      "page" : 91,
+      "sha256" : "29c4c54ffd94bc08cbb240ea7f574ac7f490edfdcff28daece166f00d472f514",
+      "width" : 1501
+    },
+    {
+      "crop" : [
+        78,
+        75,
+        505,
+        420
+      ],
+      "height" : 1260,
+      "id" : "wave5-case",
+      "image" : 70,
+      "page" : 97,
+      "sha256" : "822781775223210b737c9846fdbea9ad4d620cd3353ed75f26c3f8f8d5d528bb",
+      "width" : 1516
+    }
+  ],
+  "referenceSize" : [
+    660,
+    854
+  ],
+  "source" : "data\/Elliott-waves-made-simple-mast-steve-sinclair.pdf",
+  "sourceSha256" : "2ead9c23e83edfdcb33470c960513af2b26b285ba12aef248df00413d1ec0468"
+}
