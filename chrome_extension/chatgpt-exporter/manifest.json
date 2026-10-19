@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT Screenshot Exporter",
+  "version": "1.2.1",
+  "minimum_chrome_version": "120",
+  "description": "Capture the actual ChatGPT conversation area with its original styling and images as PNG screenshots in a ZIP.",
+  "permissions": ["activeTab", "scripting"],
+  "background": {
+    "service_worker": "dist/background.js"
+  },
+  "action": {
+    "default_title": "Export ChatGPT screenshots",
+    "default_popup": "dist/popup.html"
+  }
+}

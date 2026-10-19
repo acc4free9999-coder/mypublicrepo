@@ -80,7 +80,14 @@ int labelLimit = input.int(50, "Maximum retained labels", minval = 5, maxval = 1
 
 string G_EW = "Elliott candidates (all enabled timeframes)"
 bool ewEnabled = input.bool(true, "Draw Elliott candidates", group = G_EW)
-int ewHistory = input.int(5000, "Wave source history budget", minval = 500, maxval = 20000, step = 500, group = G_EW, tooltip = "Per-timeframe source bars. Bounds intrabar arrays in Replay. Older history may be N/A; each timeframe follows its dashboard enable toggle.")
+bool ewOnM = input.bool(true, "1M", inline = "ewTf1", group = G_EW)
+bool ewOnW = input.bool(true, "1W", inline = "ewTf1", group = G_EW)
+bool ewOnD = input.bool(true, "1D", inline = "ewTf1", group = G_EW)
+bool ewOn4H = input.bool(true, "4H", inline = "ewTf2", group = G_EW)
+bool ewOn1H = input.bool(true, "1H", inline = "ewTf2", group = G_EW)
+bool ewOn15 = input.bool(true, "15M", inline = "ewTf2", group = G_EW)
+bool ewOn5 = input.bool(true, "5M", inline = "ewTf2", group = G_EW)
+int ewHistory = input.int(5000, "Wave source history budget", minval = 500, maxval = 20000, step = 500, group = G_EW, tooltip = "Per-timeframe source bars. Bounds intrabar arrays in Replay. Older history may be N/A. Elliott timeframe switches are independent of dashboard timeframe switches.")
 int ewLeft = input.int(5, "Wave pivot left", minval = 1, maxval = 50, group = G_EW)
 int ewRight = input.int(5, "Wave pivot right", minval = 1, maxval = 50, group = G_EW)
 float ewMinAtr = input.float(0.5, "Minimum reversal (ATR at confirmation)", minval = 0, step = 0.1, group = G_EW)
@@ -585,13 +592,14 @@ else if complete and condition == "Ranging"
     context := "RANGE"
 
 var array<WaveState> ewStates = array.new<WaveState>()
+array<bool> ewTimeframes = array.from(ewOnM, ewOnW, ewOnD, ewOn4H, ewOn1H, ewOn15, ewOn5)
 if barstate.isfirst
     for i = 0 to 6
         array.push(ewStates, WaveState.new(array.new<float>(), array.new<int>(), array.new<int>(), array.new<line>(), array.new<label>()))
 string ewStatus = ""
 if ewEnabled
     for tfIndex = 0 to 6
-        if array.get(enabled, tfIndex)
+        if array.get(ewTimeframes, tfIndex)
             WaveState state = array.get(ewStates, tfIndex)
             f_ewFetch(array.get(tfs, tfIndex), state)
             if barstate.islast
@@ -632,6 +640,8 @@ if ewEnabled
                 if matches != ""
                     state.status := matches
                 ewStatus += (ewStatus == "" ? "" : "\n") + array.get(names, tfIndex) + ": " + state.status
+    if ewStatus == ""
+        ewStatus := "All Elliott timeframes disabled"
 
 // Optional overlays use chart OHLC, not requested source OHLC on synthetic charts.
 Snapshot chartData = f_engine(0)

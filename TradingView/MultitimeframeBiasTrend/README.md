@@ -244,10 +244,16 @@ depend on chart labels being visible.
 
 **Draw Elliott candidates** is enabled by default under **Elliott candidates
 (all enabled timeframes)**. Monthly, weekly, daily, 4H, 1H, 15M and 5M have
-independent pivot histories and can all draw simultaneously. Each follows its
-checkbox under **Timeframes and aggregate weights**; disable individual rows to
-hide their bias and wave drawings together. Disable the global Elliott toggle
-to restore a dashboard-only view.
+independent pivot histories and can all draw simultaneously. Use the separate
+**1M / 1W / 1D / 4H / 1H / 15M / 5M** switches in the Elliott group to show or
+hide each timeframe's waves. These switches are independent of **Timeframes and
+aggregate weights**: hiding a wave does not remove its dashboard row or change
+bias scores, and a hidden dashboard timeframe can still draw Elliott waves.
+Disabled Elliott timeframes skip wave requests, processing and drawing. All seven
+wave switches default to on. Turning all off is allowed and displays
+**All Elliott timeframes disabled**. Settings changes restart Pine execution,
+clearing drawings from disabled timeframes. Disable the global Elliott toggle
+to hide all wave drawings and restore a dashboard-only view.
 
 This module is independent of MTF scores and their RSI/ADX filters. It uses
 standard source OHLC, including when the chart is synthetic. Each enabled

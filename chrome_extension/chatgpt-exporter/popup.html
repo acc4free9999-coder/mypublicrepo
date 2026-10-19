@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ChatGPT Screenshot Exporter</title>
+    <link rel="stylesheet" href="popup.css">
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <span class="badge">LOCAL &amp; PRIVATE | v1.2.1</span>
+      <h1>Chat to screenshots</h1>
+      <p>Keep a copy of your conversation.</p>
+    </header>
+    <main>
+      <p>Capture the actual ChatGPT conversation with its original formatting and images as PNGs in one ZIP.</p>
+      <button id="export" type="button">Capture chat page (ZIP)</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <p class="note">Wait for the response to finish. The extension scrolls through the conversation and restores your position afterward.</p>
+      <p class="note">Close this popup after starting. Keep this tab selected; do not scroll, resize, minimize, or switch tabs. Press Esc to cancel.</p>
+    </main>
+  </body>
+</html>
