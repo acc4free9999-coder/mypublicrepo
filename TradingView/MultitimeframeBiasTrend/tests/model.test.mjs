@@ -123,7 +123,7 @@ test("source contains v6 safety mechanisms and seven valid timeframe calls", () 
   assert.match(source, /if barstate\.islast/);
   assert.match(source, /13 \+ enabledCount/);
   assert.equal([...source.matchAll(/Snapshot \w+ = f_fetch\("(1M|1W|1D|240|60|15|5)",/g)].length, 7);
-  assert.equal([...source.matchAll(/^alertcondition\(/gm)].length, 8);
+  assert.equal([...source.matchAll(/^alertcondition\(/gm)].length, 10);
   assert.ok(source.length < 100_000);
 });
 

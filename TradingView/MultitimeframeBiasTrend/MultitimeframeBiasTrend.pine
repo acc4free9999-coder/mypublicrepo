@@ -1,5 +1,5 @@
 //@version=6
-indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 250, dynamic_requests = true)
+indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 250, max_boxes_count = 100, dynamic_requests = true)
 
 string G_DATA = "Data and indicators"
 bool confirmed = input.bool(true, "Confirmed candles (recommended)", group = G_DATA, tooltip = "HTF/equal: previous closed candle. LTF: latest available closed intrabar. Off: live security values can repaint.")
@@ -107,6 +107,20 @@ color ewColor4H = input.color(color.rgb(35, 150, 70), "4H wave color", group = G
 color ewColor1H = input.color(color.rgb(190, 145, 0), "1H wave color", group = G_EW)
 color ewColor15 = input.color(color.rgb(225, 110, 25), "15M wave color", group = G_EW)
 color ewColor5 = input.color(color.rgb(215, 55, 85), "5M wave color", group = G_EW)
+
+string G_SD = "Supply and demand zones (chart timeframe)"
+bool sdEnabled = input.bool(false, "Draw supply / demand zones", group = G_SD, tooltip = "Zone = 1-3 small-bodied base candles followed by a strong displacement close beyond the base. Detected at chart-candle close.")
+bool sdDemand = input.bool(true, "Demand zones", inline = "sd1", group = G_SD)
+bool sdSupply = input.bool(true, "Supply zones", inline = "sd1", group = G_SD)
+float sdImpulseAtr = input.float(1.5, "Displacement body (ATR multiple)", minval = 0.5, step = 0.1, group = G_SD)
+float sdBaseAtr = input.float(0.6, "Maximum base-candle body (ATR multiple)", minval = 0.1, step = 0.1, group = G_SD)
+int sdMaxBase = input.int(3, "Maximum base candles", minval = 1, maxval = 3, group = G_SD)
+int sdMaxZones = input.int(10, "Maximum active zones", minval = 2, maxval = 40, group = G_SD)
+bool sdWicks = input.bool(true, "Include base wicks (off = bodies only)", group = G_SD)
+bool sdText = input.bool(true, "Zone labels with test count", group = G_SD)
+color sdDemandColor = input.color(color.rgb(30, 170, 100), "Demand color", group = G_SD)
+color sdSupplyColor = input.color(color.rgb(215, 65, 75), "Supply color", group = G_SD)
+int sdOpacity = input.int(80, "Zone transparency", minval = 40, maxval = 95, group = G_SD)
 
 string G_ALERT = "Alerts (chart-close transitions)"
 bool alertFlip = input.bool(true, "Overall bullish / bearish reversal", group = G_ALERT)
@@ -643,6 +657,71 @@ if ewEnabled
     if ewStatus == ""
         ewStatus := "All Elliott timeframes disabled"
 
+var array<box> sdBoxes = array.new<box>()
+var array<int> sdDirs = array.new<int>()
+var array<float> sdTops = array.new<float>()
+var array<float> sdBottoms = array.new<float>()
+var array<int> sdTests = array.new<int>()
+bool sdTestedDemand = false
+bool sdTestedSupply = false
+float sdAtr = ta.atr(atrLen)
+float sdLimit = sdBaseAtr * sdAtr
+bool sdSmall1 = math.abs(close[1] - open[1]) <= sdLimit
+bool sdSmall2 = sdSmall1 and math.abs(close[2] - open[2]) <= sdLimit
+bool sdSmall3 = sdSmall2 and math.abs(close[3] - open[3]) <= sdLimit
+int sdBase = sdSmall3 and sdMaxBase >= 3 ? 3 : sdSmall2 and sdMaxBase >= 2 ? 2 : sdSmall1 ? 1 : 0
+float sdBaseHigh = sdBase == 3 ? math.max(high[1], high[2], high[3]) : sdBase == 2 ? math.max(high[1], high[2]) : high[1]
+float sdBaseLow = sdBase == 3 ? math.min(low[1], low[2], low[3]) : sdBase == 2 ? math.min(low[1], low[2]) : low[1]
+float sdBodyHigh = sdBase == 3 ? math.max(math.max(open[1], close[1]), math.max(open[2], close[2]), math.max(open[3], close[3])) : sdBase == 2 ? math.max(math.max(open[1], close[1]), math.max(open[2], close[2])) : math.max(open[1], close[1])
+float sdBodyLow = sdBase == 3 ? math.min(math.min(open[1], close[1]), math.min(open[2], close[2]), math.min(open[3], close[3])) : sdBase == 2 ? math.min(math.min(open[1], close[1]), math.min(open[2], close[2])) : math.min(open[1], close[1])
+if sdEnabled and barstate.isconfirmed
+    int total = array.size(sdBoxes)
+    if total > 0
+        for i = total - 1 to 0
+            int dir = array.get(sdDirs, i)
+            float top = array.get(sdTops, i)
+            float bottom = array.get(sdBottoms, i)
+            bool broken = dir == 1 ? close < bottom : close > top
+            if broken
+                box.delete(array.get(sdBoxes, i))
+                array.remove(sdBoxes, i)
+                array.remove(sdDirs, i)
+                array.remove(sdTops, i)
+                array.remove(sdBottoms, i)
+                array.remove(sdTests, i)
+            else if (dir == 1 and low <= top) or (dir == -1 and high >= bottom)
+                array.set(sdTests, i, array.get(sdTests, i) + 1)
+                sdTestedDemand := sdTestedDemand or dir == 1
+                sdTestedSupply := sdTestedSupply or dir == -1
+                if sdText
+                    box.set_text(array.get(sdBoxes, i), (dir == 1 ? "D" : "S") + " x" + str.tostring(array.get(sdTests, i)))
+    // Creation runs after mitigation, so the displacement candle cannot test its own new zone.
+    float body = math.abs(close - open)
+    int newDir = sdBase > 0 and not na(sdAtr) and body >= sdImpulseAtr * sdAtr ? (close > open and close > sdBaseHigh and sdDemand ? 1 : close < open and close < sdBaseLow and sdSupply ? -1 : 0) : 0
+    if newDir != 0
+        float zoneTop = newDir == 1 ? sdBodyHigh : (sdWicks ? sdBaseHigh : sdBodyHigh)
+        float zoneBottom = newDir == 1 ? (sdWicks ? sdBaseLow : sdBodyLow) : sdBodyLow
+        bool overlaps = false
+        int zoneCount = array.size(sdBoxes)
+        // Pine loops count downward when the end is below the start, so guard empty arrays.
+        if zoneCount > 0
+            for i = 0 to zoneCount - 1
+                if array.get(sdDirs, i) == newDir and zoneTop >= array.get(sdBottoms, i) and zoneBottom <= array.get(sdTops, i)
+                    overlaps := true
+        if not overlaps and zoneTop > zoneBottom
+            color zoneColor = newDir == 1 ? sdDemandColor : sdSupplyColor
+            array.push(sdBoxes, box.new(bar_index - sdBase, zoneTop, bar_index, zoneBottom, border_color = zoneColor, bgcolor = color.new(zoneColor, sdOpacity), extend = extend.right, text = sdText ? (newDir == 1 ? "D" : "S") : "", text_color = textColor, text_size = size.tiny, text_halign = text.align_right))
+            array.push(sdDirs, newDir)
+            array.push(sdTops, zoneTop)
+            array.push(sdBottoms, zoneBottom)
+            array.push(sdTests, 0)
+            if array.size(sdBoxes) > sdMaxZones
+                box.delete(array.shift(sdBoxes))
+                array.shift(sdDirs)
+                array.shift(sdTops)
+                array.shift(sdBottoms)
+                array.shift(sdTests)
+
 // Optional overlays use chart OHLC, not requested source OHLC on synthetic charts.
 Snapshot chartData = f_engine(0)
 Snapshot chartClosed = barstate.isconfirmed ? chartData : chartData[1]
@@ -700,6 +779,8 @@ alertcondition(alertHtf and newHtfBear, "HTF bearish alignment", "{{ticker}}: en
 alertcondition(alertPullback and newPullback, "LTF pullback against HTF", "{{ticker}}: lower-timeframe bias opposes higher-timeframe alignment. Pullback watch, not an entry.")
 alertcondition(alertTrend and newTrend, "Ranging to trending", "{{ticker}}: weighted market condition changed from ranging to trending, allowing an intervening mixed phase.")
 alertcondition(alertStructure and chartBreak and chartData.breakCode > 0, "Chart bullish structure break", "{{ticker}} {{interval}}: candle closed above an unbroken confirmed swing high (BOS or CHoCH).")
+alertcondition(sdEnabled and sdTestedDemand, "Price tests demand zone", "{{ticker}} {{interval}}: candle closed after trading into an active demand zone. Context, not an entry.")
+alertcondition(sdEnabled and sdTestedSupply, "Price tests supply zone", "{{ticker}} {{interval}}: candle closed after trading into an active supply zone. Context, not an entry.")
 alertcondition(alertStructure and chartBreak and chartData.breakCode < 0, "Chart bearish structure break", "{{ticker}} {{interval}}: candle closed below an unbroken confirmed swing low (BOS or CHoCH).")
 
 int columnCount = 1 + (colBias ? 1 : 0) + (colEma ? 1 : 0) + (colStructure ? 1 : 0) + (colAdx ? 1 : 0) + (colRsi ? 1 : 0) + (colScore ? 1 : 0) + (colPrice ? 1 : 0) + (colDistance ? 1 : 0) + (colAtr ? 1 : 0)

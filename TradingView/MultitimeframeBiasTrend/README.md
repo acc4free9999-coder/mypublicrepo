@@ -366,6 +366,33 @@ These fixtures validate arithmetic/oracles and source resource invariants, not
 execution in TradingView. Compile in Pine Editor and inspect Bar Replay with
 each family enabled; pay particular attention to same-type endpoint replacement.
 
+## Supply and demand zones
+
+Enable **Draw supply / demand zones** under **Supply and demand zones (chart
+timeframe)**; it is off by default. Zones use chart OHLC and are evaluated only
+at chart-candle close.
+
+- **Base:** one to three consecutive candles before the displacement, each with
+  a body at most 0.6 ATR (configurable).
+- **Demand:** bullish displacement body of at least 1.5 ATR closing above the
+  base high. Zone: base low (or lowest body if wicks are off) to highest base body.
+- **Supply:** mirrored; bearish displacement closing below the base low. Zone:
+  lowest base body to base high (or highest body if wicks are off).
+- **Tests:** a later candle trading into a zone increments its `xN` label.
+  Tests do not remove zones.
+- **Mitigation:** a close beyond the far edge (below demand, above supply)
+  deletes the zone. A same-direction overlapping zone is not duplicated.
+- **Limits:** the newest 10 active zones are retained (2-40 configurable);
+  the oldest is deleted first. The script allows 100 boxes. Zones extend right
+  and are not recomputed after creation.
+- **Alerts:** "Price tests demand zone" and "Price tests supply zone" fire at
+  chart close when an active zone was touched. They are context, not entries.
+
+This is an objective rule-based approximation of supply/demand, not discretionary
+institutional order-flow detection. Zones are not guarantees of reaction; the
+displacement candle's zone is created only after it closes, so it is not known
+earlier. They are drawn only on the chart timeframe, not the other six.
+
 ## Alerts
 
 After adding the indicator, choose **Create alert**, select this indicator and
