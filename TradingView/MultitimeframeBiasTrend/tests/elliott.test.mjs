@@ -129,7 +129,7 @@ test("WXY and WXYXZ require each ABC component, not merely many pivots", () => {
 test("Elliott uses isolated states, all closed intrabars and bounded drawings on seven timeframes", () => {
   const block = source.slice(source.indexOf("var array<WaveState> ewStates"), source.indexOf("// Optional overlays"));
   assert.match(block, /for tfIndex = 0 to 6/);
-  assert.match(block, /if array\.get\(ewTimeframes, tfIndex\)/);
+  assert.match(block, /ewEnabled and array\.get\(ewTimeframes, tfIndex\)/);
   assert.match(block, /WaveState\.new\(array\.new<float>\(\)/);
   assert.match(block, /if barstate\.islast/);
   assert.match(block, /line\.delete\(array\.pop\(state\.lines\)\)/);
@@ -160,7 +160,7 @@ test("Elliott timeframe switches are independent of bias and allow all waves off
   const block = source.slice(source.indexOf("var array<WaveState> ewStates"), source.indexOf("// Optional overlays"));
   assert.doesNotMatch(block, /array\.get\(enabled,/);
   assert.match(block, /if ewEnabled/);
-  assert.match(block, /if array\.get\(ewTimeframes, tfIndex\)[\s\S]*f_ewFetch/);
+  assert.match(block, /ewEnabled and array\.get\(ewTimeframes, tfIndex\)[\s\S]*f_ewFetch/);
   assert.match(block, /All Elliott timeframes disabled/);
   assert.match(source, /array<bool> enabled = array\.from\(onM, onW, onD, on4H, on1H, on15, on5\)/);
 });

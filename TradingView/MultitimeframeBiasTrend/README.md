@@ -393,6 +393,22 @@ institutional order-flow detection. Zones are not guarantees of reaction; the
 displacement candle's zone is created only after it closes, so it is not known
 earlier. They are drawn only on the chart timeframe, not the other six.
 
+## Trendlines
+
+Modelled on LuxAlgo "Trendlines with Breaks". Enable **Draw trendlines**. For
+each enabled timeframe:
+
+- **Down-trendline**: from the latest confirmed swing high, sloping down by
+  `ATR / Slope length x Slope multiplier` per source-timeframe bar.
+- **Up-trendline**: from the latest confirmed swing low, sloping up by the same rule.
+
+Lines extend right (optional). Each timeframe has its own toggle and color.
+Only timeframes equal to or higher than the chart timeframe are drawn, so lower
+charts see higher-timeframe trendlines. Pivots are confirmed ones (shared with
+Elliott: Wave pivot left/right and ATR filter) with ATR taken at confirmation,
+so lines appear after the right-bars delay and do not move afterwards. Lines
+are rebuilt on the last bar. This is a reference, not an entry signal.
+
 ## Alerts
 
 After adding the indicator, choose **Create alert**, select this indicator and

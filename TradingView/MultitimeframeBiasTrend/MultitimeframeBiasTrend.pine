@@ -1,5 +1,5 @@
 //@version=6
-indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 250, max_boxes_count = 100, dynamic_requests = true)
+indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 100, dynamic_requests = true)
 
 string G_DATA = "Data and indicators"
 bool confirmed = input.bool(true, "Confirmed candles (recommended)", group = G_DATA, tooltip = "HTF/equal: previous closed candle. LTF: latest available closed intrabar. Off: live security values can repaint.")
@@ -108,6 +108,29 @@ color ewColor1H = input.color(color.rgb(190, 145, 0), "1H wave color", group = G
 color ewColor15 = input.color(color.rgb(225, 110, 25), "15M wave color", group = G_EW)
 color ewColor5 = input.color(color.rgb(215, 55, 85), "5M wave color", group = G_EW)
 
+string G_TL = "Trendlines (higher timeframes visible on lower charts)"
+bool tlEnabled = input.bool(false, "Draw trendlines", group = G_TL, tooltip = "LuxAlgo-style sloped trendlines per timeframe: a down-trendline from the latest confirmed swing high and an up-trendline from the latest confirmed swing low, sloped by ATR / length. Only timeframes equal to or higher than the chart timeframe are drawn.")
+bool tlOnM = input.bool(true, "1M", inline = "tlTf1", group = G_TL)
+bool tlOnW = input.bool(true, "1W", inline = "tlTf1", group = G_TL)
+bool tlOnD = input.bool(true, "1D", inline = "tlTf1", group = G_TL)
+bool tlOn4H = input.bool(true, "4H", inline = "tlTf2", group = G_TL)
+bool tlOn1H = input.bool(true, "1H", inline = "tlTf2", group = G_TL)
+bool tlOn15 = input.bool(true, "15M", inline = "tlTf2", group = G_TL)
+bool tlOn5 = input.bool(true, "5M", inline = "tlTf2", group = G_TL)
+int tlLength = input.int(14, "Slope length (bars)", minval = 2, maxval = 200, group = G_TL, tooltip = "LuxAlgo-style: slope per source-timeframe bar = ATR / length x multiplier.")
+float tlMult = input.float(1.0, "Slope multiplier", minval = 0, step = 0.1, group = G_TL)
+bool tlExtend = input.bool(true, "Extend lines to the right", group = G_TL)
+bool tlLabels = input.bool(true, "Label lines with timeframe", group = G_TL)
+int tlWidth = input.int(2, "Line width", minval = 1, maxval = 4, group = G_TL)
+string tlStyle = input.string("Solid", "Resistance / support style", options = ["Solid", "Dashed", "Dotted"], group = G_TL, tooltip = "Resistance uses the chosen style; support is always solid so the two are distinguishable in the same color.")
+color tlColorM = input.color(color.rgb(190, 120, 255), "1M trendline color", group = G_TL)
+color tlColorW = input.color(color.rgb(90, 130, 255), "1W trendline color", group = G_TL)
+color tlColorD = input.color(color.rgb(0, 200, 220), "1D trendline color", group = G_TL)
+color tlColor4H = input.color(color.rgb(60, 200, 100), "4H trendline color", group = G_TL)
+color tlColor1H = input.color(color.rgb(240, 190, 20), "1H trendline color", group = G_TL)
+color tlColor15 = input.color(color.rgb(250, 130, 40), "15M trendline color", group = G_TL)
+color tlColor5 = input.color(color.rgb(250, 70, 110), "5M trendline color", group = G_TL)
+
 string G_SD = "Supply and demand zones (chart timeframe)"
 bool sdEnabled = input.bool(false, "Draw supply / demand zones", group = G_SD, tooltip = "Zone = 1-3 small-bodied base candles followed by a strong displacement close beyond the base. Detected at chart-candle close.")
 bool sdDemand = input.bool(true, "Demand zones", inline = "sd1", group = G_SD)
@@ -175,6 +198,7 @@ type WaveEvent
     int stamp = na
     float minimum = na
     int closedAt = na
+    float atr = na
 
 type WaveState
     array<float> prices
@@ -182,6 +206,10 @@ type WaveState
     array<int> kinds
     array<line> lines
     array<label> labels
+    array<line> trend
+    array<label> trendLabels
+    float atrHigh = na
+    float atrLow = na
     int seen = na
     int recognizedAt = na
     string status = "N/A: no closed source data"
@@ -526,25 +554,29 @@ f_ewEvent(simple int offset) =>
     float minimum = ta.atr(atrLen) * ewMinAtr
     int kind = not na(ph) and na(pl) ? 1 : not na(pl) and na(ph) ? -1 : 0
     float price = kind == 1 ? ph : kind == -1 ? pl : na
-    WaveEvent.new(price[offset], kind[offset], time[ewRight + offset], minimum[offset], time_close[offset])
+    WaveEvent.new(price[offset], kind[offset], time[ewRight + offset], minimum[offset], time_close[offset], ta.atr(atrLen)[offset])
 
 f_ewValues() =>
     WaveEvent event = f_ewEvent(0)
-    [event.price, event.kind, event.stamp, event.minimum, event.closedAt]
+    [event.price, event.kind, event.stamp, event.minimum, event.closedAt, event.atr]
 
-f_ewAccept(WaveState state, float price, int stamp, int kind, float minimum, int closedAt) =>
+f_ewAccept(WaveState state, float price, int stamp, int kind, float minimum, int closedAt, float atr) =>
     if not na(closedAt) and (na(state.seen) or closedAt > state.seen)
         state.seen := closedAt
         if kind != 0 and not na(price) and not na(stamp)
             if f_ewPivot(state.prices, state.times, state.kinds, price, stamp, kind, minimum)
                 state.recognizedAt := closedAt
+                if kind == 1
+                    state.atrHigh := atr
+                else
+                    state.atrLow := atr
         state.status := array.size(state.prices) < 4 ? "Building pivots" : "No matching candidate"
     true
 
 f_ewFetch(string tf, WaveState state) =>
     bool lowerTf = timeframe.in_seconds(tf) < chartSeconds
     if lowerTf
-        [prices, kinds, stamps, minimums, closes] = request.security_lower_tf(sourceTicker, tf, f_ewValues(), calc_bars_count = ewHistory)
+        [prices, kinds, stamps, minimums, closes, atrs] = request.security_lower_tf(sourceTicker, tf, f_ewValues(), calc_bars_count = ewHistory)
         if barstate.isconfirmed
             int cutoff = na(time_close) ? timenow : math.min(time_close, timenow)
             int count = array.size(closes)
@@ -552,11 +584,11 @@ f_ewFetch(string tf, WaveState state) =>
                 for i = 0 to count - 1
                     int closedAt = array.get(closes, i)
                     if not na(closedAt) and closedAt <= cutoff
-                        f_ewAccept(state, array.get(prices, i), array.get(stamps, i), array.get(kinds, i), array.get(minimums, i), closedAt)
+                        f_ewAccept(state, array.get(prices, i), array.get(stamps, i), array.get(kinds, i), array.get(minimums, i), closedAt, array.get(atrs, i))
     else
         WaveEvent event = request.security(sourceTicker, tf, f_ewEvent(1), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on, calc_bars_count = ewHistory)
         if barstate.isconfirmed and not na(event)
-            f_ewAccept(state, event.price, event.stamp, event.kind, event.minimum, event.closedAt)
+            f_ewAccept(state, event.price, event.stamp, event.kind, event.minimum, event.closedAt, event.atr)
     true
 
 array<bool> enabled = array.from(onM, onW, onD, on4H, on1H, on15, on5)
@@ -609,20 +641,55 @@ var array<WaveState> ewStates = array.new<WaveState>()
 array<bool> ewTimeframes = array.from(ewOnM, ewOnW, ewOnD, ewOn4H, ewOn1H, ewOn15, ewOn5)
 if barstate.isfirst
     for i = 0 to 6
-        array.push(ewStates, WaveState.new(array.new<float>(), array.new<int>(), array.new<int>(), array.new<line>(), array.new<label>()))
+        array.push(ewStates, WaveState.new(array.new<float>(), array.new<int>(), array.new<int>(), array.new<line>(), array.new<label>(), array.new<line>(), array.new<label>()))
 string ewStatus = ""
-if ewEnabled
-    for tfIndex = 0 to 6
-        if array.get(ewTimeframes, tfIndex)
-            WaveState state = array.get(ewStates, tfIndex)
-            f_ewFetch(array.get(tfs, tfIndex), state)
-            if barstate.islast
-                while array.size(state.lines) > 0
-                    line.delete(array.pop(state.lines))
-                while array.size(state.labels) > 0
-                    label.delete(array.pop(state.labels))
-                state.status := na(state.seen) ? "N/A: no closed source data" : array.size(state.prices) < 4 ? "Building pivots" : "No matching candidate"
-                int count = array.size(state.prices)
+array<bool> tlTimeframes = array.from(tlOnM, tlOnW, tlOnD, tlOn4H, tlOn1H, tlOn15, tlOn5)
+array<color> tlColors = array.from(tlColorM, tlColorW, tlColorD, tlColor4H, tlColor1H, tlColor15, tlColor5)
+string tlResistanceStyle = tlStyle == "Dashed" ? line.style_dashed : tlStyle == "Dotted" ? line.style_dotted : line.style_solid
+for tfIndex = 0 to 6
+    bool ewOn = ewEnabled and array.get(ewTimeframes, tfIndex)
+    bool tlOn = tlEnabled and array.get(tlTimeframes, tfIndex) and timeframe.in_seconds(array.get(tfs, tfIndex)) >= chartSeconds
+    if ewOn or tlOn
+        WaveState state = array.get(ewStates, tfIndex)
+        f_ewFetch(array.get(tfs, tfIndex), state)
+        if barstate.islast
+            while array.size(state.lines) > 0
+                line.delete(array.pop(state.lines))
+            while array.size(state.labels) > 0
+                label.delete(array.pop(state.labels))
+            while array.size(state.trend) > 0
+                line.delete(array.pop(state.trend))
+            while array.size(state.trendLabels) > 0
+                label.delete(array.pop(state.trendLabels))
+            int count = array.size(state.prices)
+            if tlOn and count > 0
+                int highIndex = -1
+                int lowIndex = -1
+                for j = 0 to count - 1
+                    int pivotKind = array.get(state.kinds, j)
+                    if pivotKind == 1
+                        highIndex := j
+                    else
+                        lowIndex := j
+                color tlShade = array.get(tlColors, tfIndex)
+                string tlName = array.get(names, tfIndex)
+                int tfMs = timeframe.in_seconds(array.get(tfs, tfIndex)) * 1000
+                if highIndex >= 0 and not na(state.atrHigh)
+                    int t1 = array.get(state.times, highIndex)
+                    float p1 = array.get(state.prices, highIndex)
+                    float slopeStep = state.atrHigh / tlLength * tlMult
+                    array.push(state.trend, line.new(t1, p1, t1 + tfMs, p1 - slopeStep, xloc = xloc.bar_time, extend = tlExtend ? extend.right : extend.none, color = tlShade, style = tlResistanceStyle, width = tlWidth))
+                    if tlLabels
+                        array.push(state.trendLabels, label.new(t1, p1, tlName + " down", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(tlShade, 20), textcolor = color.white, size = size.tiny))
+                if lowIndex >= 0 and not na(state.atrLow)
+                    int t1 = array.get(state.times, lowIndex)
+                    float p1 = array.get(state.prices, lowIndex)
+                    float slopeStep = state.atrLow / tlLength * tlMult
+                    array.push(state.trend, line.new(t1, p1, t1 + tfMs, p1 + slopeStep, xloc = xloc.bar_time, extend = tlExtend ? extend.right : extend.none, color = tlShade, style = line.style_solid, width = tlWidth))
+                    if tlLabels
+                        array.push(state.trendLabels, label.new(t1, p1, tlName + " up", xloc = xloc.bar_time, style = label.style_label_up, color = color.new(tlShade, 20), textcolor = color.white, size = size.tiny))
+            if ewOn
+                state.status := na(state.seen) ? "N/A: no closed source data" : count < 4 ? "Building pivots" : "No matching candidate"
                 string matches = ""
                 for family = 0 to 4
                     string kind = ""
@@ -654,8 +721,8 @@ if ewEnabled
                 if matches != ""
                     state.status := matches
                 ewStatus += (ewStatus == "" ? "" : "\n") + array.get(names, tfIndex) + ": " + state.status
-    if ewStatus == ""
-        ewStatus := "All Elliott timeframes disabled"
+if ewEnabled and ewStatus == ""
+    ewStatus := "All Elliott timeframes disabled"
 
 var array<box> sdBoxes = array.new<box>()
 var array<int> sdDirs = array.new<int>()
