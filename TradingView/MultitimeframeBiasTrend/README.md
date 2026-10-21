@@ -421,3 +421,13 @@ Hanging Man / Shooting Star at highs, or a Bullish / Bearish Engulfing. Labels
 appear `length` bars after the swing (confirmation delay). The source's bearish
 engulfing test duplicated the bullish one; it is corrected here. Patterns are
 context, not entry signals.
+
+## Sessions
+
+Adapted from `session.pine` (group **Sessions**). Shades the background while the
+London, New York, Tokyo (and optionally Sydney) sessions are open, or, with
+**High/Low view**, fills the band between each session's running high and low.
+Hours and colors are editable and evaluated in the chosen time zone (default
+America/New_York, as in the source; hours are the source's defaults, not
+daylight-saving adjusted for you). On timeframes of 1D or higher no session
+shading appears. Sessions are context only.

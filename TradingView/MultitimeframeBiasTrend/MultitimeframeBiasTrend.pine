@@ -194,6 +194,23 @@ int swMaxLabels = input.int(60, "Max swing labels kept", minval = 1, maxval = 20
 color swHighCss = input.color(color.red, "Swing high color", group = G_SW)
 color swLowCss = input.color(color.teal, "Swing low color", group = G_SW)
 
+string G_SS = "Sessions (London / New York / Tokyo / Sydney)"
+bool ssHighLow = input.bool(false, "High/Low view", group = G_SS, tooltip = "Adapted from the supplied session.pine. Off: shade the background while a session is open. On: instead fill the band between the running session high and low.")
+string ssRes = input.timeframe("D", "Resolution", options = ["D", "W", "M"], group = G_SS, tooltip = "Period used to detect the start of a new session.")
+string ssTz = input.string("America/New_York", "Session time zone", group = G_SS, tooltip = "Time zone the session hours below are written in.")
+bool ssLondonOn = input.bool(true, "London", group = G_SS, inline = "ln")
+string ssLondon = input.session("0300-1200:1234567", "", group = G_SS, inline = "ln")
+color ssLondonCss = input.color(color.new(color.green, 90), "", group = G_SS, inline = "ln")
+bool ssNyOn = input.bool(true, "New York", group = G_SS, inline = "ny")
+string ssNy = input.session("0800-1700:1234567", "", group = G_SS, inline = "ny")
+color ssNyCss = input.color(color.new(color.red, 90), "", group = G_SS, inline = "ny")
+bool ssTokyoOn = input.bool(true, "Tokyo", group = G_SS, inline = "tk")
+string ssTokyo = input.session("2000-0400:1234567", "", group = G_SS, inline = "tk")
+color ssTokyoCss = input.color(color.new(color.yellow, 90), "", group = G_SS, inline = "tk")
+bool ssSydneyOn = input.bool(false, "Sydney", group = G_SS, inline = "sy")
+string ssSydney = input.session("1700-0200:1234567", "", group = G_SS, inline = "sy")
+color ssSydneyCss = input.color(color.new(color.blue, 90), "", group = G_SS, inline = "sy")
+
 string G_ALERT = "Alerts (chart-close transitions)"
 bool alertFlip = input.bool(true, "Overall bullish / bearish reversal", group = G_ALERT)
 bool alertHtf = input.bool(true, "New higher-timeframe alignment", group = G_ALERT)
@@ -1668,6 +1685,43 @@ else if swEnabled and not na(swPl)
     swPrevLow := swPl
 if swLabels.size() > swMaxLabels
     swLabels.shift().delete()
+
+// ===== Sessions (adapted from session.pine) =====
+// Session hours are evaluated in ssTz. The running high/low restarts at each new
+// session start and holds its last value between sessions.
+f_session(string sess) =>
+    int t = time(ssRes, sess, ssTz)
+    bool isNew = (na(t[1]) and not na(t)) or t[1] < t
+    bool inSess = not na(time(timeframe.period, sess, ssTz))
+    var float lo = na
+    var float hi = na
+    if inSess
+        lo := isNew or na(lo) ? low : math.min(lo, low)
+        hi := isNew or na(hi) ? high : math.max(hi, high)
+    [lo, hi, inSess]
+
+[ssLnLo, ssLnHi, ssLnIn] = f_session(ssLondon)
+[ssNyLo, ssNyHi, ssNyIn] = f_session(ssNy)
+[ssTkLo, ssTkHi, ssTkIn] = f_session(ssTokyo)
+[ssSyLo, ssSyHi, ssSyIn] = f_session(ssSydney)
+
+color ssClear = color.new(color.black, 100)
+ssLnLoP = plot(ssLondonOn and ssHighLow ? ssLnLo : na, "London low", ssClear, editable = false)
+ssLnHiP = plot(ssLondonOn and ssHighLow ? ssLnHi : na, "London high", ssClear, editable = false)
+ssNyLoP = plot(ssNyOn and ssHighLow ? ssNyLo : na, "New York low", ssClear, editable = false)
+ssNyHiP = plot(ssNyOn and ssHighLow ? ssNyHi : na, "New York high", ssClear, editable = false)
+ssTkLoP = plot(ssTokyoOn and ssHighLow ? ssTkLo : na, "Tokyo low", ssClear, editable = false)
+ssTkHiP = plot(ssTokyoOn and ssHighLow ? ssTkHi : na, "Tokyo high", ssClear, editable = false)
+ssSyLoP = plot(ssSydneyOn and ssHighLow ? ssSyLo : na, "Sydney low", ssClear, editable = false)
+ssSyHiP = plot(ssSydneyOn and ssHighLow ? ssSyHi : na, "Sydney high", ssClear, editable = false)
+fill(ssLnLoP, ssLnHiP, ssLnIn and ssLondonOn and ssHighLow ? ssLondonCss : na)
+fill(ssNyLoP, ssNyHiP, ssNyIn and ssNyOn and ssHighLow ? ssNyCss : na)
+fill(ssTkLoP, ssTkHiP, ssTkIn and ssTokyoOn and ssHighLow ? ssTokyoCss : na)
+fill(ssSyLoP, ssSyHiP, ssSyIn and ssSydneyOn and ssHighLow ? ssSydneyCss : na)
+bgcolor(ssLnIn and ssLondonOn and not ssHighLow ? ssLondonCss : na)
+bgcolor(ssNyIn and ssNyOn and not ssHighLow ? ssNyCss : na)
+bgcolor(ssTkIn and ssTokyoOn and not ssHighLow ? ssTokyoCss : na)
+bgcolor(ssSyIn and ssSydneyOn and not ssHighLow ? ssSydneyCss : na)
 
 alertcondition(alertFlip and flipBull, "Overall turns bullish", "{{ticker}}: overall bias reversed bullish at chart close. Directional context, not an entry.")
 alertcondition(alertFlip and flipBear, "Overall turns bearish", "{{ticker}}: overall bias reversed bearish at chart close. Directional context, not an entry.")
