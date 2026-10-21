@@ -70,7 +70,7 @@ input group "=== Trade / Behavior Settings ==="
 input ulong           InpMagicNumber     = 20240918; // Magic number for trades opened by the panel
 input ulong           InpSlippage        = 20;        // Max slippage (points)
 input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on ANY position on configured symbols
-input int             InpCooldownMinutes = 0;          // Block new market entry for N minutes after the latest close on a symbol (0 = disabled)
+input int             InpCooldownMinutes = 0;          // Per-symbol cooldown after close, in minutes (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
 
 input group "=== Trading Hours ==="
@@ -1249,9 +1249,9 @@ bool IsCooldownActiveForSymbol(const string symbol)
    return (TimeCurrent() - latestClose) < waitSeconds;
   }
 
-bool IsPositionCooldownActive()
+bool IsPositionCooldownActive(const string symbol)
   {
-   return IsCooldownActiveForSymbol(Symbol());
+   return IsCooldownActiveForSymbol(symbol);
   }
 
 //+------------------------------------------------------------------+
@@ -1316,14 +1316,14 @@ void OpenTrade(bool isBuy)
       return;
      }
 
-   if(IsOneTradeOnly(symbol) && CountOpenTradesOnSymbol(symbol) > 0)
+   if(CountOpenTradesOnSymbol(symbol) > 0)
      {
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
-            " - one-trade-only mode is on and a trade already exists on ", symbol);
+            " - a position already exists on ", symbol, "; only one position per symbol is allowed");
       return;
      }
 
-   if(IsPositionCooldownActive())
+   if(IsPositionCooldownActive(symbol))
      {
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
             " - cooldown is active for ", InpCooldownMinutes, " minutes after the latest close on ", symbol);
