@@ -1,5 +1,11 @@
 //@version=6
-indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 100, dynamic_requests = true)
+indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, dynamic_requests = true)
+
+max_bars_back(time, 5000)
+max_bars_back(high, 5000)
+max_bars_back(low, 5000)
+max_bars_back(close, 5000)
+max_bars_back(volume, 5000)
 
 string G_DATA = "Data and indicators"
 bool confirmed = input.bool(true, "Confirmed candles (recommended)", group = G_DATA, tooltip = "HTF/equal: previous closed candle. LTF: latest available closed intrabar. Off: live security values can repaint.")
@@ -78,38 +84,28 @@ bool showSlow = input.bool(false, "Slow EMA", group = G_CHART)
 bool warnConflict = input.bool(true, "Warn when LTF opposes HTF", group = G_CHART)
 int labelLimit = input.int(50, "Maximum retained labels", minval = 5, maxval = 150, group = G_CHART)
 
-string G_EW = "Elliott candidates (all enabled timeframes)"
-bool ewEnabled = input.bool(true, "Draw Elliott candidates", group = G_EW)
-bool ewOnM = input.bool(true, "1M", inline = "ewTf1", group = G_EW)
-bool ewOnW = input.bool(true, "1W", inline = "ewTf1", group = G_EW)
-bool ewOnD = input.bool(true, "1D", inline = "ewTf1", group = G_EW)
-bool ewOn4H = input.bool(true, "4H", inline = "ewTf2", group = G_EW)
-bool ewOn1H = input.bool(true, "1H", inline = "ewTf2", group = G_EW)
-bool ewOn15 = input.bool(true, "15M", inline = "ewTf2", group = G_EW)
-bool ewOn5 = input.bool(true, "5M", inline = "ewTf2", group = G_EW)
-int ewHistory = input.int(5000, "Wave source history budget", minval = 500, maxval = 20000, step = 500, group = G_EW, tooltip = "Per-timeframe source bars. Bounds intrabar arrays in Replay. Older history may be N/A. Elliott timeframe switches are independent of dashboard timeframe switches.")
-int ewLeft = input.int(5, "Wave pivot left", minval = 1, maxval = 50, group = G_EW)
-int ewRight = input.int(5, "Wave pivot right", minval = 1, maxval = 50, group = G_EW)
-float ewMinAtr = input.float(0.5, "Minimum reversal (ATR at confirmation)", minval = 0, step = 0.1, group = G_EW)
-bool ewImpulse = input.bool(true, "Impulse / extended / truncated fifth", group = G_EW)
-bool ewDiagonal = input.bool(true, "Contracting / expanding diagonal", group = G_EW)
-bool ewAbc = input.bool(true, "Zigzag / regular, expanded, running flat", group = G_EW)
-bool ewTriangle = input.bool(true, "Contracting / barrier / expanding triangle", group = G_EW)
-bool ewCombination = input.bool(true, "WXY / WXYXZ (ABC component candidates)", group = G_EW)
-float ewEquality = input.float(0.03, "Equality / barrier tolerance (fraction of first leg)", minval = 0, maxval = 0.1, step = 0.01, group = G_EW)
-color ewMotiveColor = input.color(color.rgb(40, 190, 230), "Motive candidate", group = G_EW)
-color ewCorrectionColor = input.color(color.rgb(235, 175, 55), "Corrective candidate", group = G_EW)
-bool ewColorByTf = input.bool(true, "Color waves by timeframe", group = G_EW, tooltip = "Each timeframe uses its own color for all Elliott families. Disable to use motive/corrective colors.")
-color ewColorM = input.color(color.rgb(166, 92, 230), "1M wave color", group = G_EW)
-color ewColorW = input.color(color.rgb(65, 105, 225), "1W wave color", group = G_EW)
-color ewColorD = input.color(color.rgb(0, 155, 175), "1D wave color", group = G_EW)
-color ewColor4H = input.color(color.rgb(35, 150, 70), "4H wave color", group = G_EW)
-color ewColor1H = input.color(color.rgb(190, 145, 0), "1H wave color", group = G_EW)
-color ewColor15 = input.color(color.rgb(225, 110, 25), "15M wave color", group = G_EW)
-color ewColor5 = input.color(color.rgb(215, 55, 85), "5M wave color", group = G_EW)
+string G_EW = "Elliott waves (chart timeframe, adapted from elliott.pine)"
+bool ewEnabled = input.bool(true, "Draw Elliott waves", group = G_EW, tooltip = "Three zigzag lengths find 1-2-3-4-5 motive waves and a following (a)(b)(c) correction on the chart timeframe, with Fibonacci retracement zone and break marks. Adapted from the supplied elliott.pine (no licence stated in that file). Pivots confirm 1 bar after the swing for each length, so the last leg is provisional until the next swing forms. Pattern detection is a candidate, not a forecast.")
+string ewSrcHigh = input.string("high", "Swing high source", options = ["high", "close", "max open/close"], group = G_EW)
+string ewSrcLow = input.string("low", "Swing low source", options = ["low", "close", "min open/close"], group = G_EW)
+bool ewOn1 = input.bool(true, "Zigzag 1", inline = "ewZ1", group = G_EW)
+int ewLen1 = input.int(4, "length", minval = 1, inline = "ewZ1", group = G_EW)
+color ewCol1 = input.color(color.red, "", inline = "ewZ1", group = G_EW)
+bool ewOn2 = input.bool(true, "Zigzag 2", inline = "ewZ2", group = G_EW)
+int ewLen2 = input.int(8, "length", minval = 1, inline = "ewZ2", group = G_EW)
+color ewCol2 = input.color(color.blue, "", inline = "ewZ2", group = G_EW)
+bool ewOn3 = input.bool(true, "Zigzag 3", inline = "ewZ3", group = G_EW)
+int ewLen3 = input.int(16, "length", minval = 1, inline = "ewZ3", group = G_EW)
+color ewCol3 = input.color(color.white, "", inline = "ewZ3", group = G_EW)
+float ewFib1 = input.float(0.5, "Fibonacci level 1", minval = 0, maxval = 1, step = 0.01, group = G_EW)
+float ewFib2 = input.float(0.618, "Fibonacci level 2", minval = 0, maxval = 1, step = 0.01, group = G_EW)
+float ewFib3 = input.float(0.764, "Fibonacci level 3", minval = 0, maxval = 1, step = 0.01, group = G_EW)
+float ewFib4 = input.float(0.854, "Fibonacci level 4", minval = 0, maxval = 1, step = 0.01, group = G_EW, tooltip = "Also the invalidation limit used for the (a)(b)(c) check.")
+bool ewShowZz = input.bool(false, "Show zigzag lines", group = G_EW)
+int ewMaxWaves = input.int(4, "Max wave sets kept per zigzag", minval = 2, maxval = 15, group = G_EW, tooltip = "Older sets are deleted. Lines and labels share TradingView's 500 object limits with the other modules.")
 
 string G_TL = "Trendlines (higher timeframes visible on lower charts)"
-bool tlEnabled = input.bool(false, "Draw trendlines", group = G_TL, tooltip = "LuxAlgo-style sloped trendlines per timeframe: a down-trendline from the latest confirmed swing high and an up-trendline from the latest confirmed swing low, sloped by ATR / length. Only timeframes equal to or higher than the chart timeframe are drawn.")
+bool tlEnabled = input.bool(false, "Draw trendlines", group = G_TL, tooltip = "Trendlines drawn exactly as in trendline.pine (LuxAlgo Trendline Breakout Navigator), run per timeframe and per swing length. A higher high starts an up-trendline at the previous swing low, a lower low starts a down-trendline at the previous swing high; later swings re-fit the slope. Only timeframes equal to or higher than the chart timeframe are drawn.")
 bool tlOnM = input.bool(true, "1M", inline = "tlTf1", group = G_TL)
 bool tlOnW = input.bool(true, "1W", inline = "tlTf1", group = G_TL)
 bool tlOnD = input.bool(true, "1D", inline = "tlTf1", group = G_TL)
@@ -117,12 +113,14 @@ bool tlOn4H = input.bool(true, "4H", inline = "tlTf2", group = G_TL)
 bool tlOn1H = input.bool(true, "1H", inline = "tlTf2", group = G_TL)
 bool tlOn15 = input.bool(true, "15M", inline = "tlTf2", group = G_TL)
 bool tlOn5 = input.bool(true, "5M", inline = "tlTf2", group = G_TL)
-int tlLength = input.int(14, "Slope length (bars)", minval = 2, maxval = 200, group = G_TL, tooltip = "LuxAlgo-style: slope per source-timeframe bar = ATR / length x multiplier.")
-float tlMult = input.float(1.0, "Slope multiplier", minval = 0, step = 0.1, group = G_TL)
-bool tlExtend = input.bool(true, "Extend lines to the right", group = G_TL)
+bool tlLong = input.bool(true, "Long swings", inline = "tlS1", group = G_TL)
+int tlLenLong = input.int(30, "length", minval = 1, maxval = 200, inline = "tlS1", group = G_TL, tooltip = "Solid, thick lines (trendline.pine uses 60 for Long).")
+bool tlMed = input.bool(true, "Medium swings", inline = "tlS2", group = G_TL)
+int tlLenMed = input.int(10, "length", minval = 1, maxval = 200, inline = "tlS2", group = G_TL, tooltip = "Dashed lines.")
+bool tlShort = input.bool(true, "Short swings", inline = "tlS3", group = G_TL)
+int tlLenShort = input.int(5, "length", minval = 1, maxval = 200, inline = "tlS3", group = G_TL, tooltip = "Dotted lines. Shorter swings give more, smaller trendlines like hand-drawn ones. Each swing length uses the pivot with that many bars on the left and 1 on the right.")
 bool tlLabels = input.bool(true, "Label lines with timeframe", group = G_TL)
 int tlWidth = input.int(2, "Line width", minval = 1, maxval = 4, group = G_TL)
-string tlStyle = input.string("Solid", "Resistance / support style", options = ["Solid", "Dashed", "Dotted"], group = G_TL, tooltip = "Resistance uses the chosen style; support is always solid so the two are distinguishable in the same color.")
 color tlColorM = input.color(color.rgb(190, 120, 255), "1M trendline color", group = G_TL)
 color tlColorW = input.color(color.rgb(90, 130, 255), "1W trendline color", group = G_TL)
 color tlColorD = input.color(color.rgb(0, 200, 220), "1D trendline color", group = G_TL)
@@ -132,7 +130,7 @@ color tlColor15 = input.color(color.rgb(250, 130, 40), "15M trendline color", gr
 color tlColor5 = input.color(color.rgb(250, 70, 110), "5M trendline color", group = G_TL)
 
 string G_SD = "Supply and demand zones (chart timeframe)"
-bool sdEnabled = input.bool(false, "Draw supply / demand zones", group = G_SD, tooltip = "Zone = 1-3 small-bodied base candles followed by a strong displacement close beyond the base. Detected at chart-candle close.")
+bool sdEnabled = input.bool(true, "Draw supply / demand zones", group = G_SD, tooltip = "Zone = 1-3 small-bodied base candles followed by a strong displacement close beyond the base. Detected at chart-candle close.")
 bool sdDemand = input.bool(true, "Demand zones", inline = "sd1", group = G_SD)
 bool sdSupply = input.bool(true, "Supply zones", inline = "sd1", group = G_SD)
 float sdImpulseAtr = input.float(1.5, "Displacement body (ATR multiple)", minval = 0.5, step = 0.1, group = G_SD)
@@ -144,6 +142,57 @@ bool sdText = input.bool(true, "Zone labels with test count", group = G_SD)
 color sdDemandColor = input.color(color.rgb(30, 170, 100), "Demand color", group = G_SD)
 color sdSupplyColor = input.color(color.rgb(215, 65, 75), "Supply color", group = G_SD)
 int sdOpacity = input.int(80, "Zone transparency", minval = 40, maxval = 95, group = G_SD)
+
+string G_FO = "Fair value gaps and order blocks (chart timeframe)"
+bool fvEnabled = input.bool(true, "Show fair value gaps (FVG)", group = G_FO, tooltip = "Three-candle gap: candle 3 low above candle 1 high (bullish) or candle 3 high below candle 1 low (bearish). Created on confirmed bars only.")
+bool obEnabled = input.bool(true, "Show order blocks (OB)", group = G_FO, tooltip = "When a confirmed swing high/low is broken with a strong candle, the last opposite candle before the break becomes the order block: bearish candle for an upward break (bullish OB), bullish candle for a downward break (bearish OB).")
+int foMax = input.int(5, "Max zones per type", minval = 1, maxval = 30, group = G_FO, tooltip = "Bullish FVG, bearish FVG, bullish OB and bearish OB are limited separately; the oldest is removed first.")
+bool foHide = input.bool(false, "Delete mitigated zones", group = G_FO, tooltip = "Off: a mitigated zone stays, frozen and faded.")
+float fvMinAtr = input.float(0.1, "Minimum gap size (ATR multiple)", minval = 0, maxval = 5, step = 0.05, group = G_FO)
+string fvMitigation = input.string("Full fill", "FVG mitigation", options = ["Touch", "50% fill", "Full fill"], group = G_FO)
+int obSwing = input.int(8, "OB swing length", minval = 2, maxval = 50, group = G_FO, tooltip = "Bars on each side that confirm a swing (confirmation delay = this many bars).")
+string obBreakMode = input.string("Close", "OB break confirmation", options = ["Close", "Wick"], group = G_FO)
+float obDispAtr = input.float(1.2, "OB displacement (range / ATR, 0 = off)", minval = 0, maxval = 5, step = 0.1, group = G_FO, tooltip = "The breaking candle range must be at least this multiple of ATR.")
+bool obBodyOnly = input.bool(false, "OB body only (off = full candle)", group = G_FO)
+string obMitigation = input.string("Wick", "OB mitigation", options = ["Close", "Wick"], group = G_FO)
+bool foLabels = input.bool(true, "Zone labels", group = G_FO)
+color fvBullColor = input.color(color.rgb(0, 200, 110), "Bullish FVG color", group = G_FO)
+color fvBearColor = input.color(color.rgb(255, 60, 70), "Bearish FVG color", group = G_FO)
+color obBullColor = input.color(color.rgb(35, 100, 245), "Bullish OB color", group = G_FO)
+color obBearColor = input.color(color.rgb(245, 120, 30), "Bearish OB color", group = G_FO)
+int foOpacity = input.int(78, "Zone transparency", minval = 40, maxval = 95, group = G_FO)
+
+string G_LS = "Liquidity sweeps (chart timeframe)"
+bool lsEnabled = input.bool(true, "Show liquidity sweeps", group = G_LS, tooltip = "Adapted from Liquidity Sweeps by LuxAlgo (CC BY-NC-SA 4.0). A swing high/low is a liquidity pool; a sweep is price taking it out and reversing. Wick sweep: the wick pierces the swing level but the candle closes back on the other side. Outbreak and retest: price closes through the level, then later wicks back through it and closes on the original side. Sweeps are a context marker, not an entry signal.")
+int lsLen = input.int(5, "Sweep swing length", minval = 1, maxval = 50, group = G_LS, tooltip = "Bars on each side that confirm a swing (confirmation delay = this many bars).")
+string lsMode = input.string("Only Wicks", "Sweep type", options = ["Only Wicks", "Only Outbreaks & Retest", "Wicks + Outbreaks & Retest"], group = G_LS)
+bool lsExtend = input.bool(true, "Extend sweep area", group = G_LS)
+int lsMaxBars = input.int(300, "Sweep area max bars", minval = 1, maxval = 5000, group = G_LS)
+int lsMaxAreas = input.int(30, "Max sweep areas kept", minval = 1, maxval = 100, group = G_LS)
+color lsBull = input.color(color.rgb(8, 153, 129), "Bull sweep color", group = G_LS)
+color lsBear = input.color(color.rgb(242, 54, 69), "Bear sweep color", group = G_LS)
+
+string G_VP = "Volume profile (chart timeframe)"
+bool vpEnabled = input.bool(true, "Show volume profile", group = G_VP, tooltip = "Adapted from the supplied volume_profile.pine. Horizontal histogram of volume by price over the last N bars; the longest bar is the Point of Control (POC). Uses tick volume on forex. Drawn on the last bar only.")
+int vpLength = input.int(500, "Lookback", minval = 1, maxval = 1000, group = G_VP, tooltip = "Number of most recent bars used.")
+int vpRows = input.int(60, "Row size", minval = 1, maxval = 200, group = G_VP, tooltip = "Number of price rows. Each row is one line object from the shared 500-line budget, so keep this modest.")
+bool vpRolling = input.bool(false, "Show rolling POC", group = G_VP, tooltip = "Plots the POC price as it evolved bar by bar. Recomputes the profile on every bar, which is slower.")
+int vpWidth = input.int(50, "Width (% of lookback)", minval = 1, maxval = 100, group = G_VP)
+int vpBarWidth = input.int(2, "Bar width", minval = 1, maxval = 20, group = G_VP)
+bool vpFlip = input.bool(false, "Flip histogram", group = G_VP, tooltip = "Base at the most recent candle instead of the oldest.")
+bool vpGrad = input.bool(true, "Gradient", group = G_VP)
+color vpSolid = input.color(#2157f3, "Rows solid color", group = G_VP)
+color vpLow = input.color(color.rgb(30, 21, 42), "Gradient low color", group = G_VP)
+color vpHigh = input.color(color.rgb(90, 177, 187), "Gradient high / POC color", group = G_VP)
+color vpPocColor = input.color(#ff5d00, "POC solid color", group = G_VP)
+
+string G_SW = "Swing H/L + candle patterns (chart timeframe)"
+bool swEnabled = input.bool(true, "Show swing highs/lows with candle pattern", group = G_SW, tooltip = "Adapted from Swing Highs/Lows & Candle Patterns. Labels each confirmed swing as HH/LH or HL/LL and names the candle pattern on the swing candle (hammer, inverted hammer, hanging man, shooting star) or a bullish/bearish engulfing there. Swings confirm this many bars late, so labels appear after the fact. Patterns are context, not entries.")
+int swLen = input.int(21, "Swing length", minval = 1, maxval = 100, group = G_SW, tooltip = "Bars on each side of the swing candle.")
+bool swPatterns = input.bool(true, "Show candle pattern name", group = G_SW)
+int swMaxLabels = input.int(60, "Max swing labels kept", minval = 1, maxval = 200, group = G_SW)
+color swHighCss = input.color(color.red, "Swing high color", group = G_SW)
+color swLowCss = input.color(color.teal, "Swing low color", group = G_SW)
 
 string G_ALERT = "Alerts (chart-close transitions)"
 bool alertFlip = input.bool(true, "Overall bullish / bearish reversal", group = G_ALERT)
@@ -191,28 +240,6 @@ type Summary
     float alignment = na
     float trendShare = na
     float rangeShare = na
-
-type WaveEvent
-    float price = na
-    int kind = 0
-    int stamp = na
-    float minimum = na
-    int closedAt = na
-    float atr = na
-
-type WaveState
-    array<float> prices
-    array<int> times
-    array<int> kinds
-    array<line> lines
-    array<label> labels
-    array<line> trend
-    array<label> trendLabels
-    float atrHigh = na
-    float atrLow = na
-    int seen = na
-    int recognizedAt = na
-    string status = "N/A: no closed source data"
 
 f_sign(float value) =>
     value > 0 ? 1 : value < 0 ? -1 : 0
@@ -401,196 +428,6 @@ f_addLabel(array<label> labels, string value, float price, bool above, color bac
     if array.size(labels) > labelLimit
         label.delete(array.shift(labels))
 
-f_ewCorrection(array<float> points, int start) =>
-    float p0 = array.get(points, start)
-    int direction = f_sign(array.get(points, start + 1) - p0)
-    float a = direction * (array.get(points, start + 1) - p0)
-    float b = direction * (array.get(points, start + 2) - p0)
-    float c = direction * (array.get(points, start + 3) - p0)
-    float retrace = a > 0 ? (a - b) / a : na
-    float tolerance = a * ewEquality
-    string kind = ""
-    if a > 0 and retrace > 0
-        if retrace < 0.9 and b > 0 and c > a
-            kind := "Zigzag"
-        else if retrace >= 0.9 and retrace <= 1.1 and math.abs(c - a) <= tolerance
-            kind := "Regular flat"
-        else if retrace > 1.0 and c > a + tolerance
-            kind := "Expanded flat"
-        else if retrace > 1.0 and c > b and c < a - tolerance
-            kind := "Running flat"
-    kind
-
-f_ewMotive(array<float> points, int start, bool diagonal) =>
-    float origin = array.get(points, start)
-    int direction = f_sign(array.get(points, start + 1) - origin)
-    float p1 = direction * (array.get(points, start + 1) - origin)
-    float p2 = direction * (array.get(points, start + 2) - origin)
-    float p3 = direction * (array.get(points, start + 3) - origin)
-    float p4 = direction * (array.get(points, start + 4) - origin)
-    float p5 = direction * (array.get(points, start + 5) - origin)
-    float w1 = p1
-    float w3 = p3 - p2
-    float w5 = p5 - p4
-    bool base = p1 > 0 and p2 > 0 and p2 < p1 and p3 > p1 and p4 > p2 and p4 < p3 and p5 > p4
-    string kind = ""
-    if base
-        if not diagonal and p4 > p1 and w3 >= math.min(w1, w5)
-            if p5 <= p3
-                kind := "Impulse: truncated 5"
-            else if w3 > 1.618 * math.max(w1, w5)
-                kind := "Impulse: extended 3"
-            else if w1 > 1.618 * math.max(w3, w5)
-                kind := "Impulse: extended 1"
-            else if w5 > 1.618 * math.max(w1, w3)
-                kind := "Impulse: extended 5"
-            else
-                kind := "Impulse"
-        else if diagonal and p4 < p1 and p5 > p3
-            float w2 = p1 - p2
-            float w4 = p3 - p4
-            if w1 > w3 and w3 > w5 and w2 > w4
-                kind := "Contracting diagonal"
-            else if w1 < w3 and w3 < w5 and w2 < w4
-                kind := "Expanding diagonal"
-    kind
-
-f_ewTriangle(array<float> points, int start) =>
-    float origin = array.get(points, start)
-    int direction = f_sign(array.get(points, start + 1) - origin)
-    float a = direction * (array.get(points, start + 1) - origin)
-    float b = direction * (array.get(points, start + 2) - origin)
-    float c = direction * (array.get(points, start + 3) - origin)
-    float d = direction * (array.get(points, start + 4) - origin)
-    float e = direction * (array.get(points, start + 5) - origin)
-    float tolerance = a * ewEquality
-    bool alternating = a > 0 and b < a and c > b and d < c and e > d
-    string kind = ""
-    if alternating
-        if b > 0 and c < a - tolerance and d > b + tolerance and e < c
-            kind := "Contracting triangle"
-        else if b > 0 and math.abs(c - a) <= tolerance and d > b + tolerance and e <= c + tolerance
-            kind := "Barrier triangle"
-        else if b > 0 and c < a - tolerance and math.abs(d - b) <= tolerance and e < c
-            kind := "Barrier triangle"
-        else if c > a + tolerance and d < b - tolerance and e > c
-            kind := "Expanding triangle"
-    kind
-
-f_ewCombination(array<float> points, int start, int components) =>
-    bool valid = true
-    for component = 0 to components - 1
-        if f_ewCorrection(points, start + component * 3) == ""
-            valid := false
-    valid
-
-f_ewPivot(array<float> prices, array<int> times, array<int> kinds, float price, int stamp, int kind, float minimum) =>
-    bool changed = false
-    int count = array.size(prices)
-    if count == 0
-        array.push(prices, price)
-        array.push(times, stamp)
-        array.push(kinds, kind)
-        changed := true
-    else
-        float last = array.get(prices, count - 1)
-        if stamp > array.get(times, count - 1)
-            if kind == array.get(kinds, count - 1)
-                if kind * (price - last) > 0
-                    array.set(prices, count - 1, price)
-                    array.set(times, count - 1, stamp)
-                    changed := true
-            else if not na(minimum) and kind * (price - last) >= minimum and kind * (price - last) > 0
-                array.push(prices, price)
-                array.push(times, stamp)
-                array.push(kinds, kind)
-                if array.size(prices) > 32
-                    array.shift(prices)
-                    array.shift(times)
-                    array.shift(kinds)
-                changed := true
-    changed
-
-f_ewColor(string tfName, bool motive) =>
-    color shade = motive ? ewMotiveColor : ewCorrectionColor
-    if ewColorByTf
-        shade := switch tfName
-            "1M" => ewColorM
-            "1W" => ewColorW
-            "1D" => ewColorD
-            "4H" => ewColor4H
-            "1H" => ewColor1H
-            "15M" => ewColor15
-            "5M" => ewColor5
-    shade
-
-f_ewDraw(array<float> points, array<int> times, int start, int legs, string kind, string notation, array<line> lines, array<label> labels, string tfName, int recognizedAt) =>
-    color shade = f_ewColor(tfName, notation == "12345")
-    int direction = f_sign(array.get(points, start + 1) - array.get(points, start))
-    string confirmedAt = str.format_time(recognizedAt, "yyyy-MM-dd HH:mm", "UTC")
-    for i = 0 to legs
-        string wave = i == 0 ? "0" : ""
-        if i > 0
-            if notation == "12345"
-                wave := str.tostring(i)
-            else if notation == "ABCDE"
-                wave := str.substring("ABCDE", i - 1, i)
-            else if notation == "ABC"
-                wave := str.substring("ABC", i - 1, i)
-            else
-                int component = int((i - 1) / 3)
-                wave := str.substring(notation, component, component + 1) + "." + str.substring("ABC", (i - 1) % 3, (i - 1) % 3 + 1)
-        float price = array.get(points, start + i)
-        bool above = i % 2 == 1 ? direction > 0 : direction < 0
-        label marker = label.new(array.get(times, start + i), price, tfName + " " + wave, xloc = xloc.bar_time, style = above ? label.style_label_down : label.style_label_up, color = color.new(shade, 25), textcolor = textColor, size = size.tiny, tooltip = tfName + " " + kind + " candidate\nSource confirmed UTC: " + confirmedAt + "\nBack-positioned pivot label; not known on the pivot candle.")
-        array.push(labels, marker)
-        if i > 0
-            array.push(lines, line.new(array.get(times, start + i - 1), array.get(points, start + i - 1), array.get(times, start + i), price, xloc = xloc.bar_time, color = shade, width = 2))
-    array.push(labels, label.new(recognizedAt, array.get(points, start + legs), tfName + " " + kind + " candidate\nSource confirmed here; not an entry", xloc = xloc.bar_time, style = direction > 0 ? label.style_label_down : label.style_label_up, color = shade, textcolor = textColor, size = size.tiny))
-
-f_ewEvent(simple int offset) =>
-    float ph = ta.pivothigh(high, ewLeft, ewRight)
-    float pl = ta.pivotlow(low, ewLeft, ewRight)
-    float minimum = ta.atr(atrLen) * ewMinAtr
-    int kind = not na(ph) and na(pl) ? 1 : not na(pl) and na(ph) ? -1 : 0
-    float price = kind == 1 ? ph : kind == -1 ? pl : na
-    WaveEvent.new(price[offset], kind[offset], time[ewRight + offset], minimum[offset], time_close[offset], ta.atr(atrLen)[offset])
-
-f_ewValues() =>
-    WaveEvent event = f_ewEvent(0)
-    [event.price, event.kind, event.stamp, event.minimum, event.closedAt, event.atr]
-
-f_ewAccept(WaveState state, float price, int stamp, int kind, float minimum, int closedAt, float atr) =>
-    if not na(closedAt) and (na(state.seen) or closedAt > state.seen)
-        state.seen := closedAt
-        if kind != 0 and not na(price) and not na(stamp)
-            if f_ewPivot(state.prices, state.times, state.kinds, price, stamp, kind, minimum)
-                state.recognizedAt := closedAt
-                if kind == 1
-                    state.atrHigh := atr
-                else
-                    state.atrLow := atr
-        state.status := array.size(state.prices) < 4 ? "Building pivots" : "No matching candidate"
-    true
-
-f_ewFetch(string tf, WaveState state) =>
-    bool lowerTf = timeframe.in_seconds(tf) < chartSeconds
-    if lowerTf
-        [prices, kinds, stamps, minimums, closes, atrs] = request.security_lower_tf(sourceTicker, tf, f_ewValues(), calc_bars_count = ewHistory)
-        if barstate.isconfirmed
-            int cutoff = na(time_close) ? timenow : math.min(time_close, timenow)
-            int count = array.size(closes)
-            if count > 0
-                for i = 0 to count - 1
-                    int closedAt = array.get(closes, i)
-                    if not na(closedAt) and closedAt <= cutoff
-                        f_ewAccept(state, array.get(prices, i), array.get(stamps, i), array.get(kinds, i), array.get(minimums, i), closedAt, array.get(atrs, i))
-    else
-        WaveEvent event = request.security(sourceTicker, tf, f_ewEvent(1), gaps = barmerge.gaps_off, lookahead = barmerge.lookahead_on, calc_bars_count = ewHistory)
-        if barstate.isconfirmed and not na(event)
-            f_ewAccept(state, event.price, event.stamp, event.kind, event.minimum, event.closedAt, event.atr)
-    true
-
 array<bool> enabled = array.from(onM, onW, onD, on4H, on1H, on15, on5)
 array<float> weights = array.from(wtM, wtW, wtD, wt4H, wt1H, wt15, wt5)
 array<string> tfs = array.from("1M", "1W", "1D", "240", "60", "15", "5")
@@ -637,92 +474,711 @@ if complete and higherComplete
 else if complete and condition == "Ranging"
     context := "RANGE"
 
-var array<WaveState> ewStates = array.new<WaveState>()
-array<bool> ewTimeframes = array.from(ewOnM, ewOnW, ewOnD, ewOn4H, ewOn1H, ewOn15, ewOn5)
-if barstate.isfirst
-    for i = 0 to 6
-        array.push(ewStates, WaveState.new(array.new<float>(), array.new<int>(), array.new<int>(), array.new<line>(), array.new<label>(), array.new<line>(), array.new<label>()))
-string ewStatus = ""
 array<bool> tlTimeframes = array.from(tlOnM, tlOnW, tlOnD, tlOn4H, tlOn1H, tlOn15, tlOn5)
 array<color> tlColors = array.from(tlColorM, tlColorW, tlColorD, tlColor4H, tlColor1H, tlColor15, tlColor5)
-string tlResistanceStyle = tlStyle == "Dashed" ? line.style_dashed : tlStyle == "Dotted" ? line.style_dotted : line.style_solid
-for tfIndex = 0 to 6
-    bool ewOn = ewEnabled and array.get(ewTimeframes, tfIndex)
-    bool tlOn = tlEnabled and array.get(tlTimeframes, tfIndex) and timeframe.in_seconds(array.get(tfs, tfIndex)) >= chartSeconds
-    if ewOn or tlOn
-        WaveState state = array.get(ewStates, tfIndex)
-        f_ewFetch(array.get(tfs, tfIndex), state)
-        if barstate.islast
-            while array.size(state.lines) > 0
-                line.delete(array.pop(state.lines))
-            while array.size(state.labels) > 0
-                label.delete(array.pop(state.labels))
-            while array.size(state.trend) > 0
-                line.delete(array.pop(state.trend))
-            while array.size(state.trendLabels) > 0
-                label.delete(array.pop(state.trendLabels))
-            int count = array.size(state.prices)
-            if tlOn and count > 0
-                int highIndex = -1
-                int lowIndex = -1
-                for j = 0 to count - 1
-                    int pivotKind = array.get(state.kinds, j)
-                    if pivotKind == 1
-                        highIndex := j
+
+type TlBin
+    line lin
+    float slope
+    bool active
+    chart.point cp
+
+f_luxPivots(bool toggle, string tf, int l1, int l2, int l3) =>
+    int tH = na
+    float h1 = na
+    float w1 = na
+    float h2 = na
+    float w2 = na
+    float h3 = na
+    float w3 = na
+    if toggle
+        [a, b, c, d, e, f, g] = request.security(syminfo.tickerid, tf, [time[2], ta.pivothigh(l1, 1), ta.pivotlow(l1, 1), ta.pivothigh(l2, 1), ta.pivotlow(l2, 1), ta.pivothigh(l3, 1), ta.pivotlow(l3, 1)])
+        tH := a
+        h1 := b
+        w1 := c
+        h2 := d
+        w2 := e
+        h3 := f
+        w3 := g
+    [tH, h1, w1, h2, w2, h3, w3]
+
+// Port of draw() from trendline.pine (LuxAlgo Trendline Breakout Navigator).
+f_luxDraw(bool toggle, int tH, float ph, float pl, color shade, string lineStyle, int lineWidth) =>
+    var int trend = 0
+    var chart.point prevPh = chart.point.from_index(na, na)
+    var chart.point prevPl = chart.point.from_index(na, na)
+    var TlBin bn = TlBin.new(na, 0.0, false)
+    int n = bar_index
+
+    float cH = ta.change(fixnan(ph))
+    float cL = ta.change(fixnan(pl))
+    bool chH = cH != 0 and cL == 0
+    bool chL = cL != 0 and cH == 0
+
+    if toggle
+        if bn.active
+            if bn.lin.get_x2() - bn.lin.get_x1() > 5000
+                bn.active := false
+                bn.lin.delete()
+            else
+                bn.lin.set_xy2(n, bn.lin.get_y2() + bn.slope)
+
+        if chH
+            float v = 0.
+            int idx = 0
+            for i = 0 to 5000
+                int Ti = time[i]
+                if high[i] > v
+                    v := high[i]
+                    idx := i
+                if Ti < tH
+                    break
+            int x = n - idx
+            float c = close[idx]
+
+            if trend < 1
+                if v > prevPh.price and x - prevPh.index > 5 and n - prevPl.index < 5000
+                    trend := 1
+                    bn := TlBin.new(line.new(prevPl.index, prevPl.price, n, prevPl.price, color = shade, style = lineStyle, width = lineWidth), 0.0, true, chart.point.from_index(prevPl.index, prevPl.price))
+                else
+                    if bn.active
+                        float slope = (v - bn.cp.price) / (x - bn.cp.index)
+                        if v < bn.lin.get_y1() + slope and (v > bn.lin.get_y2() + slope or bn.slope == 0)
+                            float priceLin = bn.lin.get_price(n - idx)
+                            if c < priceLin
+                                if bn.slope != 0
+                                    label.new(n - idx, priceLin, style = label.style_label_center, text = '●', color = color(na), textcolor = shade)
+                                bn.lin.set_xy2(n, v + slope * idx)
+                                if bn.slope == 0
+                                    bool stop = false
+                                    while not stop
+                                        array<float> arr = array.new<float>()
+                                        for i = 0 to n - bn.lin.get_x1()
+                                            arr.push(close[i] - bn.lin.get_price(n - i))
+                                        float highest_point = arr.max()
+                                        if highest_point > 0
+                                            int ix = arr.indexof(highest_point)
+                                            int x1 = n - ix
+                                            float y1 = high[ix]
+                                            bn.cp.index := x1
+                                            bn.cp.price := y1
+                                            slope := (v - y1) / (x - x1)
+                                            bn.lin.set_xy2(n, v + slope * idx)
+                                            bn.lin.set_xy1(x1, y1)
+                                            bn.slope := slope
+                                        else
+                                            bn.lin.set_xy2(n, v + slope * idx)
+                                            bn.slope := slope
+                                            stop := true
+                                else
+                                    bn.slope := slope
+                            else
+                                bn.active := false
+            prevPh.index := x
+            prevPh.price := v
+        else
+            if trend < 1
+                if close > bn.lin.get_y2()
+                    bn.active := false
+
+        if chL
+            float v = 10e6
+            int idx = 0
+            for i = 0 to 5000
+                int Ti = time[i]
+                if low[i] < v
+                    v := low[i]
+                    idx := i
+                if Ti < tH
+                    break
+            int x = n - idx
+            float c = close[idx]
+
+            if trend > -1
+                if v < prevPl.price and x - prevPl.index > 5 and n - prevPh.index < 5000
+                    trend := -1
+                    bn := TlBin.new(line.new(prevPh.index, prevPh.price, n, prevPh.price, color = shade, style = lineStyle, width = lineWidth), 0.0, true, chart.point.from_index(prevPh.index, prevPh.price))
+                else
+                    if bn.active
+                        float slope = (v - bn.cp.price) / (x - bn.cp.index)
+                        if v > bn.lin.get_y1() + slope and (v < bn.lin.get_y2() + slope or bn.slope == 0)
+                            float priceLin = bn.lin.get_price(n - idx)
+                            if c > priceLin
+                                if bn.slope != 0
+                                    label.new(n - idx, priceLin, style = label.style_label_center, text = '●', color = color(na), textcolor = shade)
+                                bn.lin.set_xy2(n, v + slope * idx)
+                                if bn.slope == 0
+                                    bool stop = false
+                                    while not stop
+                                        array<float> arr = array.new<float>()
+                                        for i = 0 to n - bn.lin.get_x1()
+                                            arr.push(bn.lin.get_price(n - i) - close[i])
+                                        float deepest_point = arr.max()
+                                        if deepest_point > 0
+                                            int ix = arr.indexof(deepest_point)
+                                            int x1 = n - ix
+                                            float y1 = low[ix]
+                                            bn.cp.index := x1
+                                            bn.cp.price := y1
+                                            slope := (v - y1) / (x - x1)
+                                            bn.lin.set_xy2(n, v + slope * idx)
+                                            bn.lin.set_xy1(x1, y1)
+                                            bn.slope := slope
+                                        else
+                                            bn.lin.set_xy2(n, v + slope * idx)
+                                            bn.slope := slope
+                                            stop := true
+                                else
+                                    bn.slope := slope
+                            else
+                                bn.active := false
+            prevPl.index := x
+            prevPl.price := v
+        else
+            if trend > -1
+                if close < bn.lin.get_y2()
+                    bn.active := false
+
+    // A line stays flat (slope 0) until a second swing confirms its direction; hide it until then.
+    bool sloped = bn.active and bn.slope != 0
+    if bn.active
+        bn.lin.set_color(sloped ? shade : color(na))
+    [trend, sloped, bn.lin.get_x1(), bn.lin.get_y2()]
+
+bool luxOn0 = tlEnabled and tlOnM and timeframe.in_seconds("1M") >= chartSeconds
+[lxT0, lxH0a, lxL0a, lxH0b, lxL0b, lxH0c, lxL0c] = f_luxPivots(luxOn0, "1M", tlLenLong, tlLenMed, tlLenShort)
+[lxTr0a, lxAc0a, lxX0a, lxY0a] = f_luxDraw(luxOn0 and tlLong, lxT0, lxH0a, lxL0a, tlColorM, line.style_solid, tlWidth)
+[lxTr0b, lxAc0b, lxX0b, lxY0b] = f_luxDraw(luxOn0 and tlMed, lxT0, lxH0b, lxL0b, tlColorM, line.style_dashed, 1)
+[lxTr0c, lxAc0c, lxX0c, lxY0c] = f_luxDraw(luxOn0 and tlShort, lxT0, lxH0c, lxL0c, tlColorM, line.style_dotted, 1)
+bool luxOn1 = tlEnabled and tlOnW and timeframe.in_seconds("1W") >= chartSeconds
+[lxT1, lxH1a, lxL1a, lxH1b, lxL1b, lxH1c, lxL1c] = f_luxPivots(luxOn1, "1W", tlLenLong, tlLenMed, tlLenShort)
+[lxTr1a, lxAc1a, lxX1a, lxY1a] = f_luxDraw(luxOn1 and tlLong, lxT1, lxH1a, lxL1a, tlColorW, line.style_solid, tlWidth)
+[lxTr1b, lxAc1b, lxX1b, lxY1b] = f_luxDraw(luxOn1 and tlMed, lxT1, lxH1b, lxL1b, tlColorW, line.style_dashed, 1)
+[lxTr1c, lxAc1c, lxX1c, lxY1c] = f_luxDraw(luxOn1 and tlShort, lxT1, lxH1c, lxL1c, tlColorW, line.style_dotted, 1)
+bool luxOn2 = tlEnabled and tlOnD and timeframe.in_seconds("1D") >= chartSeconds
+[lxT2, lxH2a, lxL2a, lxH2b, lxL2b, lxH2c, lxL2c] = f_luxPivots(luxOn2, "1D", tlLenLong, tlLenMed, tlLenShort)
+[lxTr2a, lxAc2a, lxX2a, lxY2a] = f_luxDraw(luxOn2 and tlLong, lxT2, lxH2a, lxL2a, tlColorD, line.style_solid, tlWidth)
+[lxTr2b, lxAc2b, lxX2b, lxY2b] = f_luxDraw(luxOn2 and tlMed, lxT2, lxH2b, lxL2b, tlColorD, line.style_dashed, 1)
+[lxTr2c, lxAc2c, lxX2c, lxY2c] = f_luxDraw(luxOn2 and tlShort, lxT2, lxH2c, lxL2c, tlColorD, line.style_dotted, 1)
+bool luxOn3 = tlEnabled and tlOn4H and timeframe.in_seconds("240") >= chartSeconds
+[lxT3, lxH3a, lxL3a, lxH3b, lxL3b, lxH3c, lxL3c] = f_luxPivots(luxOn3, "240", tlLenLong, tlLenMed, tlLenShort)
+[lxTr3a, lxAc3a, lxX3a, lxY3a] = f_luxDraw(luxOn3 and tlLong, lxT3, lxH3a, lxL3a, tlColor4H, line.style_solid, tlWidth)
+[lxTr3b, lxAc3b, lxX3b, lxY3b] = f_luxDraw(luxOn3 and tlMed, lxT3, lxH3b, lxL3b, tlColor4H, line.style_dashed, 1)
+[lxTr3c, lxAc3c, lxX3c, lxY3c] = f_luxDraw(luxOn3 and tlShort, lxT3, lxH3c, lxL3c, tlColor4H, line.style_dotted, 1)
+bool luxOn4 = tlEnabled and tlOn1H and timeframe.in_seconds("60") >= chartSeconds
+[lxT4, lxH4a, lxL4a, lxH4b, lxL4b, lxH4c, lxL4c] = f_luxPivots(luxOn4, "60", tlLenLong, tlLenMed, tlLenShort)
+[lxTr4a, lxAc4a, lxX4a, lxY4a] = f_luxDraw(luxOn4 and tlLong, lxT4, lxH4a, lxL4a, tlColor1H, line.style_solid, tlWidth)
+[lxTr4b, lxAc4b, lxX4b, lxY4b] = f_luxDraw(luxOn4 and tlMed, lxT4, lxH4b, lxL4b, tlColor1H, line.style_dashed, 1)
+[lxTr4c, lxAc4c, lxX4c, lxY4c] = f_luxDraw(luxOn4 and tlShort, lxT4, lxH4c, lxL4c, tlColor1H, line.style_dotted, 1)
+bool luxOn5 = tlEnabled and tlOn15 and timeframe.in_seconds("15") >= chartSeconds
+[lxT5, lxH5a, lxL5a, lxH5b, lxL5b, lxH5c, lxL5c] = f_luxPivots(luxOn5, "15", tlLenLong, tlLenMed, tlLenShort)
+[lxTr5a, lxAc5a, lxX5a, lxY5a] = f_luxDraw(luxOn5 and tlLong, lxT5, lxH5a, lxL5a, tlColor15, line.style_solid, tlWidth)
+[lxTr5b, lxAc5b, lxX5b, lxY5b] = f_luxDraw(luxOn5 and tlMed, lxT5, lxH5b, lxL5b, tlColor15, line.style_dashed, 1)
+[lxTr5c, lxAc5c, lxX5c, lxY5c] = f_luxDraw(luxOn5 and tlShort, lxT5, lxH5c, lxL5c, tlColor15, line.style_dotted, 1)
+bool luxOn6 = tlEnabled and tlOn5 and timeframe.in_seconds("5") >= chartSeconds
+[lxT6, lxH6a, lxL6a, lxH6b, lxL6b, lxH6c, lxL6c] = f_luxPivots(luxOn6, "5", tlLenLong, tlLenMed, tlLenShort)
+[lxTr6a, lxAc6a, lxX6a, lxY6a] = f_luxDraw(luxOn6 and tlLong, lxT6, lxH6a, lxL6a, tlColor5, line.style_solid, tlWidth)
+[lxTr6b, lxAc6b, lxX6b, lxY6b] = f_luxDraw(luxOn6 and tlMed, lxT6, lxH6b, lxL6b, tlColor5, line.style_dashed, 1)
+[lxTr6c, lxAc6c, lxX6c, lxY6c] = f_luxDraw(luxOn6 and tlShort, lxT6, lxH6c, lxL6c, tlColor5, line.style_dotted, 1)
+array<int> luxTrend = array.from(lxTr0a, lxTr0b, lxTr0c, lxTr1a, lxTr1b, lxTr1c, lxTr2a, lxTr2b, lxTr2c, lxTr3a, lxTr3b, lxTr3c, lxTr4a, lxTr4b, lxTr4c, lxTr5a, lxTr5b, lxTr5c, lxTr6a, lxTr6b, lxTr6c)
+array<bool> luxActive = array.from(lxAc0a, lxAc0b, lxAc0c, lxAc1a, lxAc1b, lxAc1c, lxAc2a, lxAc2b, lxAc2c, lxAc3a, lxAc3b, lxAc3c, lxAc4a, lxAc4b, lxAc4c, lxAc5a, lxAc5b, lxAc5c, lxAc6a, lxAc6b, lxAc6c)
+array<int> luxX = array.from(lxX0a, lxX0b, lxX0c, lxX1a, lxX1b, lxX1c, lxX2a, lxX2b, lxX2c, lxX3a, lxX3b, lxX3c, lxX4a, lxX4b, lxX4c, lxX5a, lxX5b, lxX5c, lxX6a, lxX6b, lxX6c)
+array<float> luxY = array.from(lxY0a, lxY0b, lxY0c, lxY1a, lxY1b, lxY1c, lxY2a, lxY2b, lxY2c, lxY3a, lxY3b, lxY3c, lxY4a, lxY4b, lxY4c, lxY5a, lxY5b, lxY5c, lxY6a, lxY6b, lxY6c)
+
+var array<label> tlLabelPool = array.new<label>()
+if barstate.islast
+    while array.size(tlLabelPool) > 0
+        label.delete(array.pop(tlLabelPool))
+    if tlEnabled and tlLabels
+        for tfIndex = 0 to 6
+            if array.get(tlTimeframes, tfIndex) and timeframe.in_seconds(array.get(tfs, tfIndex)) >= chartSeconds
+                for lvl = 0 to 2
+                    int slot = tfIndex * 3 + lvl
+                    int luxDir = array.get(luxTrend, slot)
+                    if array.get(luxActive, slot) and luxDir != 0 and not na(array.get(luxY, slot))
+                        array.push(tlLabelPool, label.new(bar_index, array.get(luxY, slot), array.get(names, tfIndex) + (luxDir == -1 ? " down" : " up"), style = luxDir == -1 ? label.style_label_down : label.style_label_up, color = color.new(array.get(tlColors, tfIndex), 20), textcolor = color.white, size = size.tiny))
+
+// Elliott waves adapted from the supplied elliott.pine (three zigzag lengths, 1-2-3-4-5 and a-b-c, Fibonacci zone, break marks).
+type ZZ
+    array<int> d
+    array<int> x
+    array<float> y
+    array<line> l
+
+type Ewave
+    line   l1
+    line   l2
+    line   l3
+    line   l4
+    line   l5
+    label  b1
+    label  b2
+    label  b3
+    label  b4
+    label  b5
+    //
+    bool   on
+    bool   br //= na
+    //
+    int    dir
+    //
+    line   lA
+    line   lB
+    line   lC
+    label  bA
+    label  bB
+    label  bC
+    //
+    bool next = false
+    //
+    label  lb
+    box    bx
+
+type fibL
+    line wave1_0_500
+    line wave1_0_618
+    line wave1_0_764
+    line wave1_0_854
+    line wave1_pole_
+    linefill l_fill_
+    bool     _break_ //= na
+
+float hi = ewSrcHigh == "high" ? high : ewSrcHigh == "close" ? close : math.max(open, close)
+float lo = ewSrcLow == "low" ? low : ewSrcLow == "close" ? close : math.min(open, close)
+
+in_out(aZZ, d, x1, y1, x2, y2, col) =>
+    aZZ.d.unshift(d), aZZ.x.unshift(x2), aZZ.y.unshift(y2), aZZ.d.pop(), aZZ.x.pop(), aZZ.y.pop()
+    if ewShowZz
+        aZZ.l.unshift(line.new(x1, y1, x2, y2, color= col)), aZZ.l.pop().delete()
+
+method isSame(Ewave gEW, _1x, _2x, _3x, _4x) =>
+    t1 = _1x == gEW.l1.get_x1()
+    t2 = _2x == gEW.l2.get_x1()
+    t3 = _3x == gEW.l3.get_x1()
+    t4 = _4x == gEW.l4.get_x1()
+    t1 and t2 and t3 and t4
+
+method isSame2(Ewave gEW, _1x, _2x, _3x) =>
+    t1 = _1x == gEW.l3.get_x2()
+    t2 = _2x == gEW.l4.get_x2()
+    t3 = _3x == gEW.l5.get_x2()
+    t1 and t2 and t3
+
+method makeDotted(Ewave gEW) =>
+    gEW.l1.set_style(line.style_dotted)
+    gEW.l2.set_style(line.style_dotted)
+    gEW.l3.set_style(line.style_dotted)
+    gEW.l4.set_style(line.style_dotted)
+    gEW.l5.set_style(line.style_dotted)
+    gEW.b1.set_textcolor    (color(na))
+    gEW.b2.set_textcolor    (color(na))
+    gEW.b3.set_textcolor    (color(na))
+    gEW.b4.set_textcolor    (color(na))
+    gEW.b5.set_textcolor    (color(na))
+    gEW.on := false
+
+method makeDashed(Ewave gEW) =>
+    gEW.lA.set_style(line.style_dashed)
+    gEW.lB.set_style(line.style_dashed)
+    gEW.lC.set_style(line.style_dashed)
+    gEW.bA.set_textcolor    (color(na))
+    gEW.bB.set_textcolor    (color(na))
+    gEW.bC.set_textcolor    (color(na))
+    gEW.bx.set_bgcolor      (color(na))
+    gEW.bx.set_border_color (color(na))
+
+method sol_dot(fibL nFibL, sol_dot, col) =>
+    style =
+     sol_dot ==  'dot'  ?
+      line.style_dotted :
+     sol_dot ==  'sol'  ?
+      line.style_solid  :
+      line.style_dashed
+    nFibL.wave1_0_500.set_style(style)
+    nFibL.wave1_0_618.set_style(style)
+    nFibL.wave1_0_764.set_style(style)
+    nFibL.wave1_0_854.set_style(style)
+    nFibL.l_fill_.set_color(col)
+
+method setLevels(fibL nFibL, int x1, int x2, float max_500, float max_618, float max_764, float max_854, float y2) =>
+    nFibL.wave1_0_500.set_xy1(x1, max_500)
+    nFibL.wave1_0_500.set_xy2(x2, max_500)
+    nFibL.wave1_0_618.set_xy1(x1, max_618)
+    nFibL.wave1_0_618.set_xy2(x2, max_618)
+    nFibL.wave1_0_764.set_xy1(x1, max_764)
+    nFibL.wave1_0_764.set_xy2(x2, max_764)
+    nFibL.wave1_0_854.set_xy1(x1, max_854)
+    nFibL.wave1_0_854.set_xy2(x2, max_854)
+    nFibL.wave1_pole_.set_xy1(x1,     y2 )
+    nFibL.wave1_pole_.set_xy2(x1, max_854)
+    nFibL.l_fill_.get_line1().set_xy1(x1, max_764)
+    nFibL.l_fill_.get_line1().set_xy2(x2, max_764)
+    nFibL.l_fill_.get_line2().set_xy1(x1, max_854)
+    nFibL.l_fill_.get_line2().set_xy2(x2, max_854)
+
+method clearLevels(fibL nFibL) =>
+    nFibL.wave1_0_500.set_xy1(na, na)
+    nFibL.wave1_0_500.set_xy2(na, na)
+    nFibL.wave1_0_618.set_xy1(na, na)
+    nFibL.wave1_0_618.set_xy2(na, na)
+    nFibL.wave1_0_764.set_xy1(na, na)
+    nFibL.wave1_0_764.set_xy2(na, na)
+    nFibL.wave1_0_854.set_xy1(na, na)
+    nFibL.wave1_0_854.set_xy2(na, na)
+    nFibL.wave1_pole_.set_xy1(na, na)
+    nFibL.wave1_pole_.set_xy2(na, na)
+    nFibL.l_fill_.set_color(color(na))
+
+f_ewZigzag(bool enabled, int left, color col, int n) =>
+    //
+    var int dir = na
+    var int x1 = na
+    var float y1 = na
+    var int x2 = na
+    var float y2 = na
+    var Ewave gEW = na
+    var int last_0x = na
+    var float last_0y = na
+    var int last_6x = na
+    var float last_6y = na
+    //
+    float ph = ta.pivothigh(hi, left, 1)
+    float pl = ta.pivotlow(lo, left, 1)
+    if enabled
+        var fibL nFibL = fibL.new(
+           wave1_0_500 = line.new(na, na, na, na, color= color.new(col, 50), style= line.style_solid ),
+           wave1_0_618 = line.new(na, na, na, na, color= color.new(col, 38), style= line.style_solid ),
+           wave1_0_764 = line.new(na, na, na, na, color= color.new(col, 24), style= line.style_solid ),
+           wave1_0_854 = line.new(na, na, na, na, color= color.new(col, 15), style= line.style_solid ),
+           wave1_pole_ = line.new(na, na, na, na, color= color.new(col, 50), style= line.style_dashed),
+               l_fill_ = linefill.new(
+                         line.new(na, na, na, na, color= color(na))
+                       , line.new(na, na, na, na, color= color(na))
+                       ,                          color= color(na))
+                       ,                         _break_   =   false
+               )
+        //
+        var  ZZ        aZZ   =   ZZ.new(array.new < int   > ()
+                                      , array.new < int   > ()
+                                      , array.new < float > ()
+                                      , array.new < line  > () )
+        var array<Ewave> aEW = array.new<Ewave>()
+        //
+        if barstate.isfirst
+            aEW.unshift(Ewave.new())
+            for i = 0 to 10
+                aZZ.d.unshift(0)
+                aZZ.x.unshift(0)
+                aZZ.y.unshift(0)
+                aZZ.l.unshift(ewShowZz ? line.new(na, na, na, na) : na)
+        //
+        sz       = aZZ.d.size( )
+        x2      := bar_index -1
+        t        = n == 2 ? '\n\n' : n == 1 ? '\n' : ''
+        //
+        // when a new Pivot High is found
+        if not na(ph)
+            gEW := aEW.get   (0)
+            dir := aZZ.d.get (0)
+            x1  := aZZ.x.get (0)
+            y1  := aZZ.y.get (0)
+            y2  :=      nz(hi[1])
+            //
+            if dir <  1  // if previous point was a pl, add, and change direction ( 1)
+                in_out(aZZ,  1, x1, y1, x2, y2, col)
+            else
+                if dir ==  1 and ph > y1
+                    aZZ.x.set(0, x2), aZZ.y.set(0, y2)
+                    if ewShowZz
+                        aZZ.l.get(0).set_xy2(x2, y2)
+            //
+            _6x = x2, _6y = y2
+            _5x = aZZ.x.get(1), _5y = aZZ.y.get(1)
+            _4x = aZZ.x.get(2), _4y = aZZ.y.get(2)
+            _3x = aZZ.x.get(3), _3y = aZZ.y.get(3)
+            _2x = aZZ.x.get(4), _2y = aZZ.y.get(4)
+            _1x = aZZ.x.get(5), _1y = aZZ.y.get(5)
+            //
+            // –––––––––––––––––––––[ 12345 ]–––––––––––––––––––––
+            _W5 = _6y - _5y
+            _W3 = _4y - _3y
+            _W1 = _2y - _1y
+            min = math.min(_W1, _W3, _W5)
+            isWave =
+             _W3 != min and
+             _6y  > _4y and
+             _3y  > _1y and
+             _5y  > _2y
+            //
+            same = gEW.isSame(_1x, _2x, _3x, _4x)
+            if isWave
+                if same
+                    gEW.l5.set_xy2(_6x, _6y)
+                    gEW.b5.set_xy (_6x, _6y)
+                else
+                    tx = ''
+                    if _2x == aEW.get(0).b5.get_x()
+                        tx := '(5) (1)'
+                        aEW.get(0).b5.set_text('')
                     else
-                        lowIndex := j
-                color tlShade = array.get(tlColors, tfIndex)
-                string tlName = array.get(names, tfIndex)
-                int tfMs = timeframe.in_seconds(array.get(tfs, tfIndex)) * 1000
-                if highIndex >= 0 and not na(state.atrHigh)
-                    int t1 = array.get(state.times, highIndex)
-                    float p1 = array.get(state.prices, highIndex)
-                    float slopeStep = state.atrHigh / tlLength * tlMult
-                    array.push(state.trend, line.new(t1, p1, t1 + tfMs, p1 - slopeStep, xloc = xloc.bar_time, extend = tlExtend ? extend.right : extend.none, color = tlShade, style = tlResistanceStyle, width = tlWidth))
-                    if tlLabels
-                        array.push(state.trendLabels, label.new(t1, p1, tlName + " down", xloc = xloc.bar_time, style = label.style_label_down, color = color.new(tlShade, 20), textcolor = color.white, size = size.tiny))
-                if lowIndex >= 0 and not na(state.atrLow)
-                    int t1 = array.get(state.times, lowIndex)
-                    float p1 = array.get(state.prices, lowIndex)
-                    float slopeStep = state.atrLow / tlLength * tlMult
-                    array.push(state.trend, line.new(t1, p1, t1 + tfMs, p1 + slopeStep, xloc = xloc.bar_time, extend = tlExtend ? extend.right : extend.none, color = tlShade, style = line.style_solid, width = tlWidth))
-                    if tlLabels
-                        array.push(state.trendLabels, label.new(t1, p1, tlName + " up", xloc = xloc.bar_time, style = label.style_label_up, color = color.new(tlShade, 20), textcolor = color.white, size = size.tiny))
-            if ewOn
-                state.status := na(state.seen) ? "N/A: no closed source data" : count < 4 ? "Building pivots" : "No matching candidate"
-                string matches = ""
-                for family = 0 to 4
-                    string kind = ""
-                    string notation = ""
-                    int legs = family == 1 ? 3 : family == 4 ? 9 : 5
-                    if family == 0 and ewImpulse and count >= 6
-                        kind := f_ewMotive(state.prices, count - 6, false)
-                        notation := "12345"
-                    else if family == 1 and ewAbc and count >= 4
-                        kind := f_ewCorrection(state.prices, count - 4)
-                        notation := "ABC"
-                    else if family == 2 and ewDiagonal and count >= 6
-                        kind := f_ewMotive(state.prices, count - 6, true)
-                        notation := "12345"
-                    else if family == 3 and ewTriangle and count >= 6
-                        kind := f_ewTriangle(state.prices, count - 6)
-                        notation := "ABCDE"
-                    else if family == 4 and ewCombination
-                        if count >= 16 and f_ewCombination(state.prices, count - 16, 5)
-                            kind := "WXYXZ combination"
-                            notation := "WXYXZ"
-                            legs := 15
-                        else if count >= 10 and f_ewCombination(state.prices, count - 10, 3)
-                            kind := "WXY combination"
-                            notation := "WXY"
-                    if kind != ""
-                        f_ewDraw(state.prices, state.times, count - legs - 1, legs, kind, notation, state.lines, state.labels, array.get(names, tfIndex), state.recognizedAt)
-                        matches := matches == "" ? kind : matches + " / " + kind
-                if matches != ""
-                    state.status := matches
-                ewStatus += (ewStatus == "" ? "" : "\n") + array.get(names, tfIndex) + ": " + state.status
-if ewEnabled and ewStatus == ""
-    ewStatus := "All Elliott timeframes disabled"
+                        tx := '(1)'
+                    //
+                    wave = Ewave.new(
+                     l1  = line.new (_1x, _1y, _2x, _2y                      , color=col       , style= line.style_solid     ),
+                     l2  = line.new (_2x, _2y, _3x, _3y                      , color=col       , style= line.style_solid     ),
+                     l3  = line.new (_3x, _3y, _4x, _4y                      , color=col       , style= line.style_solid     ),
+                     l4  = line.new (_4x, _4y, _5x, _5y                      , color=col       , style= line.style_solid     ),
+                     l5  = line.new (_5x, _5y, _6x, _6y                      , color=col       , style= line.style_solid     ),
+                     b1  = label.new(_2x, _2y, text= tx    + t, textcolor=col, color= color(na), style=label.style_label_down),
+                     b2  = label.new(_3x, _3y, text= t + '(2)', textcolor=col, color= color(na), style=label.style_label_up  ),
+                     b3  = label.new(_4x, _4y, text= '(3)' + t, textcolor=col, color= color(na), style=label.style_label_down),
+                     b4  = label.new(_5x, _5y, text= t + '(4)', textcolor=col, color= color(na), style=label.style_label_up  ),
+                     b5  = label.new(_6x, _6y, text= '(5)' + t, textcolor=col, color= color(na), style=label.style_label_down),
+                     on  = true                                                                                               ,
+                     br  = false                                                                                              ,
+                     dir = 1
+                      )
+                    aEW.unshift(wave)
+                    nFibL._break_ := false
+                    alert('New EW Motive Bullish Pattern found'  , alert.freq_once_per_bar_close)
+            //
+            if not isWave
+                if same and gEW.on == true
+                    gEW.makeDotted()
+                    alert('Invalidated EW Motive Bullish Pattern', alert.freq_once_per_bar_close)
+            //
+            // –––––––––––––––––––––[ ABC ]–––––––––––––––––––––
+            getEW    = aEW.get(0)
+            last_0x := getEW.l1.get_x1(), last_0y := getEW.l1.get_y1()
+            last_6x := getEW.l5.get_x2(), last_6y := getEW.l5.get_y2()
+            diff     = math.abs(last_6y - last_0y)
+            //
+            if getEW.dir == -1
+                getX    = getEW.l5.get_x2()
+                getY    = getEW.l5.get_y2()
+                isSame2 = getEW.isSame2  (_1x, _2x, _3x)
+                isValid =
+                   _3x == getX                  and
+                   _6y  < getY + (diff * ewFib4) and
+                   _4y  < getY + (diff * ewFib4) and
+                   _5y  > getY
+                //
+                if isValid
+                    width = _6x - _2x // –––[ width (4) - (c) ]–––
+                    if isSame2 and getEW.bA.get_x() > _3x
+                        getEW.lC.set_xy1(_5x, _5y), getEW.lC.set_xy2(_6x, _6y), getEW.bC.set_xy(_6x, _6y), getEW.bx.set_lefttop(_6x, _6y), getEW.bx.set_right(_6x + width)
+                    else
+                        getEW.lA := line.new (_3x, _3y, _4x, _4y, color=col), getEW.bA := label.new(_4x, _4y, text= '(a)' + t, textcolor=col, color= color(na), style=label.style_label_down)
+                        getEW.lB := line.new (_4x, _4y, _5x, _5y, color=col), getEW.bB := label.new(_5x, _5y, text= t + '(b)', textcolor=col, color= color(na), style=label.style_label_up  )
+                        getEW.lC := line.new (_5x, _5y, _6x, _6y, color=col), getEW.bC := label.new(_6x, _6y, text= '(c)' + t, textcolor=col, color= color(na), style=label.style_label_down)
+                        getEW.bx := box.new  (_6x, _6y, _6x + width, _4y, bgcolor=color.new(col, 93), border_color=color.new(col, 65))
+                        alert('New EW Corrective Bullish Pattern found'  , alert.freq_once_per_bar_close)
+                else
+                    if isSame2 and getEW.bA.get_x() > _3x
+                        getEW.makeDashed()
+                        alert('Invalidated EW Corrective Bullish Pattern', alert.freq_once_per_bar_close)
+            //
+            // –––––––––––––––––––––[ new (1) ? ]–––––––––––––––––––––
+            if getEW.dir ==  1
+                if _5x == getEW.bC.get_x() and
+                   _6y >  getEW.b5.get_y() and
+                   getEW.next  == false
+                    getEW.next := true
+                    getEW.lb   := label.new(_6x, _6y, style=label.style_circle, color=color.new(col, 65), yloc=yloc.abovebar, size=size.tiny)
+                    alert('Possible new start of EW Motive Bullish Wave', alert.freq_once_per_bar_close)
+        //
+        // when a new Pivot Low is found
+        if not na(pl)
+            gEW := aEW.get   (0)
+            dir := aZZ.d.get (0)
+            x1  := aZZ.x.get (0)
+            y1  := aZZ.y.get (0)
+            y2  :=      nz(lo[1])
+            //
+            if dir > -1  // if previous point was a ph, add, and change direction (-1)
+                in_out(aZZ, -1, x1, y1, x2, y2, col)
+            else
+                if dir == -1 and pl < y1
+                    aZZ.x.set(0, x2), aZZ.y.set(0, y2)
+                    if ewShowZz
+                        aZZ.l.get(0).set_xy2(x2, y2)
+            //
+            _6x = x2, _6y = y2
+            _5x = aZZ.x.get(1), _5y = aZZ.y.get(1)
+            _4x = aZZ.x.get(2), _4y = aZZ.y.get(2)
+            _3x = aZZ.x.get(3), _3y = aZZ.y.get(3)
+            _2x = aZZ.x.get(4), _2y = aZZ.y.get(4)
+            _1x = aZZ.x.get(5), _1y = aZZ.y.get(5)
+            //
+            // –––––––––––––––––––––[ 12345 ]–––––––––––––––––––––
+            _W5 = _5y - _6y
+            _W3 = _3y - _4y
+            _W1 = _1y - _2y
+            min = math.min(_W1, _W3, _W5)
+            isWave =
+             _W3 != min and
+             _4y  > _6y and
+             _1y  > _3y and
+             _2y  > _5y
+            //
+            same = isSame(gEW, _1x, _2x, _3x, _4x)
+            if isWave
+                if same
+                    gEW.l5.set_xy2(_6x, _6y)
+                    gEW.b5.set_xy (_6x, _6y)
+                else
+                    tx = ''
+                    if _2x == aEW.get(0).b5.get_x()
+                        tx := '(5) (1)'
+                        aEW.get(0).b5.set_text('')
+                    else
+                        tx := '(1)'
+                    //
+                    wave = Ewave.new(
+                     l1  = line.new (_1x, _1y, _2x, _2y                      , color=col       , style= line.style_solid     ),
+                     l2  = line.new (_2x, _2y, _3x, _3y                      , color=col       , style= line.style_solid     ),
+                     l3  = line.new (_3x, _3y, _4x, _4y                      , color=col       , style= line.style_solid     ),
+                     l4  = line.new (_4x, _4y, _5x, _5y                      , color=col       , style= line.style_solid     ),
+                     l5  = line.new (_5x, _5y, _6x, _6y                      , color=col       , style= line.style_solid     ),
+                     b1  = label.new(_2x, _2y, text= t    + tx, textcolor=col, color= color(na), style=label.style_label_up  ),
+                     b2  = label.new(_3x, _3y, text= '(2)' + t, textcolor=col, color= color(na), style=label.style_label_down),
+                     b3  = label.new(_4x, _4y, text= t + '(3)', textcolor=col, color= color(na), style=label.style_label_up  ),
+                     b4  = label.new(_5x, _5y, text= '(4)' + t, textcolor=col, color= color(na), style=label.style_label_down),
+                     b5  = label.new(_6x, _6y, text= t + '(5)', textcolor=col, color= color(na), style=label.style_label_up  ),
+                     on  = true                                                                                               ,
+                     br  = false                                                                                              ,
+                     dir =-1
+                      )
+                    aEW.unshift(wave)
+                    nFibL._break_ := false
+                    alert('New EW Motive Bearish Pattern found'  , alert.freq_once_per_bar_close)
+            //
+            if not isWave
+                if same and gEW.on == true
+                    gEW.makeDotted()
+                    alert('Invalidated EW Motive Bearish Pattern', alert.freq_once_per_bar_close)
+            //
+            // –––––––––––––––––––––[ ABC ]–––––––––––––––––––––
+            getEW    = aEW.get(0)
+            last_0x := getEW.l1.get_x1(), last_0y := getEW.l1.get_y1()
+            last_6x := getEW.l5.get_x2(), last_6y := getEW.l5.get_y2()
+            diff     = math.abs(last_6y - last_0y)
+            //
+            if getEW.dir ==  1
+                getX    = getEW.l5.get_x2()
+                getY    = getEW.l5.get_y2()
+                isSame2 = getEW.isSame2  (_1x, _2x, _3x)
+                isValid =
+                   _3x == getX                  and
+                   _6y  > getY - (diff * ewFib4) and
+                   _4y  > getY - (diff * ewFib4) and
+                   _5y  < getY
+                //
+                if isValid
+                    width = _6x - _2x // –––[ width (4) - (c) ]–––
+                    if isSame2 and getEW.bA.get_x() > _3x
+                        getEW.lC.set_xy1(_5x, _5y), getEW.lC.set_xy2(_6x, _6y), getEW.bC.set_xy(_6x, _6y), getEW.bx.set_lefttop(_6x, _6y), getEW.bx.set_right(_6x + width)
+                    else
+                        getEW.lA := line.new (_3x, _3y, _4x, _4y, color=col), getEW.bA := label.new(_4x, _4y, text= t + '(a)', textcolor=col, color= color(na), style=label.style_label_up  )
+                        getEW.lB := line.new (_4x, _4y, _5x, _5y, color=col), getEW.bB := label.new(_5x, _5y, text= '(b)' + t, textcolor=col, color= color(na), style=label.style_label_down)
+                        getEW.lC := line.new (_5x, _5y, _6x, _6y, color=col), getEW.bC := label.new(_6x, _6y, text= t + '(c)', textcolor=col, color= color(na), style=label.style_label_up  )
+                        getEW.bx := box.new  (_6x, _6y, _6x + width, _4y, bgcolor=color.new(col, 93), border_color=color.new(col, 65))
+                        alert('New EW Corrective Bearish Pattern found'  , alert.freq_once_per_bar_close)
+                else
+                    if isSame2 and getEW.bA.get_x() > _3x
+                        getEW.makeDashed()
+                        alert('Invalidated EW Corrective Bullish Pattern', alert.freq_once_per_bar_close)
+            //
+            // –––[ check (only once) for a possible new (1) after an impulsive AND corrective wave ]–––
+            if getEW.dir == -1
+                if _5x == getEW.bC.get_x() and
+                   _6y <  getEW.b5.get_y() and
+                   getEW.next  == false
+                    getEW.next := true
+                    getEW.lb   := label.new(_6x, _6y, style=label.style_circle, color=color.new(col, 65), yloc=yloc.belowbar, size=size.tiny)
+                    alert('Possible new start of EW Motive Bearish Wave', alert.freq_once_per_bar_close)
+        //
+        // –––[ check for break box ]–––
+        if aEW.size() > 0
+            gEW    := aEW.get(0)
+            if gEW.dir == 1
+                if ta.crossunder(low , gEW.bx.get_bottom()) and bar_index <= gEW.bx.get_right()
+                    label.new(bar_index, low , yloc= yloc.belowbar, style= label.style_xcross, color=color.red, size=size.tiny)
+            else
+                if ta.crossover (high, gEW.bx.get_top   ()) and bar_index <= gEW.bx.get_right()
+                    label.new(bar_index, high, yloc= yloc.abovebar, style= label.style_xcross, color=color.red, size=size.tiny)
+        //
+        if barstate.islast
+            //  –––[ get last 2 EW's ]–––
+            getEW    = aEW.get(0)
+            if aEW.size() > 1
+                getEW1   = aEW.get(1)
+                last_0x := getEW.l1.get_x1(), last_0y := getEW.l1.get_y1()
+                last_6x := getEW.l5.get_x2(), last_6y := getEW.l5.get_y2()
+                //
+                diff = math.abs(last_6y - last_0y) // –––[ max/min difference ]–––
+                _500 = diff * ewFib1
+                _618 = diff * ewFib2
+                _764 = diff * ewFib3
+                _854 = diff * ewFib4
+                bull = getEW.dir == 1
+                // –––[ if EW is not valid or an ABC has developed -> remove fibonacci lines ]–––
+                if getEW.on == false or getEW.bC.get_x() > getEW.b5.get_x()
+                    nFibL.clearLevels()
+                else
+                // –––[ get.on == true ~ valid EW ]–––
+                    max_500 = last_6y + ((bull ? -1 : 1) * _500)
+                    max_618 = last_6y + ((bull ? -1 : 1) * _618)
+                    max_764 = last_6y + ((bull ? -1 : 1) * _764)
+                    max_854 = last_6y + ((bull ? -1 : 1) * _854)
+                    //
+                    nFibL.setLevels(last_6x, bar_index + 10, max_500, max_618, max_764, max_854, last_6y)
+                // –––[ if (2) label overlap with (C) label ]–––
+                if  getEW.b2.get_x() == getEW1.bC.get_x()
+                    getEW.b1.set_textcolor(color(na))
+                    getEW.b2.set_textcolor(color(na))
+                    strB  = getEW1.bB.get_text()
+                    strC  = getEW1.bC.get_text()
+                    strB_ = str.replace(strB, "(b)",  "(b) (1)", 0)
+                    strC_ = str.replace(strC, "(c)",  "(c) (2)", 0)
+                    getEW1.bB.set_text(strB_)
+                    getEW1.bC.set_text(strC_)
+            //
+            // –––[ check if fib limits are broken ]–––
+            float getP_854 = nFibL.wave1_0_854.get_y1()
+            int fibX = nFibL.wave1_0_854.get_x1()
+            for i = 0 to (na(fibX) ? 0 : math.max(bar_index - fibX, 0))
+                if getEW.dir == -1
+                    if high[i] > getP_854
+                        nFibL._break_ := true
+                        break
+                else
+                    if low [i] < getP_854
+                        nFibL._break_ := true
+                        break
+            //––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+            if nFibL._break_
+                nFibL.sol_dot('dot', color.new(color.red, 95))
+            else
+                nFibL.sol_dot('sol', color.new(color.lime, 95))
+
+        if aEW.size() > ewMaxWaves
+            pop = aEW.pop()
+            pop.l1.delete(), pop.b1.delete()
+            pop.l2.delete(), pop.b2.delete()
+            pop.l3.delete(), pop.b3.delete()
+            pop.l4.delete(), pop.b4.delete()
+            pop.l5.delete(), pop.b5.delete()
+            pop.lA.delete(), pop.bA.delete()
+            pop.lB.delete(), pop.bB.delete()
+            pop.lC.delete(), pop.bC.delete()
+            pop.lb.delete(), pop.bx.delete()
+        //----------------------------------
+
+
+f_ewZigzag(ewEnabled and ewOn1, ewLen1, ewCol1, 0)
+f_ewZigzag(ewEnabled and ewOn2, ewLen2, ewCol2, 1)
+f_ewZigzag(ewEnabled and ewOn3, ewLen3, ewCol3, 2)
 
 var array<box> sdBoxes = array.new<box>()
 var array<int> sdDirs = array.new<int>()
@@ -789,6 +1245,270 @@ if sdEnabled and barstate.isconfirmed
                 array.shift(sdBottoms)
                 array.shift(sdTests)
 
+// Fair value gaps and order blocks (original implementation of the public FVG / order block concepts).
+var array<box> fvBoxes = array.new<box>()
+var array<int> fvDirs = array.new<int>()
+var array<float> fvTops = array.new<float>()
+var array<float> fvBots = array.new<float>()
+var array<bool> fvDone = array.new<bool>()
+var array<box> obBoxes = array.new<box>()
+var array<int> obDirs = array.new<int>()
+var array<float> obTops = array.new<float>()
+var array<float> obBots = array.new<float>()
+var array<bool> obDone = array.new<bool>()
+var float obHighPrice = na
+var int obHighBar = na
+var bool obHighUsed = true
+var float obLowPrice = na
+var int obLowBar = na
+var bool obLowUsed = true
+
+f_zoneColor(color base) => color.new(base, foOpacity)
+
+f_freeze(array<box> boxes, array<bool> done, int i) =>
+    box zone = array.get(boxes, i)
+    box.set_extend(zone, extend.none)
+    box.set_right(zone, bar_index)
+    box.set_bgcolor(zone, color.new(color.gray, 90))
+    box.set_text_color(zone, color.new(color.gray, 40))
+    array.set(done, i, true)
+
+f_dropZone(array<box> boxes, array<int> dirs, array<float> tops, array<float> bots, array<bool> done, int i) =>
+    box.delete(array.get(boxes, i))
+    array.remove(boxes, i)
+    array.remove(dirs, i)
+    array.remove(tops, i)
+    array.remove(bots, i)
+    array.remove(done, i)
+
+f_trimZones(array<box> boxes, array<int> dirs, array<float> tops, array<float> bots, array<bool> done, int side) =>
+    int total = array.size(dirs)
+    int same = 0
+    int oldest = -1
+    if total > 0
+        for i = 0 to total - 1
+            if array.get(dirs, i) == side
+                same += 1
+                if oldest < 0
+                    oldest := i
+    if same > foMax and oldest >= 0
+        f_dropZone(boxes, dirs, tops, bots, done, oldest)
+
+f_newZone(array<box> boxes, array<int> dirs, array<float> tops, array<float> bots, array<bool> done, int leftBar, float top, float bottom, int dir, color base, string txt) =>
+    array.push(boxes, box.new(leftBar, top, bar_index, bottom, border_color = na, bgcolor = f_zoneColor(base), extend = extend.right, text = foLabels ? txt : "", text_size = size.tiny, text_color = color.white, text_halign = text.align_center))
+    array.push(dirs, dir)
+    array.push(tops, top)
+    array.push(bots, bottom)
+    array.push(done, false)
+
+float foAtr = ta.atr(atrLen)
+float foPh = ta.pivothigh(high, obSwing, obSwing)
+float foPl = ta.pivotlow(low, obSwing, obSwing)
+if not na(foPh)
+    obHighPrice := foPh
+    obHighBar := bar_index - obSwing
+    obHighUsed := false
+if not na(foPl)
+    obLowPrice := foPl
+    obLowBar := bar_index - obSwing
+    obLowUsed := false
+
+if barstate.isconfirmed
+    // Mitigation first, on zones created on earlier bars.
+    int fvCount = array.size(fvDirs)
+    if fvCount > 0
+        for i = fvCount - 1 to 0
+            if not array.get(fvDone, i)
+                int dir = array.get(fvDirs, i)
+                float top = array.get(fvTops, i)
+                float bot = array.get(fvBots, i)
+                bool hit = fvMitigation == "Touch" ? (high >= bot and low <= top) : fvMitigation == "50% fill" ? (dir == 1 ? low <= (top + bot) / 2 : high >= (top + bot) / 2) : (dir == 1 ? low < bot : high > top)
+                if hit
+                    if foHide
+                        f_dropZone(fvBoxes, fvDirs, fvTops, fvBots, fvDone, i)
+                    else
+                        f_freeze(fvBoxes, fvDone, i)
+    int obCount = array.size(obDirs)
+    if obCount > 0
+        for i = obCount - 1 to 0
+            if not array.get(obDone, i)
+                int dir = array.get(obDirs, i)
+                float srcLow = obMitigation == "Close" ? close : low
+                float srcHigh = obMitigation == "Close" ? close : high
+                bool hit = dir == 1 ? srcLow < array.get(obBots, i) : srcHigh > array.get(obTops, i)
+                if hit
+                    if foHide
+                        f_dropZone(obBoxes, obDirs, obTops, obBots, obDone, i)
+                    else
+                        f_freeze(obBoxes, obDone, i)
+
+    if fvEnabled and bar_index >= 2 and not na(foAtr)
+        if low > high[2] and low - high[2] >= fvMinAtr * foAtr
+            f_newZone(fvBoxes, fvDirs, fvTops, fvBots, fvDone, bar_index - 2, low, high[2], 1, fvBullColor, "FVG")
+        else if high < low[2] and low[2] - high >= fvMinAtr * foAtr
+            f_newZone(fvBoxes, fvDirs, fvTops, fvBots, fvDone, bar_index - 2, low[2], high, -1, fvBearColor, "FVG")
+
+    bool dispOk = obDispAtr <= 0 or (not na(foAtr) and high - low >= obDispAtr * foAtr)
+    if obEnabled and dispOk
+        if not obHighUsed and (obBreakMode == "Wick" ? high : close) > obHighPrice
+            obHighUsed := true
+            int span = math.min(bar_index - obHighBar, 500)
+            int pick = -1
+            float pickLow = na
+            for k = 0 to span
+                if close[k] < open[k] and (na(pickLow) or low[k] < pickLow)
+                    pick := k
+                    pickLow := low[k]
+            if pick < 0
+                for k = 0 to span
+                    if na(pickLow) or low[k] < pickLow
+                        pick := k
+                        pickLow := low[k]
+            float zTop = obBodyOnly ? math.max(open[pick], close[pick]) : high[pick]
+            float zBot = obBodyOnly ? math.min(open[pick], close[pick]) : low[pick]
+            f_newZone(obBoxes, obDirs, obTops, obBots, obDone, bar_index - pick, zTop, zBot, 1, obBullColor, "OB")
+        if not obLowUsed and (obBreakMode == "Wick" ? low : close) < obLowPrice
+            obLowUsed := true
+            int span = math.min(bar_index - obLowBar, 500)
+            int pick = -1
+            float pickHigh = na
+            for k = 0 to span
+                if close[k] > open[k] and (na(pickHigh) or high[k] > pickHigh)
+                    pick := k
+                    pickHigh := high[k]
+            if pick < 0
+                for k = 0 to span
+                    if na(pickHigh) or high[k] > pickHigh
+                        pick := k
+                        pickHigh := high[k]
+            float zTop = obBodyOnly ? math.max(open[pick], close[pick]) : high[pick]
+            float zBot = obBodyOnly ? math.min(open[pick], close[pick]) : low[pick]
+            f_newZone(obBoxes, obDirs, obTops, obBots, obDone, bar_index - pick, zTop, zBot, -1, obBearColor, "OB")
+
+    f_trimZones(fvBoxes, fvDirs, fvTops, fvBots, fvDone, 1)
+    f_trimZones(fvBoxes, fvDirs, fvTops, fvBots, fvDone, -1)
+    f_trimZones(obBoxes, obDirs, obTops, obBots, obDone, 1)
+    f_trimZones(obBoxes, obDirs, obTops, obBots, obDone, -1)
+
+// Liquidity sweeps: adapted from "Liquidity Sweeps [LuxAlgo]" (CC BY-NC-SA 4.0, https://creativecommons.org/licenses/by-nc-sa/4.0/).
+type LsPivot
+    float prc
+    int bix
+    bool brk
+    bool mit
+    bool tak
+    bool wic
+    line lin
+
+type LsArea
+    box bx
+    line ln
+    bool done
+    int dir
+
+var array<LsPivot> lsHighs = array.new<LsPivot>()
+var array<LsPivot> lsLows = array.new<LsPivot>()
+var array<LsArea> lsAreas = array.new<LsArea>()
+
+f_lsLevel(LsPivot pv, color c, string styleName) =>
+    string st = styleName == "dotted" ? line.style_dotted : line.style_dashed
+    line.new(pv.bix, pv.prc, bar_index, pv.prc, color = c, style = st)
+
+f_lsArea(LsPivot pv, color fill, color edge, int dir) =>
+    float y1 = dir == 1 ? high : pv.prc
+    float y2 = dir == 1 ? pv.prc : low
+    LsArea area = LsArea.new(box.new(bar_index - 1, y1, bar_index + 1, y2, border_color = na, bgcolor = fill), line.new(bar_index, y1, bar_index, y2, color = edge, width = 3), false, dir)
+    array.unshift(lsAreas, area)
+    if array.size(lsAreas) > lsMaxAreas
+        LsArea old = array.pop(lsAreas)
+        box.delete(old.bx)
+        line.delete(old.ln)
+    true
+
+f_lsDot(float y, color c) =>
+    line.new(bar_index, y, bar_index + 3, y, color = c, style = line.style_dotted)
+
+float lsPh = ta.pivothigh(high, lsLen, lsLen)
+float lsPl = ta.pivotlow(low, lsLen, lsLen)
+bool lsOnlyWicks = lsMode == "Only Wicks"
+bool lsOnlyRetest = lsMode == "Only Outbreaks & Retest"
+color lsBullFill = color.new(lsBull, 75)
+color lsBearFill = color.new(lsBear, 75)
+color lsBullLine = color.new(lsBull, 50)
+color lsBearLine = color.new(lsBear, 50)
+
+if lsEnabled
+    if not na(lsPh)
+        array.unshift(lsHighs, LsPivot.new(lsPh, bar_index - lsLen, false, false, false, false, na))
+    if not na(lsPl)
+        array.unshift(lsLows, LsPivot.new(lsPl, bar_index - lsLen, false, false, false, false, na))
+
+    int hiCount = array.size(lsHighs)
+    if hiCount > 0
+        for i = hiCount - 1 to 0
+            LsPivot pv = array.get(lsHighs, i)
+            if not pv.mit
+                if not pv.brk
+                    if close > pv.prc
+                        if not lsOnlyWicks
+                            pv.brk := true
+                        else
+                            pv.mit := true
+                    if not lsOnlyRetest and not pv.wic and high > pv.prc and close < pv.prc
+                        f_lsArea(pv, lsBearFill, lsBear, 1)
+                        f_lsLevel(pv, lsBearLine, "dotted")
+                        f_lsDot(low, lsBear)
+                        pv.wic := true
+                else
+                    if close < pv.prc
+                        pv.mit := true
+                    if not lsOnlyWicks and low < pv.prc and close > pv.prc
+                        f_lsArea(pv, lsBullFill, lsBull, -1)
+                        f_lsLevel(pv, lsBullLine, "dashed")
+                        f_lsDot(high, lsBull)
+                        pv.tak := true
+            if bar_index - pv.bix > 2000 or pv.mit or pv.tak
+                array.remove(lsHighs, i)
+
+    int loCount = array.size(lsLows)
+    if loCount > 0
+        for i = loCount - 1 to 0
+            LsPivot pv = array.get(lsLows, i)
+            if not pv.mit
+                if not pv.brk
+                    if close < pv.prc
+                        if not lsOnlyWicks
+                            pv.brk := true
+                        else
+                            pv.mit := true
+                    if not lsOnlyRetest and not pv.wic and low < pv.prc and close > pv.prc
+                        f_lsArea(pv, lsBullFill, lsBull, -1)
+                        f_lsLevel(pv, lsBullLine, "dotted")
+                        f_lsDot(high, lsBull)
+                        pv.wic := true
+                else
+                    if close > pv.prc
+                        pv.mit := true
+                    if not lsOnlyWicks and high > pv.prc and close < pv.prc
+                        f_lsArea(pv, lsBearFill, lsBear, 1)
+                        f_lsLevel(pv, lsBearLine, "dashed")
+                        f_lsDot(low, lsBear)
+                        pv.tak := true
+            if bar_index - pv.bix > 2000 or pv.mit or pv.tak
+                array.remove(lsLows, i)
+
+    if lsExtend
+        int areaCount = array.size(lsAreas)
+        if areaCount > 0
+            for i = 0 to areaCount - 1
+                LsArea area = array.get(lsAreas, i)
+                if not area.done and bar_index - box.get_left(area.bx) - 1 <= lsMaxBars
+                    box.set_right(area.bx, bar_index)
+                    if area.dir == -1 and close < box.get_bottom(area.bx)
+                        area.done := true
+                    if area.dir == 1 and close > box.get_top(area.bx)
+                        area.done := true
+
 // Optional overlays use chart OHLC, not requested source OHLC on synthetic charts.
 Snapshot chartData = f_engine(0)
 Snapshot chartClosed = barstate.isconfirmed ? chartData : chartData[1]
@@ -839,6 +1559,116 @@ if barstate.isconfirmed
         priorPullback := false
         lastRegime := ""
 
+// ===== Volume profile (adapted from volume_profile.pine) =====
+// Volume of every bar is spread over each price row its high-low range overlaps.
+// The profile is rebuilt from the last vpLength bars; it describes the past and
+// repaints as the window moves.
+f_vpProfile(int len, int rows, float lo, float hi) =>
+    array<float> sums = array.new_float(rows, 0.0)
+    float step = (hi - lo) / rows
+    if step > 0
+        for k = 0 to len - 1
+            float bh = high[k]
+            float bl = low[k]
+            float bv = nz(volume[k])
+            if not na(bh) and not na(bl) and bv > 0
+                int r1 = math.max(0, math.min(rows - 1, int(math.floor((bl - lo) / step))))
+                int r2 = math.max(0, math.min(rows - 1, int(math.floor((bh - lo) / step))))
+                for r = r1 to r2
+                    sums.set(r, sums.get(r) + bv)
+    sums
+
+var array<line> vpLines = array.new<line>()
+var line vpPoc = na
+if barstate.isfirst and vpEnabled
+    for i = 0 to vpRows - 1
+        vpLines.push(line.new(na, na, na, na))
+    vpPoc = line.new(na, na, na, na, style = line.style_dotted)
+
+int vpLen = math.min(vpLength, bar_index + 1)
+float vpHi = ta.highest(high, vpLength)
+float vpLo = ta.lowest(low, vpLength)
+float vpRollPoc = na
+if vpEnabled and (vpRolling or barstate.islast) and vpLen >= 2 and vpHi > vpLo
+    array<float> vpSums = f_vpProfile(vpLen, vpRows, vpLo, vpHi)
+    float vpMax = vpSums.max()
+    if vpMax > 0
+        int pocRow = vpSums.indexof(vpMax)
+        float vpStep = (vpHi - vpLo) / vpRows
+        vpRollPoc := vpLo + (pocRow + 0.5) * vpStep
+        if barstate.islast
+            for j = 0 to vpRows - 1
+                float mult = vpSums.get(j) / vpMax
+                float y = vpLo + (j + 0.5) * vpStep
+                int len = int(math.round(vpLen * vpWidth / 100.0 * mult))
+                line l = vpLines.get(j)
+                if len < 1
+                    l.set_xy1(na, na)
+                    l.set_xy2(na, na)
+                else
+                    if vpFlip
+                        l.set_xy1(bar_index, y)
+                        l.set_xy2(bar_index - len, y)
+                    else
+                        l.set_xy1(bar_index - vpLen + 1, y)
+                        l.set_xy2(bar_index - vpLen + 1 + len, y)
+                    l.set_color(vpGrad ? color.from_gradient(mult, 0, 1, vpLow, vpHigh) : vpSolid)
+                    l.set_width(vpBarWidth)
+            vpPoc.set_xy1(bar_index - vpLen + 1, vpRollPoc)
+            vpPoc.set_xy2(bar_index, vpRollPoc)
+            vpPoc.set_color(vpGrad ? vpHigh : vpPocColor)
+            vpPoc.set_width(vpBarWidth)
+plot(vpEnabled and vpRolling ? vpRollPoc : na, "Rolling POC", color = color.rgb(255, 17, 0))
+
+// ===== Swing highs/lows with candle patterns (adapted from swing_h_l_candle.pine) =====
+// The pivot is confirmed swLen bars after the swing candle, so the pattern is read
+// on that older candle (offset swLen). Engulfing uses the candle before it.
+// The source file's bearish engulfing test duplicated the bullish one; it is
+// corrected here to a real bearish engulfing.
+var float swPrevHigh = na
+var float swPrevLow = na
+var array<label> swLabels = array.new<label>()
+
+float swO = open[swLen]
+float swH = high[swLen]
+float swL = low[swLen]
+float swC = close[swLen]
+float swBody = math.abs(swC - swO)
+float swLowerWick = math.min(swO, swC) - swL
+float swUpperWick = swH - math.max(swO, swC)
+float swPh = ta.pivothigh(swLen, swLen)
+float swPl = ta.pivotlow(swLen, swLen)
+
+bool swBullEng = swC > swO and close[swLen + 1] < open[swLen + 1] and swC > open[swLen + 1] and swO < close[swLen + 1]
+bool swBearEng = swC < swO and close[swLen + 1] > open[swLen + 1] and swC < open[swLen + 1] and swO > close[swLen + 1]
+
+string swPattern = ""
+if swEnabled and swPatterns and (not na(swPh) or not na(swPl))
+    bool isHigh = not na(swPh)
+    if not isHigh and swLowerWick > swBody and swUpperWick < swBody
+        swPattern := "Hammer"
+    else if not isHigh and swUpperWick > swBody and swLowerWick < swBody
+        swPattern := "Inverted Hammer"
+    else if isHigh and swLowerWick > swBody and swUpperWick < swBody
+        swPattern := "Hanging Man"
+    else if isHigh and swUpperWick > swBody and swLowerWick < swBody
+        swPattern := "Shooting Star"
+    else if not isHigh and swBullEng
+        swPattern := "Bullish Engulfing"
+    else if isHigh and swBearEng
+        swPattern := "Bearish Engulfing"
+
+if swEnabled and not na(swPh)
+    string tag = na(swPrevHigh) or swPh > swPrevHigh ? "HH" : "LH"
+    swLabels.push(label.new(bar_index - swLen, swPh, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_down, textcolor = swHighCss))
+    swPrevHigh := swPh
+else if swEnabled and not na(swPl)
+    string tag = na(swPrevLow) or swPl < swPrevLow ? "LL" : "HL"
+    swLabels.push(label.new(bar_index - swLen, swPl, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_up, textcolor = swLowCss))
+    swPrevLow := swPl
+if swLabels.size() > swMaxLabels
+    swLabels.shift().delete()
+
 alertcondition(alertFlip and flipBull, "Overall turns bullish", "{{ticker}}: overall bias reversed bullish at chart close. Directional context, not an entry.")
 alertcondition(alertFlip and flipBear, "Overall turns bearish", "{{ticker}}: overall bias reversed bearish at chart close. Directional context, not an entry.")
 alertcondition(alertHtf and newHtfBull, "HTF bullish alignment", "{{ticker}}: enabled higher timeframes aligned bullish at chart close.")
@@ -870,7 +1700,7 @@ if barstate.islast
         f_cell(panel, 0, 5, "Bull: " + str.tostring(overall.bulls) + " | Bear: " + str.tostring(overall.bears) + " | Neutral: " + str.tostring(overall.neutrals), bgColor, textColor)
         f_cell(panel, 0, 6, "Directional alignment: " + f_number(overall.alignment) + "% (weighted; neutral not agreement)", bgColor, textColor)
         f_cell(panel, 0, 7, "Chart: " + timeframe.period + " | Market: " + condition + (complete ? "" : " [PARTIAL DATA]"), bgColor, highlightColor)
-        f_cell(panel, 0, 8, context + (warnConflict and conflict ? " | LTF / HTF CONFLICT" : "") + (ewEnabled ? "\nEW: " + ewStatus : ""), conflict ? neutralColor : bgColor, textColor)
+        f_cell(panel, 0, 8, context + (warnConflict and conflict ? " | LTF / HTF CONFLICT" : ""), conflict ? neutralColor : bgColor, textColor)
         f_cell(panel, 0, 9, (confirmed ? "CONFIRMED" : "LIVE - CAN REPAINT") + " | Ready: " + str.tostring(overall.valid) + "/" + str.tostring(overall.enabled) + " | Hover TF for source close (UTC)", bgColor, confirmed ? mutedColor : highlightColor)
         array<string> headers = array.from("TF", "Bias", "EMA / slope", "Structure", "ADX", useRsi ? "RSI" : "RSI (off)", "Score", "Price / EMA", "Distance %", "ATR %")
         array<bool> columns = array.from(true, colBias, colEma, colStructure, colAdx, colRsi, colScore, colPrice, colDistance, colAtr)

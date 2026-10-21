@@ -12,11 +12,13 @@ test("trendlines have per-timeframe toggles and colors", () => {
 });
 
 test("trendlines are LuxAlgo-style sloped lines, hidden on higher charts", () => {
-  assert.match(source, /if ewOn or tlOn/);
   assert.match(source, /max_lines_count = 500/);
-  assert.match(source, /state\.atrHigh \/ tlLength \* tlMult/);
-  assert.match(source, /state\.atrLow \/ tlLength \* tlMult/);
-  assert.match(source, /timeframe\.in_seconds\(array\.get\(tfs, tfIndex\)\) >= chartSeconds/);
+  assert.match(source, /^f_luxDraw\(/m);
+  assert.match(source, /f_luxPivots\(luxOn0, "1M", tlLenLong, tlLenMed, tlLenShort\)/);
+  assert.match(source, /ta\.pivothigh\(l3, 1\)/);
+  assert.match(source, /tlShort = input\.bool\(true/);
+  assert.doesNotMatch(source, /tlMethod|tlLength/);
+  assert.match(source, /timeframe\.in_seconds\("240"\) >= chartSeconds/);
   assert.doesNotMatch(source, /\bby\s+-\d/);
   assert.doesNotMatch(source, /line\.style [a-z]/);
 });

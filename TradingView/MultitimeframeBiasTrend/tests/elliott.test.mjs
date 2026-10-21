@@ -126,45 +126,6 @@ test("WXY and WXYXZ require each ABC component, not merely many pivots", () => {
   assert.equal(combination(invalid, 5), false);
 });
 
-test("Elliott uses isolated states, all closed intrabars and bounded drawings on seven timeframes", () => {
-  const block = source.slice(source.indexOf("var array<WaveState> ewStates"), source.indexOf("// Optional overlays"));
-  assert.match(block, /for tfIndex = 0 to 6/);
-  assert.match(block, /ewEnabled and array\.get\(ewTimeframes, tfIndex\)/);
-  assert.match(block, /WaveState\.new\(array\.new<float>\(\)/);
-  assert.match(block, /if barstate\.islast/);
-  assert.match(block, /line\.delete\(array\.pop\(state\.lines\)\)/);
-  assert.match(block, /label\.delete\(array\.pop\(state\.labels\)\)/);
-  assert.match(source, /not na\(ph\) and na\(pl\)/);
-  assert.match(source, /not na\(pl\) and na\(ph\)/);
-  assert.match(source, /for i = 0 to count - 1/);
-  assert.match(source, /closedAt > state\.seen/);
-  assert.match(source, /state\.recognizedAt := closedAt/);
-  assert.match(source, /f_ewEvent\(1\), gaps = barmerge\.gaps_off, lookahead = barmerge\.lookahead_on/);
-  assert.match(source, /f_ewValues\(\), calc_bars_count = ewHistory/);
-  assert.match(source, /array\.size\(prices\) > 32/);
-  assert.match(source, /Back-positioned pivot label/);
-  assert.match(source, /Source confirmed UTC/);
-  assert.match(source, /tfName \+ " " \+ wave/);
-  const legs = [5, 3, 5, 5, 15];
-  assert.equal(legs.reduce((a, b) => a + b, 0), 33);
-  const labels = legs.reduce((sum, n) => sum + n + 2, 0);
-  assert.equal(labels, 43);
-  assert.ok(7 * labels + 150 <= 500);
-  assert.ok(7 * legs.reduce((a, b) => a + b, 0) <= 250);
-});
-
-test("Elliott timeframe switches are independent of bias and allow all waves off", () => {
-  const inputs = ["ewOnM", "ewOnW", "ewOnD", "ewOn4H", "ewOn1H", "ewOn15", "ewOn5"];
-  for (const input of inputs) assert.ok(source.includes(`bool ${input} = input.bool(true,`));
-  assert.ok(source.includes(`array<bool> ewTimeframes = array.from(${inputs.join(", ")})`));
-  const block = source.slice(source.indexOf("var array<WaveState> ewStates"), source.indexOf("// Optional overlays"));
-  assert.doesNotMatch(block, /array\.get\(enabled,/);
-  assert.match(block, /if ewEnabled/);
-  assert.match(block, /ewEnabled and array\.get\(ewTimeframes, tfIndex\)[\s\S]*f_ewFetch/);
-  assert.match(block, /All Elliott timeframes disabled/);
-  assert.match(source, /array<bool> enabled = array\.from\(onM, onW, onD, on4H, on1H, on15, on5\)/);
-});
-
 test("intrabar events are processed in order, deduplicated and isolated per timeframe", () => {
   const states = Array.from({ length: 7 }, () => ({ seen: null, stamps: [] }));
   const accept = (index, events, cutoff) => {
@@ -185,27 +146,6 @@ test("intrabar events are processed in order, deduplicated and isolated per time
   assert.deepEqual(states[0].stamps, [5]);
   accept(6, [], 40);
   assert.equal(states[6].seen, 30);
-});
-
-test("each timeframe has a distinct configurable wave color with legacy color mode", () => {
-  assert.match(source, /ewColorByTf = input\.bool\(true,/);
-  const mapping = [
-    ["1M", "ewColorM"], ["1W", "ewColorW"], ["1D", "ewColorD"],
-    ["4H", "ewColor4H"], ["1H", "ewColor1H"], ["15M", "ewColor15"], ["5M", "ewColor5"],
-  ];
-  const defaults = new Set();
-  for (const [tf, variable] of mapping) {
-    assert.ok(source.includes(`"${tf}" => ${variable}`));
-    const definition = source.match(new RegExp(`${variable} = input\\.color\\(color\\.rgb\\(([^)]+)\\), "${tf} wave color"`));
-    assert.ok(definition);
-    defaults.add(definition[1]);
-  }
-  assert.equal(defaults.size, 7);
-  assert.match(source, /color shade = motive \? ewMotiveColor : ewCorrectionColor/);
-  assert.match(source, /color shade = f_ewColor\(tfName, notation == "12345"\)/);
-  const draw = source.slice(source.indexOf("f_ewDraw("), source.indexOf("f_ewEvent("));
-  assert.match(draw, /color = color\.new\(shade, 25\)/);
-  assert.equal([...draw.matchAll(/color = shade/g)].length, 2);
 });
 
 test("pivot ingestion replaces extremes, filters reversals, and caps storage", () => {
@@ -239,4 +179,12 @@ test("pivot ingestion replaces extremes, filters reversals, and caps storage", (
   }
   assert.equal(pivots.length, 32);
   assert.equal(pivots.at(-1).time, 109);
+});
+test("Elliott is the adapted elliott.pine zigzag engine on the chart timeframe", () => {
+  const source = readFileSync(new URL("../MultitimeframeBiasTrend.pine", import.meta.url), "utf8");
+  assert.match(source, /^f_ewZigzag\(bool enabled, int left, color col, int n\) =>/m);
+  assert.match(source, /f_ewZigzag\(ewEnabled and ewOn1, ewLen1, ewCol1, 0\)/);
+  assert.match(source, /f_ewZigzag\(ewEnabled and ewOn3, ewLen3, ewCol3, 2\)/);
+  assert.match(source, /_break_   =   false/);
+  assert.doesNotMatch(source, /WaveState|f_ewFetch/);
 });

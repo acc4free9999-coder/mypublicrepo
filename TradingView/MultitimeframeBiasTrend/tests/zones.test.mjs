@@ -30,9 +30,9 @@ test("source: confirmed-only creation, mitigation first, bounded boxes, no reque
   assert.match(block, /box\.delete\(array\.shift\(sdBoxes\)\)/);
   assert.match(block, /extend = extend\.right/);
   assert.doesNotMatch(block, /request\./);
-  assert.match(source, /max_boxes_count = 100/);
+  assert.match(source, /max_boxes_count = 500/);
   assert.match(source, /sdMaxZones = input\.int\(10, "Maximum active zones", minval = 2, maxval = 40/);
-  assert.match(source, /bool sdEnabled = input\.bool\(false/);
+  assert.match(source, /bool sdEnabled = input\.bool\(true/);
 });
 
 test("zone overlap loop is guarded against empty arrays", () => {

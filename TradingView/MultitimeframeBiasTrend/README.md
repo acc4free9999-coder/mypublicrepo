@@ -240,131 +240,26 @@ re-arms its own level. This is a mechanical break-direction model, not a claim t
 identify discretionary institutional structure. The structure alert does not
 depend on chart labels being visible.
 
-## Integrated Elliott Wave candidates
+## Elliott waves (adapted from elliott.pine)
 
-**Draw Elliott candidates** is enabled by default under **Elliott candidates
-(all enabled timeframes)**. Monthly, weekly, daily, 4H, 1H, 15M and 5M have
-independent pivot histories and can all draw simultaneously. Use the separate
-**1M / 1W / 1D / 4H / 1H / 15M / 5M** switches in the Elliott group to show or
-hide each timeframe's waves. These switches are independent of **Timeframes and
-aggregate weights**: hiding a wave does not remove its dashboard row or change
-bias scores, and a hidden dashboard timeframe can still draw Elliott waves.
-Disabled Elliott timeframes skip wave requests, processing and drawing. All seven
-wave switches default to on. Turning all off is allowed and displays
-**All Elliott timeframes disabled**. Settings changes restart Pine execution,
-clearing drawings from disabled timeframes. Disable the global Elliott toggle
-to hide all wave drawings and restore a dashboard-only view.
-
-This module is independent of MTF scores and their RSI/ADX filters. It uses
-standard source OHLC, including when the chart is synthetic. Each enabled
-timeframe adds one request path, without adding new alert conditions.
-
-- At/above-chart sources use previous-candle pivot events with
-  `lookahead_on` and a one-source-bar offset.
-- Below-chart sources use bounded `request.security_lower_tf()` arrays of price,
-  type, pivot timestamp, ATR reversal threshold and confirmation timestamp.
-  **Every closed event** is consumed in order, not just the final pivot inside
-  the chart candle. Source confirmation timestamps deduplicate repeated values.
-- Elliott state is committed only at chart close; drawings update on the last
-  chart bar. On a 1D chart the latest 5M patterns therefore reflect the latest
-  processed daily close, not a live sequence during the open daily candle.
-- This mode is always confirmed, even if dashboard live mode is selected.
-- An independent **Wave source history budget** limits each source to 5,000
-  bars by default (500-20,000 configurable). Below-chart history can be sparse
-  or unavailable on large chart intervals. **N/A** means no closed source data
-  has been processed; **Building pivots** means fewer than four accepted pivots.
-  No complete historical wave count is claimed outside the available budget.
-  A previously known closed state is retained when a new chart bar has no
-  closed intrabars yet.
-
-The alternating-pivot construction follows the same approach as the sibling
-[standalone detector](../DrawElliottWave/DrawElliottWave.pine): skip simultaneous
-high/low pivots with unknown ordering, replace a same-type endpoint only with a
-more extreme confirmed pivot, and filter reversals by ATR. This integrated
-implementation adds the geometric families below, without the standalone
-indicator's separate table or projections.
-
-### Supported families and exact checks
-
-All checks are mirrored automatically for rising and falling patterns.
-
-| Family | Implemented candidate checks |
-| --- | --- |
-| Impulse 1-5 | Wave 2 stays inside Wave 1, Wave 3 exceeds Wave 1, Wave 4 stays outside Wave 1 territory and beyond Wave 2, and Wave 3 is not shorter than both 1 and 5. |
-| Extended impulse | Valid impulse where leg 1, 3 or 5 exceeds 1.618 times both other motive legs. This is a length heuristic, not proof of internal extension subdivisions. |
-| Truncated fifth | Otherwise valid impulse whose Wave 5 fails to exceed Wave 3 but progresses beyond Wave 4. Equality at Wave 3 is included. |
-| Contracting diagonal | Wave 4 overlaps Wave 1, Wave 2 stays above/below origin, Wave 3 and 5 progress; motive legs 1 > 3 > 5 and corrective legs 2 > 4 in absolute length. |
-| Expanding diagonal | Same overlap/progression checks, with 1 < 3 < 5 and 2 < 4. |
-| Zigzag ABC | B retraces less than 90% of A without passing the origin; C exceeds A's endpoint. |
-| Regular flat ABC | B retraces 90-110% of A; C finishes within the equality tolerance of A's endpoint. |
-| Expanded flat ABC | B exceeds A's origin and C exceeds A's endpoint by more than the tolerance. |
-| Running flat ABC | B exceeds A's origin; C reverses B but fails to reach A's endpoint by more than the tolerance. |
-| Contracting triangle ABCDE | A/C/E endpoints retreat, B/D endpoints advance inward, and B stays inside the origin/A interval. |
-| Barrier triangle ABCDE | One boundary is equal within tolerance and the other moves inward; both orientations are supported. |
-| Expanding triangle ABCDE | A/C/E endpoints advance outward and B/D endpoints move outward in the opposite direction. |
-| WXY | Nine legs: W, X and Y must each independently pass the three-leg ABC classifier. Endpoints are shared; alternating component directions follow from alternating pivots. |
-| WXYXZ | Fifteen legs: W, first X, Y, second X and Z each pass the ABC classifier. Preferred over WXY when both match. |
-
-These are **geometric candidates**, not an exhaustive Elliott grammar. Internal
-5-3-5, 3-3-5, 3-3-3-3-3 subdivisions are NOT recursively verified. The module
-cannot distinguish leading from ending diagonal without larger-degree context,
-confirm triangle placement in Wave 4/B/X, or recognize every combination of
-flats, triangles, double/triple zigzags and nested degrees. Combination support
-here specifically covers ABC components, not arbitrary corrective components.
-An ABC candidate can appear without a preceding recognized impulse and is not
-claimed to be a confirmed correction of one. Multiple family interpretations
-can be displayed simultaneously rather than hiding ambiguity.
-
-### Display, timing and resource limits
-
-- **Wave pivot left/right:** separate from dashboard structure pivots; defaults
-  5/5. Each pivot is processed only when its confirmation candle closes.
-- **Minimum reversal:** default 0.5 ATR, using each source's ATR at confirmation. A
-  zero setting still requires a strictly positive alternating price movement.
-- **Equality / barrier tolerance:** default 0.03 of the first leg, not 3% of
-  instrument price. Used for flat endpoints and triangle barriers.
-- Independent toggles control impulse, diagonal, ABC, triangle and combination
-  families. **Color waves by timeframe** is enabled by default: 1M purple,
-  1W blue, 1D teal, 4H green, 1H gold, 15M orange and 5M red. Each timeframe
-  color is independently configurable and applies to every family's segments,
-  pivot-label backgrounds and confirmation-label backgrounds. Pivot labels
-  retain their existing 25% transparency and configured text color. Disable
-  this option to restore the configurable motive/corrective color scheme.
-- Segments join source pivot timestamps. Labels `0-5`, `A-C`, `A-E`, or
-  `W.A/W.B/W.C ... Z.C` identify the tested endpoints/components. Every label
-  includes its timeframe, such as `4H 3` or `15M B`.
-- Pivot labels are **back-positioned annotations**: they did not exist at those
-  earlier candles. Hover for the source confirmation time in UTC. A separate
-  label at the source confirmation close says "Source confirmed here; not an
-  entry". The pattern only becomes visible after the source offset and the
-  chart-close processing delay; the source confirmation is not an entry time.
-- The dashboard context row reports candidates or data status for every enabled
-  timeframe.
-  It does not change BUY/SELL/PULLBACK context or the eight existing alerts.
-- Counts are rendered from each timeframe's accepted confirmed pivot sequence.
-  A more extreme same-type endpoint can replace the last pivot and
-  change/remove a count. These drawings are mutable interpretations, not
-  permanently locked historical signals.
-- Only candidates ending at each timeframe's latest accepted pivot are drawn,
-  at most one per family per timeframe. A sequence without a match clears that
-  timeframe's old drawings, not other timeframes' drawings. This is not
-  a full historical Elliott-pattern scanner.
-- Storage is capped at **32 pivots, 33 segments and 43 labels per timeframe**:
-  at most **224 pivots, 231 lines and 301 Elliott labels** across seven frames.
-  Together with the chart-label maximum of 150, at most 451 labels are owned,
-  within the 500-label limit; lines stay below the 250-line limit. Old drawings
-  are explicitly deleted before redraw. There are no intrabar wave object arrays.
-
-An apparent match may already be invalidated by price action after its final
-pivot; the module reports geometry, not ongoing validity or a projected next
-wave. Always inspect the confirmation delay, market structure and higher
-timeframes. Elliott interpretation remains subjective and is not an entry signal.
-
-Local checks for the Elliott module:
-`node --test tests/model.test.mjs tests/elliott.test.mjs`.
-These fixtures validate arithmetic/oracles and source resource invariants, not
-execution in TradingView. Compile in Pine Editor and inspect Bar Replay with
-each family enabled; pay particular attention to same-type endpoint replacement.
+The Elliott module replaces the earlier multi-timeframe candidate engine with the
+supplied `elliott.pine` approach, on the **chart timeframe only**. Three zigzag
+lengths (defaults 4 / 8 / 16, each with its own on/off and color) build swing
+sequences from pivots that confirm one bar after the swing. For each zigzag:
+- **1-2-3-4-5** motive waves are drawn when wave 3 is not the shortest and the
+  swings step in the trend direction; the fifth leg follows the live swing until
+  the next swing forms and a wave is dotted when invalidated.
+- **(a)(b)(c)** correction is drawn after a motive wave when the geometry stays
+  inside the 0.854 retracement limit, with a projection box and a red cross when
+  the box is broken.
+- A **Fibonacci zone** (0.5 / 0.618 / 0.764 / 0.854, configurable) from the end of
+  the latest motive wave; it turns red/dotted once price breaks the last level.
+- A circle marks a possible new wave 1 after a completed correction.
+- Optional swing high/low sources and zigzag lines. Older wave sets are deleted
+  (`Max wave sets kept per zigzag`).
+These are candidates, not forecasts or entry signals. The elliott.pine file states
+no licence, so use it accordingly. The dashboard no longer shows an Elliott status
+line and the Elliott lower-timeframe request payload is gone.
 
 ## Supply and demand zones
 
@@ -395,19 +290,43 @@ earlier. They are drawn only on the chart timeframe, not the other six.
 
 ## Trendlines
 
-Modelled on LuxAlgo "Trendlines with Breaks". Enable **Draw trendlines**. For
-each enabled timeframe:
+A port of `draw()` from `trendline.pine` (LuxAlgo Trendline Breakout Navigator),
+run per enabled timeframe and per swing length (Long solid, Medium dashed,
+Short dotted; defaults 30 / 10 / 5, each can be switched off). A higher high
+starts an up-trendline at the previous swing low, a lower low starts a
+down-trendline at the previous swing high; later swings re-fit the slope and
+move the anchor so no close lies beyond the line; `●` marks wick breaks. Broken
+lines stay on the chart, stopped at the break, so several lines accumulate.
+Shorter swing lengths give more, smaller lines like hand-drawn ones. Each
+timeframe has its own toggle and color; only timeframes equal to or higher than
+the chart timeframe are drawn. Lines are not extended right. TradingView keeps
+at most 500 lines, oldest dropped first. This is a reference, not an entry signal.
 
-- **Down-trendline**: from the latest confirmed swing high, sloping down by
-  `ATR / Slope length x Slope multiplier` per source-timeframe bar.
-- **Up-trendline**: from the latest confirmed swing low, sloping up by the same rule.
+## Fair value gaps and order blocks
 
-Lines extend right (optional). Each timeframe has its own toggle and color.
-Only timeframes equal to or higher than the chart timeframe are drawn, so lower
-charts see higher-timeframe trendlines. Pivots are confirmed ones (shared with
-Elliott: Wave pivot left/right and ATR filter) with ATR taken at confirmation,
-so lines appear after the right-bars delay and do not move afterwards. Lines
-are rebuilt on the last bar. This is a reference, not an entry signal.
+Chart-timeframe zones, written from the general FVG / order block concepts (the
+supplied `fgv_oderblock.pine` is all-rights-reserved, so its code is not reused).
+- **FVG**: bullish when candle 3 low > candle 1 high, bearish when candle 3 high <
+  candle 1 low, at least `Minimum gap size` x ATR; created on confirmed bars.
+  Mitigation: touch, 50% fill or full fill.
+- **Order block**: a confirmed swing (`OB swing length`, confirmed that many bars
+  late) broken by a close/wick with an optional displacement candle. The last
+  bearish candle before an upward break is a bullish OB; the last bullish candle
+  before a downward break is a bearish OB. Mitigated by a wick or close through it.
+- Active zones extend right; mitigated zones freeze and fade (or are deleted).
+  Each of the four types keeps at most `Max zones per type` (oldest removed).
+  Zones are context, not entry signals.
+
+## Liquidity sweeps
+
+Adapted from *Liquidity Sweeps* by LuxAlgo (CC BY-NC-SA 4.0; this adaptation is
+shared under the same licence). Confirmed swings (`Sweep swing length`) are
+liquidity pools. **Wick sweep**: a wick pierces the level but the candle closes
+back (dotted level, shaded area, dot). **Outbreak and retest**: a close through
+the level, then a later wick back through it that closes on the original side
+(dashed level). Choose either or both with `Sweep type`. Sweep areas extend right
+until a close beyond them or `Sweep area max bars`; at most `Max sweep areas kept`
+are shown. Sweeps are context, not entry signals.
 
 ## Alerts
 
@@ -482,3 +401,23 @@ Official references:
 [data requests](https://www.tradingview.com/pine-script-docs/concepts/other-timeframes-and-data/),
 [repainting](https://www.tradingview.com/pine-script-docs/concepts/repainting/),
 [objects](https://www.tradingview.com/pine-script-docs/language/objects/).
+
+## Volume profile
+
+Adapted from `volume_profile.pine`. Settings group **Volume profile (chart
+timeframe)** draws a horizontal volume-by-price histogram over the last N bars
+(default 500) with a dotted Point of Control line. Rows use the shared 500-line
+budget (default 60, max 200). It is drawn on the last bar only; the optional
+rolling POC plot recomputes every bar and is slower. Forex uses tick volume. The
+profile describes past activity and shifts as the window moves; it is context,
+not a signal.
+
+## Swing highs/lows with candle patterns
+
+Adapted from `swing_h_l_candle.pine` (settings group **Swing H/L + candle
+patterns**). Each confirmed swing (default length 21) is labelled HH/LH or HL/LL
+with the candle pattern on the swing candle: Hammer / Inverted Hammer at lows,
+Hanging Man / Shooting Star at highs, or a Bullish / Bearish Engulfing. Labels
+appear `length` bars after the swing (confirmation delay). The source's bearish
+engulfing test duplicated the bullish one; it is corrected here. Patterns are
+context, not entry signals.
