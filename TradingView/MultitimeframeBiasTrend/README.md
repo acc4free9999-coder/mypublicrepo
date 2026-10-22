@@ -451,3 +451,25 @@ and ICT. Per-module color, width and cap inputs that rarely change (trendline an
 Elliott colors, volume profile colors, session colors, ICT limits) are now fixed
 constants near the top of their blocks. Label and line pool clean-up uses the
 shared helpers `f_trimLabels`, `f_clearLabels` and `f_clearLines`.
+
+## Pullback reference checklist
+
+A compact table at **bottom right** summarizes
+[the quality trendline pullback rubric](./quality_trendline_pullback_scoring_system.md).
+The **Panels** group at the top of Inputs has independent **Show market bias
+panel** and **Show pullback checklist panel** switches, both enabled by default.
+The checklist adds no plots, alerts or drawing objects. The empty `[ ]` boxes
+are reference text, not clickable controls or automatically evaluated results.
+Hover a check or its points for the detailed criteria.
+
+The five category caps are 25 + 15 + 15 + 20 + 25 = 100; the descending-triangle
+bonus adds five points, capped at 100 overall. The checklist includes the HTF,
+breakdown, risk/reward and news disqualification rules, which override the total
+to zero, plus the A+/A/B/Invalid score bands. It does not calculate a live score,
+inspect manually drawn lines, check news, recommend entries or size positions.
+The rubric leaves some slope/spacing intervals unspecified; the reference awards
+points only in its stated qualifying bands.
+
+Bottom right is reserved for this checklist. If the existing bias dashboard's
+Position is set to Bottom Right, it is placed at Top Right instead to avoid
+two tables occupying the same anchor. Other dashboard positions are unchanged.

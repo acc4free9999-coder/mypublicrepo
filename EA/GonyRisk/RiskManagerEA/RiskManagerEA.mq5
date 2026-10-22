@@ -1255,6 +1255,70 @@ bool IsPositionCooldownActive(const string symbol)
   }
 
 //+------------------------------------------------------------------+
+//| Count unique positions opened on a symbol since server midnight. |
+//| Pending orders are not counted unless they fill into a position. |
+//+------------------------------------------------------------------+
+bool GetTodayOpenedTradeCount(const string symbol, int &count)
+  {
+   count = 0;
+   MqlDateTime dayStartParts;
+   TimeToStruct(TimeCurrent(), dayStartParts);
+   dayStartParts.hour = 0;
+   dayStartParts.min  = 0;
+   dayStartParts.sec  = 0;
+   datetime dayStart = StructToTime(dayStartParts);
+
+   ResetLastError();
+   if(!HistorySelect(dayStart, TimeCurrent()))
+     {
+      Print("RiskManagerEA: failed to read today's trade history for ", symbol, " err=", GetLastError());
+      return false;
+     }
+
+   ulong positionIds[];
+   int totalDeals = HistoryDealsTotal();
+   for(int i = 0; i < totalDeals; i++)
+     {
+      ulong dealTicket = HistoryDealGetTicket(i);
+      if(dealTicket == 0 || HistoryDealGetString(dealTicket, DEAL_SYMBOL) != symbol)
+         continue;
+
+      long entry = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+      if(entry != DEAL_ENTRY_IN && entry != DEAL_ENTRY_INOUT)
+         continue;
+
+      long type = HistoryDealGetInteger(dealTicket, DEAL_TYPE);
+      if(type != DEAL_TYPE_BUY && type != DEAL_TYPE_SELL)
+         continue;
+
+      ulong positionId = (ulong)HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+      if(positionId == 0)
+         continue;
+
+      bool alreadyCounted = false;
+      for(int j = 0; j < count; j++)
+        {
+         if(positionIds[j] == positionId)
+           {
+            alreadyCounted = true;
+            break;
+           }
+        }
+      if(alreadyCounted)
+         continue;
+
+      if(ArrayResize(positionIds, count + 1) != count + 1)
+        {
+         Print("RiskManagerEA: failed to count today's trades for ", symbol, " err=", GetLastError());
+         return false;
+        }
+      positionIds[count++] = positionId;
+     }
+
+   return true;
+  }
+
+//+------------------------------------------------------------------+
 //| Trading hours: parse "HH:MM" into minutes-since-midnight         |
 //+------------------------------------------------------------------+
 bool ParseTimeOfDay(const string text, int &minutesOfDay)
@@ -1321,6 +1385,19 @@ void OpenTrade(bool isBuy)
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
             " - a position already exists on ", symbol, "; only one position per symbol is allowed");
       return;
+     }
+
+   if(InpMaxTradesPerDay > 0)
+     {
+      int tradesToday;
+      if(!GetTodayOpenedTradeCount(symbol, tradesToday))
+         return;
+      if(tradesToday >= InpMaxTradesPerDay)
+        {
+         Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
+               " - daily trade limit reached for ", symbol, " (", tradesToday, "/", InpMaxTradesPerDay, ")");
+         return;
+        }
      }
 
    if(IsPositionCooldownActive(symbol))

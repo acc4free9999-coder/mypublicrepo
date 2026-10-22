@@ -8,6 +8,10 @@ max_bars_back(close, 5000)
 max_bars_back(open, 5000)
 max_bars_back(volume, 5000)
 
+string G_PANELS = "Panels"
+bool showDashboard = input.bool(true, "Show market bias panel", group = G_PANELS)
+bool showPullbackChecklist = input.bool(true, "Show pullback checklist panel", group = G_PANELS)
+
 string G_DATA = "Data and indicators"
 bool confirmed = input.bool(true, "Confirmed candles (recommended)", group = G_DATA, tooltip = "HTF/equal: previous closed candle. LTF: latest available closed intrabar. Off: live security values can repaint.")
 int fastLen = input.int(20, "Fast EMA", minval = 2, maxval = 1000, group = G_DATA)
@@ -54,8 +58,7 @@ bool on5 = input.bool(true, "5-minute", inline = "5", group = G_TF)
 float wt5 = input.float(0.5, "Weight", minval = 0.1, step = 0.5, inline = "5", group = G_TF)
 
 string G_VIEW = "Dashboard"
-bool showDashboard = input.bool(true, "Show dashboard", group = G_VIEW)
-string locationInput = input.string("Top Right", "Position", options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group = G_VIEW)
+string locationInput = input.string("Top Right", "Position", options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group = G_VIEW, tooltip = "Bottom Right is reserved for the pullback reference checklist. Selecting it places this dashboard at Top Right instead.")
 string textSize = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large"], group = G_VIEW)
 int transparency = input.int(10, "Background transparency (0 = opaque)", minval = 0, maxval = 90, group = G_VIEW)
 color bgColor = input.color(color.rgb(20, 25, 33), "Terminal background", group = G_VIEW)
@@ -2004,7 +2007,7 @@ alertcondition(sdEnabled and sdTestedSupply, "Price tests supply zone", "{{ticke
 alertcondition(alertStructure and chartBreak and chartData.breakCode < 0, "Chart bearish structure break", "{{ticker}} {{interval}}: candle closed below an unbroken confirmed swing low (BOS or CHoCH).")
 
 int columnCount = 1 + (colBias ? 1 : 0) + (colEma ? 1 : 0) + (colStructure ? 1 : 0) + (colAdx ? 1 : 0) + (colRsi ? 1 : 0) + (colScore ? 1 : 0) + (colPrice ? 1 : 0) + (colDistance ? 1 : 0) + (colAtr ? 1 : 0)
-string panelPosition = locationInput == "Top Left" ? position.top_left : locationInput == "Bottom Right" ? position.bottom_right : locationInput == "Bottom Left" ? position.bottom_left : position.top_right
+string panelPosition = locationInput == "Top Left" ? position.top_left : locationInput == "Bottom Left" ? position.bottom_left : position.top_right
 var table panel = table.new(panelPosition, columnCount, 13 + enabledCount, bgcolor = color.new(bgColor, transparency), frame_color = neutralColor, frame_width = 1, border_width = 0)
 if barstate.isfirst and columnCount > 1
     for row = 0 to 9
@@ -2061,3 +2064,67 @@ if barstate.islast
              : "HTF/equal: " + (confirmed ? "previous closed source candle." : "developing source candle.")
         f_cell(panel, 0, 11 + enabledCount, footer, bgColor, mutedColor)
         f_cell(panel, 0, 12 + enabledCount, chart.is_standard ? "BIAS IS NOT AN ENTRY | Alerts: chart close | No profit guarantee" : "Synthetic chart: dashboard = standard OHLC; overlays = chart OHLC", bgColor, mutedColor)
+
+// Reference only: no setup is evaluated and no points are awarded automatically.
+f_checklistCell(table checklist, int column, int row, string value, color background, color foreground, string tip = "") =>
+    table.cell(checklist, column, row, value, bgcolor = background, text_color = foreground, text_size = size.tiny, text_halign = text.align_left, tooltip = tip)
+
+var table pullbackChecklist = table.new(position.bottom_right, 3, 22, bgcolor = showPullbackChecklist ? color.rgb(20, 25, 33) : na, frame_color = color.gray, frame_width = showPullbackChecklist ? 1 : 0)
+if barstate.isfirst
+    table.merge_cells(pullbackChecklist, 0, 0, 2, 0)
+    for row = 16 to 21
+        table.merge_cells(pullbackChecklist, 0, row, 2, row)
+if barstate.islast and showPullbackChecklist
+    color checklistBg = color.rgb(20, 25, 33)
+    color checklistHeader = color.rgb(42, 49, 60)
+    f_checklistCell(pullbackChecklist, 0, 0, "PULLBACK CHECKLIST | REFERENCE / 100", checklistHeader, color.white)
+    f_checklistCell(pullbackChecklist, 0, 1, "Category / cap", checklistHeader, color.silver)
+    f_checklistCell(pullbackChecklist, 1, 1, "Manual check (not evaluated)", checklistHeader, color.silver)
+    f_checklistCell(pullbackChecklist, 2, 1, "Points", checklistHeader, color.silver)
+    array<string> checklistGroups = array.from(
+         "HTF / 25", "", "Geometry / 15", "", "", "Pullback / 15", "",
+         "Confluence / 20", "", "", "ICT / SMC / 25", "", "", "Bonus")
+    array<string> checklistRules = array.from(
+         "[ ] H4 + Daily structure aligned",
+         "[ ] Untapped liquidity draw / RR >= 2",
+         "[ ] Prior clean swing touches",
+         "[ ] Sustainable slope: 30-45 degrees",
+         "[ ] Touch spacing: 10-20+ candles",
+         "[ ] Bodies + volume fade; absorption wick",
+         "[ ] Contact rejection / engulfing / reversal",
+         "[ ] Horizontal S/R role reversal",
+         "[ ] Fib 61.8-78.6% / 50%",
+         "[ ] EMA20 / SMA50 / VWAP confluence",
+         "[ ] Liquidity sweep + reclaim",
+         "[ ] Unmitigated FVG at contact",
+         "[ ] Breaker / mitigation / rejection block",
+         "[ ] Descending triangle break + retest")
+    array<string> checklistPoints = array.from(
+         "15 / 0", "10 / 5 / 0", "5 (3+) / 2 (2)", "5 / 0", "5 / 0",
+         "10 / 0", "5 / 0", "8 / 0", "6 / 3 / 0", "6 / 0",
+         "10 / 0", "8 / 0", "7 / 0", "+5")
+    array<string> checklistTips = array.from(
+         "15: both H4 and Daily show HH/HL for longs or LH/LL for shorts, with structure intact. Zero alignment disqualifies the setup.",
+         "10: clear untapped HTF pool (EQH/EQL, FVG, major D/W swing). 5: intermediate H1/H4 target. 0: no draw, obstacle or RR below 1:2.",
+         "5: at least three distinct clean structural touches before this setup. 2: two prior touches. 0: one/arbitrary touch.",
+         "5: sustainable 30-45 degree slope. 0 outside the awarded band; the rubric flags >60 or <20 as extreme. Visual angle depends on chart scale.",
+         "5: distinct swings at least 10 candles apart, ideally 10-20+. 0 otherwise; fewer than five bars is clustered.",
+         "10: progressively smaller countertrend bodies, declining volume and wicks toward the line. 0: aggressive countertrend impulse.",
+         "5: rejection at the contact, with a wick at least 60% of the range, full-body engulfing, railroad tracks or morning/evening star. 0: neutral or breakdown close.",
+         "8: the line intersects former resistance now support, or former support now resistance.",
+         "6: contact inside the 61.8-78.6% retracement pocket. 3: contact at 50%. 0: neither.",
+         "6: contact coincides with EMA20, SMA50, anchored VWAP or session VWAP.",
+         "10: price sweeps the line or a nearby swing, then closes back on the trend side.",
+         "8: an unmitigated three-candle FVG overlaps the line contact.",
+         "7: an active breaker, mitigation or HTF rejection block overlaps the contact.",
+         "5 bonus: descending triangle support breakdown and apex retest, or breakout above the descending line and support retest. Cap the final score at 100.")
+    for i = 0 to 13
+        f_checklistCell(pullbackChecklist, 0, i + 2, checklistGroups.get(i), checklistBg, color.silver)
+        f_checklistCell(pullbackChecklist, 1, i + 2, checklistRules.get(i), checklistBg, color.white, checklistTips.get(i))
+        f_checklistCell(pullbackChecklist, 2, i + 2, checklistPoints.get(i), checklistBg, color.aqua, checklistTips.get(i))
+    f_checklistCell(pullbackChecklist, 0, 16, "HARD FAIL -> 0: HTF alignment = 0 / aggressive line breakdown", color.rgb(75, 25, 30), color.white)
+    f_checklistCell(pullbackChecklist, 0, 17, "HARD FAIL -> 0: RR < 1:2 / high-impact news +/-15 min", color.rgb(75, 25, 30), color.white, "Check the economic calendar manually. News proximity is not evaluated by this panel.")
+    f_checklistCell(pullbackChecklist, 0, 18, "Total = min(100, category points + bonus); hard fail overrides", checklistBg, color.silver)
+    f_checklistCell(pullbackChecklist, 0, 19, "85-100 A+ | 70-84 A | 50-69 B | <50 Invalid", checklistHeader, color.white)
+    f_checklistCell(pullbackChecklist, 0, 20, "Rubric minimum: 70 | Hover each check for full criteria", checklistBg, color.aqua)
+    f_checklistCell(pullbackChecklist, 0, 21, "REFERENCE ONLY | No live score, entry or risk-sizing signal", checklistBg, color.silver)
