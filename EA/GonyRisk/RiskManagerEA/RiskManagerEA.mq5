@@ -72,6 +72,7 @@ input ulong           InpSlippage        = 20;        // Max slippage (points)
 input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on ANY position on configured symbols
 input int             InpCooldownMinutes = 0;          // Per-symbol cooldown after close, in minutes (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
+input int             InpMaxTradesPerDay = 5;          // Filled entry orders per symbol/server day; excess entries are closed (0 = unlimited)
 
 input group "=== Trading Hours ==="
 input bool            InpUseTradingHours = false;      // Restrict new entries to a time-of-day window (server time)
@@ -83,8 +84,8 @@ input bool            InpShowPanel       = true;      // Show on-chart info pane
 input bool            InpShowTradeButtons= false;      // Show Buy/Sell buttons on panel
 input int             InpPanelX          = 20;        // Panel X position
 input int             InpPanelY          = 50;        // Panel Y position
-input int             InpPanelWidth      = 600;        // Panel width (px)
-input int             InpPanelFontSize   = 11;         // Panel font size
+input int             InpPanelWidth      = 600;        // Preferred panel width, capped to chart width (px)
+input int             InpPanelFontSize   = 10;          // Maximum panel font size (auto-shrinks to fit width)
 
 //--- Globals
 CTrade         trade;
@@ -92,6 +93,13 @@ string         g_prefix = "RM_EA_";
 string         g_gv_prefix = "RM_EA_TICKET_";   // GlobalVariable prefix to mark tickets already processed
 ulong          g_cooldownForcedCloseTicket = 0;
 int            g_panelWidth = 0;
+int            g_panelPage = 0;
+int            g_panelPageCount = 1;
+int            g_panelVisibleRows = 0;
+int            g_panelChartWidth = 0;
+int            g_panelChartHeight = 0;
+int            g_panelWrappedRows = 0;
+int            g_panelFontSize = 9;
 string        g_cooldownForcedCloseSymbol = "";
 
 //+------------------------------------------------------------------+
@@ -477,6 +485,9 @@ void CorrectLotSize(ulong ticket)
   {
    if(!PositionSelectByTicket(ticket))
       return;
+   if(InpMaxTradesPerDay > 0 &&
+      GlobalVariableCheck(DailyRejectedPositionKey((ulong)PositionGetInteger(POSITION_IDENTIFIER))))
+      return;
 
    string symbol = PositionGetString(POSITION_SYMBOL);
    long   type   = PositionGetInteger(POSITION_TYPE);
@@ -508,6 +519,8 @@ void CorrectLotSize(ulong ticket)
      }
 
    ulong newTicket = trade.ResultOrder();
+   if(newTicket != 0 && GlobalVariableSet(DailyLotFixKey(newTicket), 1.0) == 0)
+      Print("RiskManagerEA: failed to mark lot-correction order ", newTicket, " err=", GetLastError());
    // ResultOrder() returns the order ticket; find the resulting position ticket via deal.
    ulong dealTicket = trade.ResultDeal();
    ulong posTicket = 0;
@@ -900,20 +913,26 @@ void CreateLabel(const string name, const string text, int x, int y, color clr, 
 //| Panel layout constants                                           |
 //+------------------------------------------------------------------+
 #define RM_PANEL_PADDING 16
-#define RM_PANEL_LINE_H  38
 
 //+------------------------------------------------------------------+
 //| Build the full multi-line info text shown in the panel body      |
 //+------------------------------------------------------------------+
-void GetPanelInfoLines(string &lines[])
+void GetPanelInfoLines(string &lines[], color &colors[])
   {
    double equity   = AccountInfoDouble(ACCOUNT_EQUITY);
    double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
    double openRisk = ComputeOpenRisk();
    double remainingBalance = MathMax(0.0, balance - openRisk);
 
-   ArrayResize(lines, 3 + RM_SLOT_COUNT * 2);
+   ArrayResize(lines, 4 + RM_SLOT_COUNT * 3);
+   ArrayResize(colors, ArraySize(lines));
+   ArrayInitialize(colors, clrSilver);
+   string details[];
+   ArrayResize(details, RM_SLOT_COUNT * 2);
+   for(int i = 0; i < ArraySize(details); i++)
+      details[i] = " ";
    int n = 0;
+   colors[n] = (remainingBalance > 0.0) ? clrLightSkyBlue : clrTomato;
    lines[n++] = StringFormat("Equity: %.2f | Balance: %.2f | Open Risk: $%.2f | Remaining: $%.2f",
                              equity, balance, openRisk, remainingBalance);
 
@@ -923,20 +942,19 @@ void GetPanelInfoLines(string &lines[])
       if(!g_slots[i].enabled)
         {
          lines[n++] = label + ": Off";
-         lines[n++] = " ";
          continue;
         }
       string symbol = g_slots[i].symbol;
       if(symbol == "")
         {
+         colors[n] = clrTomato;
          lines[n++] = label + ": no matching symbol found for panel (trades still managed by name)";
-         lines[n++] = " ";
          continue;
         }
       if(FindSlot(symbol) != i)
         {
+         colors[n] = clrOrange;
          lines[n++] = StringFormat("[%d] %s: duplicate of slot %d (ignored)", i + 1, symbol, FindSlot(symbol) + 1);
-         lines[n++] = " ";
          continue;
         }
 
@@ -948,6 +966,19 @@ void GetPanelInfoLines(string &lines[])
       double risk    = ComputeTradeRisk(symbol);
       int    open    = CountOpenTradesOnSymbol(symbol);
       int    left    = (risk > 0.0) ? (int)MathFloor((remainingBalance / risk) + 0.0000001) : 0;
+      int tradesToday = 0;
+      bool historyReady = GetTodayOpenedTradeCount(symbol, tradesToday);
+      string entryStatus = "Ready";
+      if(InpMaxTradesPerDay > 0 && !historyReady)
+         entryStatus = "Blocked: history unavailable";
+      else if(InpMaxTradesPerDay > 0 && tradesToday >= InpMaxTradesPerDay)
+         entryStatus = "Blocked: daily limit";
+      else if(open > 0)
+         entryStatus = "Blocked: position open";
+      else if(IsCooldownActiveForSymbol(symbol))
+         entryStatus = "Blocked: cooldown";
+      else if(!IsWithinTradingHours())
+         entryStatus = "Blocked: trading hours";
 
       string slText;
       if(g_slots[i].slMode == SL_MODE_PERCENT)
@@ -957,21 +988,56 @@ void GetPanelInfoLines(string &lines[])
       else
          slText = StringFormat("SL %.1f pips", g_slots[i].slPips);
 
-      lines[n++] = StringFormat("[%d] %s | Lot %.2f | %s | R:R 1:%.1f | 1-Trade: %s",
-                                i + 1, symbol, lots, slText, rr,
-                                g_slots[i].oneTradeOnly ? "On" : "Off");
-      lines[n++] = StringFormat("     SL %.1f / TP %.1f pips | Risk $%.2f / $%.2f | Open %d | Left %d | %s",
-                                slPips, slPips * rr, risk, risk * rr, open, left,
-                                GetCooldownText(symbol));
+      colors[n] = GetPanelStatusColor(historyReady, tradesToday, open,
+                                     IsCooldownActiveForSymbol(symbol), IsWithinTradingHours());
+      lines[n++] = StringFormat("[%d] %s | %s | Entry: %s | Open %d/1 | %s",
+                                i + 1, symbol, GetDailyTradeText(tradesToday, historyReady),
+                                entryStatus, open, GetCooldownText(symbol));
+      details[i * 2] = StringFormat("[%d] %s | Lot %.2f | %s | R:R 1:%.1f",
+                                i + 1, symbol, lots, slText, rr);
+      details[i * 2 + 1] = StringFormat("     SL %.1f / TP %.1f pips | Risk $%.2f / Reward $%.2f | Risk capacity %d",
+                                slPips, slPips * rr, risk, risk * rr, left);
      }
 
    if(InpUseTradingHours)
+     {
+      colors[n] = IsWithinTradingHours() ? clrPaleGreen : clrOrange;
       lines[n++] = StringFormat("Trading Hours: %s (%s - %s)",
                                 IsWithinTradingHours() ? "Open" : "Closed",
                                 InpTradingStartTime, InpTradingEndTime);
+     }
    else
       lines[n++] = "Trading Hours: Off (24h)";
+   lines[n++] = "Server: " + TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS) +
+                " | Daily reset: 00:00 server time";
+   for(int i = 0; i < ArraySize(details); i++)
+     {
+      colors[n] = (i % 2 == 0) ? clrLightSkyBlue : clrWheat;
+      lines[n++] = details[i];
+     }
    lines[n++] = StringFormat("Magic: %I64u", InpMagicNumber);
+  }
+
+color GetPanelStatusColor(const bool historyReady, const int tradesToday, const int open,
+                          const bool cooldownActive, const bool tradingHoursOpen)
+  {
+   if(!historyReady || (InpMaxTradesPerDay > 0 && tradesToday >= InpMaxTradesPerDay))
+      return clrTomato;
+   if(cooldownActive || !tradingHoursOpen)
+      return clrOrange;
+   if(open > 0)
+      return clrKhaki;
+   return clrPaleGreen;
+  }
+
+string GetDailyTradeText(const int tradesToday, const bool historyReady)
+  {
+   if(!historyReady)
+      return "Daily used: N/A | Remaining: N/A (history unavailable)";
+   if(InpMaxTradesPerDay <= 0)
+      return StringFormat("Daily used: %d | Remaining: Unlimited", tradesToday);
+   int remaining = (tradesToday < InpMaxTradesPerDay) ? InpMaxTradesPerDay - tradesToday : 0;
+   return StringFormat("Daily used: %d/%d | Remaining: %d", tradesToday, InpMaxTradesPerDay, remaining);
   }
 
 string GetCooldownText(const string symbol)
@@ -992,6 +1058,10 @@ string GetCooldownText(const string symbol)
 //+------------------------------------------------------------------+
 int EstimateTextWidth(const string text, int fontSize, bool bold = false)
   {
+   uint width, height;
+   if(TextSetFont("Arial", -fontSize * 10, bold ? FW_BOLD : FW_NORMAL) &&
+      TextGetSize(text, width, height))
+      return (int)width + 4;
    // Arial glyphs average ~0.6x font size per character at small sizes,
    // but widen noticeably at larger sizes and when bold; these factors
    // are tuned to avoid clipping against the panel background.
@@ -999,56 +1069,143 @@ int EstimateTextWidth(const string text, int fontSize, bool bold = false)
    return (int)MathCeil(StringLen(text) * fontSize * factor) + 10; // small safety buffer
   }
 
+int GetPanelFontSize(const string &lines[], const int width)
+  {
+   int fontSize = MathMax(6, InpPanelFontSize);
+   while(fontSize > 6)
+     {
+      bool fits = true;
+      for(int i = 0; i < ArraySize(lines); i++)
+         if(EstimateTextWidth(lines[i], fontSize) > width)
+           {
+            fits = false;
+            break;
+           }
+      if(fits)
+         break;
+      fontSize--;
+     }
+   return fontSize;
+  }
+
+void WrapPanelLines(const string &source[], string &wrapped[], const int width, const int fontSize)
+  {
+   ArrayResize(wrapped, 0);
+   for(int i = 0; i < ArraySize(source); i++)
+     {
+      string remaining = source[i];
+      do
+        {
+         int length = StringLen(remaining);
+         int take = length;
+         while(take > 1 && EstimateTextWidth(StringSubstr(remaining, 0, take), fontSize) > width)
+            take--;
+         if(take < length)
+           {
+            int split = take;
+            while(split > 0 && StringSubstr(remaining, split, 1) != " ")
+               split--;
+            if(split > 0)
+               take = split;
+           }
+         int row = ArraySize(wrapped);
+         ArrayResize(wrapped, row + 1);
+         wrapped[row] = StringSubstr(remaining, 0, take);
+         remaining = StringSubstr(remaining, take);
+         StringTrimLeft(remaining);
+        }
+      while(StringLen(remaining) > 0);
+     }
+  }
+
+int GetPanelPageRows(const int chartHeight, const int y, const int lineHeight)
+  {
+   int footer = InpShowTradeButtons ? 140 : 92;
+   return MathMax(1, (chartHeight - y - 64 - footer - RM_PANEL_PADDING) / lineHeight);
+  }
+
+void WrapColoredPanelLines(const string &source[], const color &sourceColors[],
+                          string &lines[], color &colors[], const int width, const int fontSize)
+  {
+   ArrayResize(lines, 0);
+   ArrayResize(colors, 0);
+   for(int i = 0; i < ArraySize(source); i++)
+     {
+      string single[], wrapped[];
+      ArrayResize(single, 1);
+      single[0] = source[i];
+      WrapPanelLines(single, wrapped, width, fontSize);
+      int start = ArraySize(lines);
+      ArrayResize(lines, start + ArraySize(wrapped));
+      ArrayResize(colors, ArraySize(lines));
+      for(int j = 0; j < ArraySize(wrapped); j++)
+        {
+         lines[start + j] = wrapped[j];
+         colors[start + j] = sourceColors[i];
+        }
+     }
+  }
+
 void CreatePanel()
   {
    if(!InpShowPanel)
       return;
 
-   int x = InpPanelX;
-   int y = InpPanelY;
-   int btnH = 40;
-   if(InpShowTradeButtons)
-      btnH += 8 + 40;
+   int chartWidth = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   int chartHeight = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+   if(chartWidth <= 0 || chartHeight <= 0)
+      return;
+   int x = MathMax(0, MathMin(InpPanelX, chartWidth - 240));
+   int y = MathMax(0, MathMin(InpPanelY, chartHeight - 260));
    int headerH = 44;
 
-   string lines[];
-   GetPanelInfoLines(lines);
-
-   // Widen the panel to fit the longest line if InpPanelWidth is too narrow
-   int w = InpPanelWidth;
-   int titleW = EstimateTextWidth("RISK MANAGER EA", InpPanelFontSize + 3, true) + RM_PANEL_PADDING * 2;
-   w = MathMax(w, titleW);
-   for(int i = 0; i < ArraySize(lines); i++)
-     {
-      int lineW = EstimateTextWidth(lines[i], InpPanelFontSize, false) + RM_PANEL_PADDING * 2;
-      w = MathMax(w, lineW);
-     }
-
-   int bodyH = ArraySize(lines) * RM_PANEL_LINE_H + RM_PANEL_PADDING;
-   int totalH = headerH + bodyH + btnH + RM_PANEL_PADDING * 2;
+   string source[], lines[];
+   color sourceColors[], colors[];
+   GetPanelInfoLines(source, sourceColors);
+   int w = MathMin(MathMax(240, InpPanelWidth), chartWidth - x);
+   int fontSize = GetPanelFontSize(source, MathMax(1, w - RM_PANEL_PADDING * 2));
+   int lineHeight = MathMax(20, EstimateTextWidth("M", fontSize) * 2);
+   g_panelFontSize = fontSize;
+   WrapColoredPanelLines(source, sourceColors, lines, colors, MathMax(1, w - RM_PANEL_PADDING * 2), fontSize);
+   int pageRows = GetPanelPageRows(chartHeight, y, lineHeight);
+   g_panelPageCount = MathMax(1, (ArraySize(lines) + pageRows - 1) / pageRows);
+   g_panelPage = MathMax(0, MathMin(g_panelPage, g_panelPageCount - 1));
+   int start = g_panelPage * pageRows;
+   int visibleRows = MathMin(pageRows, ArraySize(lines) - start);
+   for(int i = 0; i < g_panelVisibleRows; i++)
+      ObjectDelete(0, g_prefix + "INFO" + IntegerToString(i));
+   g_panelVisibleRows = visibleRows;
+   g_panelChartWidth = chartWidth;
+   g_panelChartHeight = chartHeight;
+   g_panelWrappedRows = ArraySize(lines);
 
    g_panelWidth = w;
 
-   CreateBackground(g_prefix + "BG", x, y, w, totalH, C'20,20,20', clrDodgerBlue);
+   CreateBackground(g_prefix + "BG", x, y, w, chartHeight - y, C'20,20,20', clrDodgerBlue);
 
-   CreateLabel(g_prefix + "TITLE", "RISK MANAGER EA", x + RM_PANEL_PADDING, y + 8,
-               clrDodgerBlue, InpPanelFontSize + 3, "Arial Bold");
+   CreateLabel(g_prefix + "TITLE", StringFormat("RISK MANAGER EA (%d/%d)", g_panelPage + 1, g_panelPageCount),
+               x + RM_PANEL_PADDING, y + 8, clrDodgerBlue, fontSize, "Arial Bold");
 
    int infoY = y + headerH + 10;
-   for(int i = 0; i < ArraySize(lines); i++)
+   for(int i = 0; i < visibleRows; i++)
      {
-      CreateLabel(g_prefix + "INFO" + IntegerToString(i), lines[i],
-                  x + RM_PANEL_PADDING, infoY + i * RM_PANEL_LINE_H,
-                  clrWhiteSmoke, InpPanelFontSize);
+      CreateLabel(g_prefix + "INFO" + IntegerToString(i), lines[start + i],
+                  x + RM_PANEL_PADDING, infoY + i * lineHeight,
+                  colors[start + i], fontSize);
      }
 
-   int btnY = infoY + ArraySize(lines) * RM_PANEL_LINE_H + 8;
+   int btnY = infoY + visibleRows * lineHeight + 8;
+   int halfW = (w - RM_PANEL_PADDING * 3) / 2;
+   CreateButton(g_prefix + "PREV", "Previous", x + RM_PANEL_PADDING, btnY, halfW, 28,
+                clrDimGray, fontSize);
+   CreateButton(g_prefix + "NEXT", "Next", x + RM_PANEL_PADDING * 2 + halfW, btnY, halfW, 28,
+                clrDimGray, fontSize);
+   btnY += 36;
 
    if(InpShowTradeButtons)
      {
-      int halfW = (w - RM_PANEL_PADDING * 3) / 2;
-      CreateButton(g_prefix + "BUY",  "BUY", x + RM_PANEL_PADDING, btnY, halfW, 40, clrForestGreen, InpPanelFontSize + 3);
-      CreateButton(g_prefix + "SELL", "SELL", x + RM_PANEL_PADDING * 2 + halfW, btnY, halfW, 40, clrCrimson, InpPanelFontSize + 3);
+      CreateButton(g_prefix + "BUY",  "BUY", x + RM_PANEL_PADDING, btnY, halfW, 40, clrForestGreen, fontSize);
+      CreateButton(g_prefix + "SELL", "SELL", x + RM_PANEL_PADDING * 2 + halfW, btnY, halfW, 40, clrCrimson, fontSize);
      }
    else
      {
@@ -1059,7 +1216,7 @@ void CreatePanel()
    int testBtnY = btnY + (InpShowTradeButtons ? 48 : 0);
    CreateButton(g_prefix + "TEST_NOTIFY", "TEST NOTIFY",
                 x + RM_PANEL_PADDING, testBtnY, w - RM_PANEL_PADDING * 2, 40,
-                clrDarkOrange, InpPanelFontSize + 2);
+                clrDarkOrange, fontSize);
 
    // Resize background to fit actual content precisely
    ObjectSetInteger(0, g_prefix + "BG", OBJPROP_YSIZE,
@@ -1075,10 +1232,11 @@ void RemovePanel()
    ObjectDelete(0, g_prefix + "BUY");
    ObjectDelete(0, g_prefix + "SELL");
    ObjectDelete(0, g_prefix + "TEST_NOTIFY");
-   string lines[];
-   GetPanelInfoLines(lines);
-   for(int i = 0; i < ArraySize(lines); i++)
+   ObjectDelete(0, g_prefix + "PREV");
+   ObjectDelete(0, g_prefix + "NEXT");
+   for(int i = 0; i < g_panelVisibleRows; i++)
       ObjectDelete(0, g_prefix + "INFO" + IntegerToString(i));
+   g_panelVisibleRows = 0;
   }
 
 //+------------------------------------------------------------------+
@@ -1096,23 +1254,30 @@ void UpdatePanelInfo()
       return;
      }
 
-   string lines[];
-   GetPanelInfoLines(lines);
-
-   // Values read at startup can be empty/zero before the terminal finishes
-   // connecting, which makes the initial panel too narrow. Rebuild if the
-   // text has since grown wider than the panel we created.
-   int needed = 0;
-   for(int i = 0; i < ArraySize(lines); i++)
-      needed = MathMax(needed, EstimateTextWidth(lines[i], InpPanelFontSize, false) + RM_PANEL_PADDING * 2);
-   if(needed > g_panelWidth)
+   string source[], lines[];
+   color sourceColors[], colors[];
+   GetPanelInfoLines(source, sourceColors);
+   int fontSize = GetPanelFontSize(source, MathMax(1, g_panelWidth - RM_PANEL_PADDING * 2));
+   WrapColoredPanelLines(source, sourceColors, lines, colors, MathMax(1, g_panelWidth - RM_PANEL_PADDING * 2), fontSize);
+   int chartWidth = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   int chartHeight = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS);
+   if(fontSize != g_panelFontSize ||
+      chartWidth != g_panelChartWidth || chartHeight != g_panelChartHeight ||
+      ArraySize(lines) != g_panelWrappedRows)
      {
       CreatePanel();
       return;
      }
 
-   for(int i = 0; i < ArraySize(lines); i++)
-      ObjectSetString(0, g_prefix + "INFO" + IntegerToString(i), OBJPROP_TEXT, lines[i]);
+   int y = MathMax(0, MathMin(InpPanelY, chartHeight - 260));
+   int pageRows = GetPanelPageRows(chartHeight, y, MathMax(20, EstimateTextWidth("M", fontSize) * 2));
+   int start = g_panelPage * pageRows;
+   for(int i = 0; i < g_panelVisibleRows; i++)
+     {
+      string name = g_prefix + "INFO" + IntegerToString(i);
+      ObjectSetString(0, name, OBJPROP_TEXT, lines[start + i]);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, colors[start + i]);
+     }
 
    ChartRedraw(0);
   }
@@ -1255,32 +1420,94 @@ bool IsPositionCooldownActive(const string symbol)
   }
 
 //+------------------------------------------------------------------+
-//| Count unique positions opened on a symbol since server midnight. |
-//| Pending orders are not counted unless they fill into a position. |
+//| Count filled entries except positions fully closed by this EA.  |
+//| An optional order returns its rank, even if later entries exist. |
 //+------------------------------------------------------------------+
-bool GetTodayOpenedTradeCount(const string symbol, int &count)
+string DailyLotFixKey(const ulong order)
+  {
+   return g_prefix + "DAILY_LOTFIX_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "_" +
+          IntegerToString((long)order);
+  }
+
+string DailyRejectedPositionKey(const ulong positionId)
+  {
+   return g_prefix + "DAILY_REJECT_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "_" +
+          IntegerToString((long)positionId);
+  }
+
+bool GetTodayOpenedTradeCount(const string symbol, int &count, const ulong targetOrder = 0)
   {
    count = 0;
+   datetime now = TimeCurrent();
    MqlDateTime dayStartParts;
-   TimeToStruct(TimeCurrent(), dayStartParts);
+   if(!TimeToStruct(now, dayStartParts))
+     {
+      Print("RiskManagerEA: failed to determine server day, err=", GetLastError());
+      return false;
+     }
    dayStartParts.hour = 0;
    dayStartParts.min  = 0;
    dayStartParts.sec  = 0;
    datetime dayStart = StructToTime(dayStartParts);
 
    ResetLastError();
-   if(!HistorySelect(dayStart, TimeCurrent()))
+   if(!HistorySelect(dayStart, now))
      {
       Print("RiskManagerEA: failed to read today's trade history for ", symbol, " err=", GetLastError());
       return false;
      }
 
-   ulong positionIds[];
+   ulong entryOrders[];
+   ulong eaClosedPositions[];
+   int excludedCount = 0;
    int totalDeals = HistoryDealsTotal();
    for(int i = 0; i < totalDeals; i++)
      {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0)
+        {
+         Print("RiskManagerEA: failed to read daily close deal, err=", GetLastError());
+         return false;
+        }
+      if(HistoryDealGetString(deal, DEAL_SYMBOL) != symbol)
+         continue;
+      long entry = HistoryDealGetInteger(deal, DEAL_ENTRY);
+      if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY)
+         continue;
+      if(HistoryDealGetInteger(deal, DEAL_REASON) != DEAL_REASON_EXPERT ||
+         (ulong)HistoryDealGetInteger(deal, DEAL_MAGIC) != InpMagicNumber)
+         continue;
+
+      ulong closedId = (ulong)HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+      bool stillOpen = false;
+      for(int j = PositionsTotal() - 1; j >= 0; j--)
+        {
+         if(PositionGetTicket(j) != 0 &&
+            (ulong)PositionGetInteger(POSITION_IDENTIFIER) == closedId)
+           {
+            stillOpen = true;
+            break;
+           }
+        }
+      if(stillOpen)
+         continue;
+      if(ArrayResize(eaClosedPositions, excludedCount + 1) != excludedCount + 1)
+        {
+         Print("RiskManagerEA: failed to count EA-closed positions, err=", GetLastError());
+         return false;
+        }
+      eaClosedPositions[excludedCount++] = closedId;
+     }
+
+   for(int i = 0; i < totalDeals; i++)
+     {
       ulong dealTicket = HistoryDealGetTicket(i);
-      if(dealTicket == 0 || HistoryDealGetString(dealTicket, DEAL_SYMBOL) != symbol)
+      if(dealTicket == 0)
+        {
+         Print("RiskManagerEA: failed to read daily deal at index ", i, " err=", GetLastError());
+         return false;
+        }
+      if(HistoryDealGetString(dealTicket, DEAL_SYMBOL) != symbol)
          continue;
 
       long entry = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
@@ -1291,14 +1518,34 @@ bool GetTodayOpenedTradeCount(const string symbol, int &count)
       if(type != DEAL_TYPE_BUY && type != DEAL_TYPE_SELL)
          continue;
 
-      ulong positionId = (ulong)HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
-      if(positionId == 0)
+      ulong order = (ulong)HistoryDealGetInteger(dealTicket, DEAL_ORDER);
+      if(order == 0)
+        {
+         Print("RiskManagerEA: missing entry order on deal ", dealTicket);
+         return false;
+        }
+      if(GlobalVariableCheck(DailyLotFixKey(order)))
          continue;
+
+      ulong positionId = (ulong)HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+      bool closedByEA = false;
+      for(int j = 0; j < excludedCount; j++)
+         if(eaClosedPositions[j] == positionId)
+           {
+            closedByEA = true;
+            break;
+           }
+      if(closedByEA)
+        {
+         if(order == targetOrder)
+            return true;
+         continue;
+        }
 
       bool alreadyCounted = false;
       for(int j = 0; j < count; j++)
         {
-         if(positionIds[j] == positionId)
+         if(entryOrders[j] == order)
            {
             alreadyCounted = true;
             break;
@@ -1307,15 +1554,100 @@ bool GetTodayOpenedTradeCount(const string symbol, int &count)
       if(alreadyCounted)
          continue;
 
-      if(ArrayResize(positionIds, count + 1) != count + 1)
+      if(ArrayResize(entryOrders, count + 1) != count + 1)
         {
          Print("RiskManagerEA: failed to count today's trades for ", symbol, " err=", GetLastError());
          return false;
         }
-      positionIds[count++] = positionId;
+      entryOrders[count++] = order;
+      if(order == targetOrder)
+         return true;
      }
 
+   if(targetOrder != 0)
+     {
+      Print("RiskManagerEA: entry order ", targetOrder, " not found in today's history for ", symbol);
+      return false;
+     }
    return true;
+  }
+
+//+------------------------------------------------------------------+
+//| External entries can only be rejected after the broker fills them.|
+//+------------------------------------------------------------------+
+void EnforceDailyTradeLimit(const string symbol, const ulong order, const ulong positionId)
+  {
+   if(InpMaxTradesPerDay <= 0 || !IsManagedSymbol(symbol) ||
+      GlobalVariableCheck(DailyLotFixKey(order)))
+      return;
+
+   int entryNumber;
+   bool historyReady = GetTodayOpenedTradeCount(symbol, entryNumber, order);
+   if(historyReady && entryNumber <= InpMaxTradesPerDay)
+      return;
+
+   if(GlobalVariableSet(DailyRejectedPositionKey(positionId), 1.0) == 0)
+      Print("RiskManagerEA: failed to mark rejected position ", positionId, " err=", GetLastError());
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || PositionGetString(POSITION_SYMBOL) != symbol ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER) != positionId)
+         continue;
+
+      PrepareTrade(symbol);
+      bool closed = trade.PositionClose(ticket);
+      uint retcode = trade.ResultRetcode();
+      if(!closed || retcode != TRADE_RETCODE_DONE)
+         Print("RiskManagerEA: failed to close daily-limit entry, ticket=", ticket,
+               " err=", GetLastError(), " retcode=", retcode);
+      else
+         Print("RiskManagerEA: closed daily-limit entry on ", symbol, ", order=", order,
+               " limit=", InpMaxTradesPerDay, " historyReady=", historyReady);
+      return;
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Retry rejected entries before lot correction can reopen them.    |
+//| Also check positions already open when the EA starts.             |
+//+------------------------------------------------------------------+
+void EnforceDailyLimitOnOpenPositions()
+  {
+   if(InpMaxTradesPerDay <= 0)
+      return;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == 0)
+         continue;
+      string symbol = PositionGetString(POSITION_SYMBOL);
+      if(!IsManagedSymbol(symbol))
+         continue;
+      ulong positionId = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(!HistorySelectByPosition(positionId))
+        {
+         Print("RiskManagerEA: failed to load entry history for position ", positionId,
+               " err=", GetLastError());
+         continue;
+        }
+      datetime now = TimeCurrent();
+      datetime dayStart = now - now % 86400;
+      for(int j = HistoryDealsTotal() - 1; j >= 0; j--)
+        {
+         ulong deal = HistoryDealGetTicket(j);
+         long entry = HistoryDealGetInteger(deal, DEAL_ENTRY);
+         if(entry != DEAL_ENTRY_IN && entry != DEAL_ENTRY_INOUT)
+            continue;
+         if((datetime)HistoryDealGetInteger(deal, DEAL_TIME) >= dayStart)
+           {
+            ulong order = (ulong)HistoryDealGetInteger(deal, DEAL_ORDER);
+            EnforceDailyTradeLimit(symbol, order, positionId);
+           }
+         break;
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -1454,8 +1786,21 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
    string symbol = HistoryDealGetString(trans.deal, DEAL_SYMBOL);
    long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   ulong entryOrder = (ulong)HistoryDealGetInteger(trans.deal, DEAL_ORDER);
+   ulong entryPosition = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
    if(symbol == "")
       return;
+
+   if(entry == DEAL_ENTRY_IN || entry == DEAL_ENTRY_INOUT)
+     {
+      EnforceDailyTradeLimit(symbol, entryOrder, entryPosition);
+      // The history query replaces the selected deals list.
+      if(!HistoryDealSelect(trans.deal))
+        {
+         Print("RiskManagerEA: failed to reselect transaction deal ", trans.deal, " err=", GetLastError());
+         return;
+        }
+     }
 
    if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT)
      {
@@ -1510,6 +1855,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   if(InpMaxTradesPerDay < 0)
+     {
+      Print("RiskManagerEA: InpMaxTradesPerDay must be zero or greater");
+      return INIT_PARAMETERS_INCORRECT;
+     }
    InitSymbolSlots();
 
    trade.SetExpertMagicNumber((int)InpMagicNumber);
@@ -1520,6 +1870,7 @@ int OnInit()
    EventSetTimer(MathMax(1, InpTimerSeconds));
 
    // Process any pre-existing positions and pending orders once at startup
+   EnforceDailyLimitOnOpenPositions();
    EnforceOneTradeOnly();
    ManagePositions();
    ManagePendingOrders();
@@ -1541,6 +1892,7 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTimer()
   {
+   EnforceDailyLimitOnOpenPositions();
    EnforceOneTradeOnly();
    ManagePositions();
    ManagePendingOrders();
@@ -1552,6 +1904,7 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void OnTick()
   {
+   EnforceDailyLimitOnOpenPositions();
    EnforceOneTradeOnly();
    ManagePositions();
    ManagePendingOrders();
@@ -1563,10 +1916,20 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
+   if(id == CHARTEVENT_CHART_CHANGE)
+     {
+      CreatePanel();
+      return;
+     }
    if(id != CHARTEVENT_OBJECT_CLICK)
       return;
 
-   if(sparam == g_prefix + "BUY")
+   if(sparam == g_prefix + "PREV" || sparam == g_prefix + "NEXT")
+     {
+      g_panelPage += (sparam == g_prefix + "NEXT") ? 1 : -1;
+      CreatePanel();
+     }
+   else if(sparam == g_prefix + "BUY")
      {
       ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
       OpenTrade(true);
