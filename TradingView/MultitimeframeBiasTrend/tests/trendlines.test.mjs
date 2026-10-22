@@ -7,7 +7,7 @@ const source = readFileSync(new URL("../MultitimeframeBiasTrend.pine", import.me
 test("trendlines have per-timeframe toggles and colors", () => {
   for (const tf of ["M", "W", "D", "4H", "1H", "15", "5"]) {
     assert.match(source, new RegExp(`bool tlOn${tf} = input\\.bool`));
-    assert.match(source, new RegExp(`color tlColor${tf} = input\\.color`));
+    assert.match(source, new RegExp(`color tlColor${tf} = color\\.rgb`));
   }
 });
 

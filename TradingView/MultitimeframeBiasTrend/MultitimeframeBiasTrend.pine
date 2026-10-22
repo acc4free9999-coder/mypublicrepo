@@ -5,6 +5,7 @@ max_bars_back(time, 5000)
 max_bars_back(high, 5000)
 max_bars_back(low, 5000)
 max_bars_back(close, 5000)
+max_bars_back(open, 5000)
 max_bars_back(volume, 5000)
 
 string G_DATA = "Data and indicators"
@@ -84,19 +85,24 @@ bool showSlow = input.bool(false, "Slow EMA", group = G_CHART)
 bool warnConflict = input.bool(true, "Warn when LTF opposes HTF", group = G_CHART)
 int labelLimit = input.int(50, "Maximum retained labels", minval = 5, maxval = 150, group = G_CHART)
 
+string G_STYLE = "Chart module style (shared)"
+color cBull = input.color(color.rgb(8, 153, 129), "Bullish color", group = G_STYLE, inline = "sty", tooltip = "Used by supply/demand, FVG, liquidity sweeps, swing labels, ICT structure and ICT liquidity.")
+color cBear = input.color(color.rgb(242, 54, 69), "Bearish color", group = G_STYLE, inline = "sty")
+int zoneOpacity = input.int(80, "Zone transparency", minval = 40, maxval = 95, group = G_STYLE)
+
 string G_EW = "Elliott waves (chart timeframe, adapted from elliott.pine)"
 bool ewEnabled = input.bool(true, "Draw Elliott waves", group = G_EW, tooltip = "Three zigzag lengths find 1-2-3-4-5 motive waves and a following (a)(b)(c) correction on the chart timeframe, with Fibonacci retracement zone and break marks. Adapted from the supplied elliott.pine (no licence stated in that file). Pivots confirm 1 bar after the swing for each length, so the last leg is provisional until the next swing forms. Pattern detection is a candidate, not a forecast.")
-string ewSrcHigh = input.string("high", "Swing high source", options = ["high", "close", "max open/close"], group = G_EW)
-string ewSrcLow = input.string("low", "Swing low source", options = ["low", "close", "min open/close"], group = G_EW)
+string ewSrcHigh = "high"
+string ewSrcLow = "low"
 bool ewOn1 = input.bool(true, "Zigzag 1", inline = "ewZ1", group = G_EW)
 int ewLen1 = input.int(4, "length", minval = 1, inline = "ewZ1", group = G_EW)
-color ewCol1 = input.color(color.red, "", inline = "ewZ1", group = G_EW)
+color ewCol1 = color.red
 bool ewOn2 = input.bool(true, "Zigzag 2", inline = "ewZ2", group = G_EW)
 int ewLen2 = input.int(8, "length", minval = 1, inline = "ewZ2", group = G_EW)
-color ewCol2 = input.color(color.blue, "", inline = "ewZ2", group = G_EW)
+color ewCol2 = color.blue
 bool ewOn3 = input.bool(true, "Zigzag 3", inline = "ewZ3", group = G_EW)
 int ewLen3 = input.int(16, "length", minval = 1, inline = "ewZ3", group = G_EW)
-color ewCol3 = input.color(color.white, "", inline = "ewZ3", group = G_EW)
+color ewCol3 = color.white
 float ewFib1 = input.float(0.5, "Fibonacci level 1", minval = 0, maxval = 1, step = 0.01, group = G_EW)
 float ewFib2 = input.float(0.618, "Fibonacci level 2", minval = 0, maxval = 1, step = 0.01, group = G_EW)
 float ewFib3 = input.float(0.764, "Fibonacci level 3", minval = 0, maxval = 1, step = 0.01, group = G_EW)
@@ -121,13 +127,13 @@ bool tlShort = input.bool(true, "Short swings", inline = "tlS3", group = G_TL)
 int tlLenShort = input.int(5, "length", minval = 1, maxval = 200, inline = "tlS3", group = G_TL, tooltip = "Dotted lines. Shorter swings give more, smaller trendlines like hand-drawn ones. Each swing length uses the pivot with that many bars on the left and 1 on the right.")
 bool tlLabels = input.bool(true, "Label lines with timeframe", group = G_TL)
 int tlWidth = input.int(2, "Line width", minval = 1, maxval = 4, group = G_TL)
-color tlColorM = input.color(color.rgb(190, 120, 255), "1M trendline color", group = G_TL)
-color tlColorW = input.color(color.rgb(90, 130, 255), "1W trendline color", group = G_TL)
-color tlColorD = input.color(color.rgb(0, 200, 220), "1D trendline color", group = G_TL)
-color tlColor4H = input.color(color.rgb(60, 200, 100), "4H trendline color", group = G_TL)
-color tlColor1H = input.color(color.rgb(240, 190, 20), "1H trendline color", group = G_TL)
-color tlColor15 = input.color(color.rgb(250, 130, 40), "15M trendline color", group = G_TL)
-color tlColor5 = input.color(color.rgb(250, 70, 110), "5M trendline color", group = G_TL)
+color tlColorM = color.rgb(190, 120, 255)
+color tlColorW = color.rgb(90, 130, 255)
+color tlColorD = color.rgb(0, 200, 220)
+color tlColor4H = color.rgb(60, 200, 100)
+color tlColor1H = color.rgb(240, 190, 20)
+color tlColor15 = color.rgb(250, 130, 40)
+color tlColor5 = color.rgb(250, 70, 110)
 
 string G_SD = "Supply and demand zones (chart timeframe)"
 bool sdEnabled = input.bool(true, "Draw supply / demand zones", group = G_SD, tooltip = "Zone = 1-3 small-bodied base candles followed by a strong displacement close beyond the base. Detected at chart-candle close.")
@@ -139,9 +145,6 @@ int sdMaxBase = input.int(3, "Maximum base candles", minval = 1, maxval = 3, gro
 int sdMaxZones = input.int(10, "Maximum active zones", minval = 2, maxval = 40, group = G_SD)
 bool sdWicks = input.bool(true, "Include base wicks (off = bodies only)", group = G_SD)
 bool sdText = input.bool(true, "Zone labels with test count", group = G_SD)
-color sdDemandColor = input.color(color.rgb(30, 170, 100), "Demand color", group = G_SD)
-color sdSupplyColor = input.color(color.rgb(215, 65, 75), "Supply color", group = G_SD)
-int sdOpacity = input.int(80, "Zone transparency", minval = 40, maxval = 95, group = G_SD)
 
 string G_FO = "Fair value gaps and order blocks (chart timeframe)"
 bool fvEnabled = input.bool(true, "Show fair value gaps (FVG)", group = G_FO, tooltip = "Three-candle gap: candle 3 low above candle 1 high (bullish) or candle 3 high below candle 1 low (bearish). Created on confirmed bars only.")
@@ -156,21 +159,16 @@ float obDispAtr = input.float(1.2, "OB displacement (range / ATR, 0 = off)", min
 bool obBodyOnly = input.bool(false, "OB body only (off = full candle)", group = G_FO)
 string obMitigation = input.string("Wick", "OB mitigation", options = ["Close", "Wick"], group = G_FO)
 bool foLabels = input.bool(true, "Zone labels", group = G_FO)
-color fvBullColor = input.color(color.rgb(0, 200, 110), "Bullish FVG color", group = G_FO)
-color fvBearColor = input.color(color.rgb(255, 60, 70), "Bearish FVG color", group = G_FO)
 color obBullColor = input.color(color.rgb(35, 100, 245), "Bullish OB color", group = G_FO)
 color obBearColor = input.color(color.rgb(245, 120, 30), "Bearish OB color", group = G_FO)
-int foOpacity = input.int(78, "Zone transparency", minval = 40, maxval = 95, group = G_FO)
 
 string G_LS = "Liquidity sweeps (chart timeframe)"
 bool lsEnabled = input.bool(true, "Show liquidity sweeps", group = G_LS, tooltip = "Adapted from Liquidity Sweeps by LuxAlgo (CC BY-NC-SA 4.0). A swing high/low is a liquidity pool; a sweep is price taking it out and reversing. Wick sweep: the wick pierces the swing level but the candle closes back on the other side. Outbreak and retest: price closes through the level, then later wicks back through it and closes on the original side. Sweeps are a context marker, not an entry signal.")
 int lsLen = input.int(5, "Sweep swing length", minval = 1, maxval = 50, group = G_LS, tooltip = "Bars on each side that confirm a swing (confirmation delay = this many bars).")
 string lsMode = input.string("Only Wicks", "Sweep type", options = ["Only Wicks", "Only Outbreaks & Retest", "Wicks + Outbreaks & Retest"], group = G_LS)
-bool lsExtend = input.bool(true, "Extend sweep area", group = G_LS)
-int lsMaxBars = input.int(300, "Sweep area max bars", minval = 1, maxval = 5000, group = G_LS)
+bool lsExtend = true
+int lsMaxBars = 300
 int lsMaxAreas = input.int(30, "Max sweep areas kept", minval = 1, maxval = 100, group = G_LS)
-color lsBull = input.color(color.rgb(8, 153, 129), "Bull sweep color", group = G_LS)
-color lsBear = input.color(color.rgb(242, 54, 69), "Bear sweep color", group = G_LS)
 
 string G_VP = "Volume profile (chart timeframe)"
 bool vpEnabled = input.bool(true, "Show volume profile", group = G_VP, tooltip = "Adapted from the supplied volume_profile.pine. Horizontal histogram of volume by price over the last N bars; the longest bar is the Point of Control (POC). Uses tick volume on forex. Drawn on the last bar only.")
@@ -178,21 +176,19 @@ int vpLength = input.int(500, "Lookback", minval = 1, maxval = 1000, group = G_V
 int vpRows = input.int(60, "Row size", minval = 1, maxval = 200, group = G_VP, tooltip = "Number of price rows. Each row is one line object from the shared 500-line budget, so keep this modest.")
 bool vpRolling = input.bool(false, "Show rolling POC", group = G_VP, tooltip = "Plots the POC price as it evolved bar by bar. Recomputes the profile on every bar, which is slower.")
 int vpWidth = input.int(50, "Width (% of lookback)", minval = 1, maxval = 100, group = G_VP)
-int vpBarWidth = input.int(2, "Bar width", minval = 1, maxval = 20, group = G_VP)
+int vpBarWidth = 2
 bool vpFlip = input.bool(false, "Flip histogram", group = G_VP, tooltip = "Base at the most recent candle instead of the oldest.")
-bool vpGrad = input.bool(true, "Gradient", group = G_VP)
-color vpSolid = input.color(#2157f3, "Rows solid color", group = G_VP)
-color vpLow = input.color(color.rgb(30, 21, 42), "Gradient low color", group = G_VP)
-color vpHigh = input.color(color.rgb(90, 177, 187), "Gradient high / POC color", group = G_VP)
-color vpPocColor = input.color(#ff5d00, "POC solid color", group = G_VP)
+bool vpGrad = true
+color vpSolid = #2157f3
+color vpLow = color.rgb(30, 21, 42)
+color vpHigh = color.rgb(90, 177, 187)
+color vpPocColor = #ff5d00
 
 string G_SW = "Swing H/L + candle patterns (chart timeframe)"
 bool swEnabled = input.bool(true, "Show swing highs/lows with candle pattern", group = G_SW, tooltip = "Adapted from Swing Highs/Lows & Candle Patterns. Labels each confirmed swing as HH/LH or HL/LL and names the candle pattern on the swing candle (hammer, inverted hammer, hanging man, shooting star) or a bullish/bearish engulfing there. Swings confirm this many bars late, so labels appear after the fact. Patterns are context, not entries.")
 int swLen = input.int(21, "Swing length", minval = 1, maxval = 100, group = G_SW, tooltip = "Bars on each side of the swing candle.")
 bool swPatterns = input.bool(true, "Show candle pattern name", group = G_SW)
-int swMaxLabels = input.int(60, "Max swing labels kept", minval = 1, maxval = 200, group = G_SW)
-color swHighCss = input.color(color.red, "Swing high color", group = G_SW)
-color swLowCss = input.color(color.teal, "Swing low color", group = G_SW)
+int swMaxLabels = 60
 
 string G_SS = "Sessions (London / New York / Tokyo / Sydney)"
 bool ssHighLow = input.bool(false, "High/Low view", group = G_SS, tooltip = "Adapted from the supplied session.pine. Off: shade the background while a session is open. On: instead fill the band between the running session high and low.")
@@ -200,16 +196,33 @@ string ssRes = input.timeframe("D", "Resolution", options = ["D", "W", "M"], gro
 string ssTz = input.string("America/New_York", "Session time zone", group = G_SS, tooltip = "Time zone the session hours below are written in.")
 bool ssLondonOn = input.bool(true, "London", group = G_SS, inline = "ln")
 string ssLondon = input.session("0300-1200:1234567", "", group = G_SS, inline = "ln")
-color ssLondonCss = input.color(color.new(color.green, 90), "", group = G_SS, inline = "ln")
+color ssLondonCss = color.new(color.green, 90)
 bool ssNyOn = input.bool(true, "New York", group = G_SS, inline = "ny")
 string ssNy = input.session("0800-1700:1234567", "", group = G_SS, inline = "ny")
-color ssNyCss = input.color(color.new(color.red, 90), "", group = G_SS, inline = "ny")
+color ssNyCss = color.new(color.red, 90)
 bool ssTokyoOn = input.bool(true, "Tokyo", group = G_SS, inline = "tk")
 string ssTokyo = input.session("2000-0400:1234567", "", group = G_SS, inline = "tk")
-color ssTokyoCss = input.color(color.new(color.yellow, 90), "", group = G_SS, inline = "tk")
+color ssTokyoCss = color.new(color.yellow, 90)
 bool ssSydneyOn = input.bool(false, "Sydney", group = G_SS, inline = "sy")
 string ssSydney = input.session("1700-0200:1234567", "", group = G_SS, inline = "sy")
-color ssSydneyCss = input.color(color.new(color.blue, 90), "", group = G_SS, inline = "sy")
+color ssSydneyCss = color.new(color.blue, 90)
+
+string G_ICT_MS = "ICT market structure (MSS / BOS)"
+int ictMsKeep = 30
+int ictLookback = 1500
+bool ictMsOn = input.bool(true, "Market structure", group = G_ICT_MS, tooltip = "Adapted from the supplied ict_price_action.pine (no licence stated). Swings are built from 3-bar fractals promoted to intermediate and long term. A close beyond the last swing draws BOS (same direction) or MSS (reversal). Swings confirm after the fact; context, not entries.")
+string ictMsTerm = input.string("Intermediate Term", "Detection", options = ["Short Term", "Intermediate Term", "Long Term"], group = G_ICT_MS)
+bool ictMsText = input.bool(true, "Labels", group = G_ICT_MS)
+string ictMsStyle = "Solid"
+
+
+
+string G_ICT_LQ = "ICT buyside & sellside liquidity"
+bool ictLiqOn = input.bool(true, "Buyside & sellside liquidity", group = G_ICT_LQ, tooltip = "Clusters of three or more swing highs (buyside) or lows (sellside) at nearly the same price, within a margin of ATR. The level is drawn until price trades through the zone.")
+string ictLiqTerm = input.string("Intermediate Term", "Detection", options = ["Short Term", "Intermediate Term", "Long Term"], group = G_ICT_LQ)
+float ictLiqMargin = 10 / 6.9
+int ictLiqVisible = input.int(3, "Visible levels per side", minval = 1, maxval = 20, group = G_ICT_LQ)
+
 
 string G_ALERT = "Alerts (chart-close transitions)"
 bool alertFlip = input.bool(true, "Overall bullish / bearish reversal", group = G_ALERT)
@@ -439,11 +452,22 @@ f_cell(table panel, int column, int row, string value, color background, color f
     string font = textSize == "Tiny" ? size.tiny : textSize == "Normal" ? size.normal : textSize == "Large" ? size.large : size.small
     table.cell(panel, column, row, value, text_color = foreground, bgcolor = color.new(background, transparency), text_size = font, tooltip = tip)
 
+f_trimLabels(array<label> pool, int limit) =>
+    while pool.size() > limit
+        pool.shift().delete()
+    true
+
+f_clearLabels(array<label> pool) => f_trimLabels(pool, 0)
+
+f_clearLines(array<line> pool) =>
+    while pool.size() > 0
+        pool.shift().delete()
+    true
+
 f_addLabel(array<label> labels, string value, float price, bool above, color background) =>
     label item = label.new(bar_index, price, value, style = above ? label.style_label_down : label.style_label_up, color = background, textcolor = textColor, size = size.tiny)
     array.push(labels, item)
-    if array.size(labels) > labelLimit
-        label.delete(array.shift(labels))
+    f_trimLabels(labels, labelLimit)
 
 array<bool> enabled = array.from(onM, onW, onD, on4H, on1H, on15, on5)
 array<float> weights = array.from(wtM, wtW, wtD, wt4H, wt1H, wt15, wt5)
@@ -704,8 +728,7 @@ array<float> luxY = array.from(lxY0a, lxY0b, lxY0c, lxY1a, lxY1b, lxY1c, lxY2a, 
 
 var array<label> tlLabelPool = array.new<label>()
 if barstate.islast
-    while array.size(tlLabelPool) > 0
-        label.delete(array.pop(tlLabelPool))
+    f_clearLabels(tlLabelPool)
     if tlEnabled and tlLabels
         for tfIndex = 0 to 6
             if array.get(tlTimeframes, tfIndex) and timeframe.in_seconds(array.get(tfs, tfIndex)) >= chartSeconds
@@ -1249,8 +1272,8 @@ if sdEnabled and barstate.isconfirmed
                 if array.get(sdDirs, i) == newDir and zoneTop >= array.get(sdBottoms, i) and zoneBottom <= array.get(sdTops, i)
                     overlaps := true
         if not overlaps and zoneTop > zoneBottom
-            color zoneColor = newDir == 1 ? sdDemandColor : sdSupplyColor
-            array.push(sdBoxes, box.new(bar_index - sdBase, zoneTop, bar_index, zoneBottom, border_color = zoneColor, bgcolor = color.new(zoneColor, sdOpacity), extend = extend.right, text = sdText ? (newDir == 1 ? "D" : "S") : "", text_color = textColor, text_size = size.tiny, text_halign = text.align_right))
+            color zoneColor = newDir == 1 ? cBull : cBear
+            array.push(sdBoxes, box.new(bar_index - sdBase, zoneTop, bar_index, zoneBottom, border_color = zoneColor, bgcolor = color.new(zoneColor, zoneOpacity), extend = extend.right, text = sdText ? (newDir == 1 ? "D" : "S") : "", text_color = textColor, text_size = size.tiny, text_halign = text.align_right))
             array.push(sdDirs, newDir)
             array.push(sdTops, zoneTop)
             array.push(sdBottoms, zoneBottom)
@@ -1280,7 +1303,7 @@ var float obLowPrice = na
 var int obLowBar = na
 var bool obLowUsed = true
 
-f_zoneColor(color base) => color.new(base, foOpacity)
+f_zoneColor(color base) => color.new(base, zoneOpacity)
 
 f_freeze(array<box> boxes, array<bool> done, int i) =>
     box zone = array.get(boxes, i)
@@ -1361,9 +1384,9 @@ if barstate.isconfirmed
 
     if fvEnabled and bar_index >= 2 and not na(foAtr)
         if low > high[2] and low - high[2] >= fvMinAtr * foAtr
-            f_newZone(fvBoxes, fvDirs, fvTops, fvBots, fvDone, bar_index - 2, low, high[2], 1, fvBullColor, "FVG")
+            f_newZone(fvBoxes, fvDirs, fvTops, fvBots, fvDone, bar_index - 2, low, high[2], 1, cBull, "FVG")
         else if high < low[2] and low[2] - high >= fvMinAtr * foAtr
-            f_newZone(fvBoxes, fvDirs, fvTops, fvBots, fvDone, bar_index - 2, low[2], high, -1, fvBearColor, "FVG")
+            f_newZone(fvBoxes, fvDirs, fvTops, fvBots, fvDone, bar_index - 2, low[2], high, -1, cBear, "FVG")
 
     bool dispOk = obDispAtr <= 0 or (not na(foAtr) and high - low >= obDispAtr * foAtr)
     if obEnabled and dispOk
@@ -1449,10 +1472,10 @@ float lsPh = ta.pivothigh(high, lsLen, lsLen)
 float lsPl = ta.pivotlow(low, lsLen, lsLen)
 bool lsOnlyWicks = lsMode == "Only Wicks"
 bool lsOnlyRetest = lsMode == "Only Outbreaks & Retest"
-color lsBullFill = color.new(lsBull, 75)
-color lsBearFill = color.new(lsBear, 75)
-color lsBullLine = color.new(lsBull, 50)
-color lsBearLine = color.new(lsBear, 50)
+color lsBullFill = color.new(cBull, 75)
+color lsBearFill = color.new(cBear, 75)
+color lsBullLine = color.new(cBull, 50)
+color lsBearLine = color.new(cBear, 50)
 
 if lsEnabled
     if not na(lsPh)
@@ -1472,17 +1495,17 @@ if lsEnabled
                         else
                             pv.mit := true
                     if not lsOnlyRetest and not pv.wic and high > pv.prc and close < pv.prc
-                        f_lsArea(pv, lsBearFill, lsBear, 1)
+                        f_lsArea(pv, lsBearFill, cBear, 1)
                         f_lsLevel(pv, lsBearLine, "dotted")
-                        f_lsDot(low, lsBear)
+                        f_lsDot(low, cBear)
                         pv.wic := true
                 else
                     if close < pv.prc
                         pv.mit := true
                     if not lsOnlyWicks and low < pv.prc and close > pv.prc
-                        f_lsArea(pv, lsBullFill, lsBull, -1)
+                        f_lsArea(pv, lsBullFill, cBull, -1)
                         f_lsLevel(pv, lsBullLine, "dashed")
-                        f_lsDot(high, lsBull)
+                        f_lsDot(high, cBull)
                         pv.tak := true
             if bar_index - pv.bix > 2000 or pv.mit or pv.tak
                 array.remove(lsHighs, i)
@@ -1499,17 +1522,17 @@ if lsEnabled
                         else
                             pv.mit := true
                     if not lsOnlyRetest and not pv.wic and low < pv.prc and close > pv.prc
-                        f_lsArea(pv, lsBullFill, lsBull, -1)
+                        f_lsArea(pv, lsBullFill, cBull, -1)
                         f_lsLevel(pv, lsBullLine, "dotted")
-                        f_lsDot(high, lsBull)
+                        f_lsDot(high, cBull)
                         pv.wic := true
                 else
                     if close > pv.prc
                         pv.mit := true
                     if not lsOnlyWicks and high > pv.prc and close < pv.prc
-                        f_lsArea(pv, lsBearFill, lsBear, 1)
+                        f_lsArea(pv, lsBearFill, cBear, 1)
                         f_lsLevel(pv, lsBearLine, "dashed")
-                        f_lsDot(low, lsBear)
+                        f_lsDot(low, cBear)
                         pv.tak := true
             if bar_index - pv.bix > 2000 or pv.mit or pv.tak
                 array.remove(lsLows, i)
@@ -1677,14 +1700,13 @@ if swEnabled and swPatterns and (not na(swPh) or not na(swPl))
 
 if swEnabled and not na(swPh)
     string tag = na(swPrevHigh) or swPh > swPrevHigh ? "HH" : "LH"
-    swLabels.push(label.new(bar_index - swLen, swPh, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_down, textcolor = swHighCss))
+    swLabels.push(label.new(bar_index - swLen, swPh, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_down, textcolor = cBear))
     swPrevHigh := swPh
 else if swEnabled and not na(swPl)
     string tag = na(swPrevLow) or swPl < swPrevLow ? "LL" : "HL"
-    swLabels.push(label.new(bar_index - swLen, swPl, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_up, textcolor = swLowCss))
+    swLabels.push(label.new(bar_index - swLen, swPl, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_up, textcolor = cBull))
     swPrevLow := swPl
-if swLabels.size() > swMaxLabels
-    swLabels.shift().delete()
+f_trimLabels(swLabels, swMaxLabels)
 
 // ===== Sessions (adapted from session.pine) =====
 // Session hours are evaluated in ssTz. The running high/low restarts at each new
@@ -1722,6 +1744,253 @@ bgcolor(ssLnIn and ssLondonOn and not ssHighLow ? ssLondonCss : na)
 bgcolor(ssNyIn and ssNyOn and not ssHighLow ? ssNyCss : na)
 bgcolor(ssTkIn and ssTokyoOn and not ssHighLow ? ssTokyoCss : na)
 bgcolor(ssSyIn and ssSydneyOn and not ssHighLow ? ssSydneyCss : na)
+
+// ===== ICT price action tools (adapted from ict_price_action.pine) =====
+// Market structure, swing dots, order/breaker blocks, buyside/sellside liquidity
+// and liquidity voids. Swing labels are created only when displayed and filled
+// voids are deleted, to protect the shared 500 label/box budget.
+type IctState
+    float lastPrice
+    float midPrice
+    float prevPrice
+    int lastIndex
+    int midIndex
+    int prevIndex
+    bool isCrossed = false
+
+type IctKind
+    int v = 0
+
+type IctZz
+    array<int> d
+    array<int> x
+    array<float> y
+
+type IctLiq
+    box bx
+    box bxt
+    line ln
+    line lne
+    bool brL = false
+
+bool ictDraw = last_bar_index - bar_index <= ictLookback
+
+f_ictLineStyle(string s) =>
+    s == "Dotted" ? line.style_dotted : s == "Dashed" ? line.style_dashed : line.style_solid
+
+f_ictPattern(float lastP, float midP, float prevP, bool isHigh) =>
+    isHigh ? (prevP < midP and midP >= lastP) : (prevP > midP and midP <= lastP)
+
+method isPattern(IctState this, bool isHigh) =>
+    f_ictPattern(this.lastPrice, this.midPrice, this.prevPrice, isHigh)
+
+method shiftIn(IctState this, float price, int index) =>
+    this.isCrossed := false
+    this.prevPrice := this.midPrice
+    this.midPrice := this.lastPrice
+    this.lastPrice := price
+    this.prevIndex := this.midIndex
+    this.midIndex := this.lastIndex
+    this.lastIndex := index
+
+var array<int> ictMsX1 = array.new<int>()
+var array<int> ictMsX2 = array.new<int>()
+var array<float> ictMsY = array.new<float>()
+var array<bool> ictMsBull_ = array.new<bool>()
+var array<string> ictMsTxt = array.new<string>()
+var array<line> ictMsLines = array.new<line>()
+var array<label> ictMsLabels = array.new<label>()
+
+method renderStructure(IctState this, IctKind ms, bool isBullish, bool draw) =>
+    bool crossed = isBullish ? close > this.lastPrice : close < this.lastPrice
+    if crossed and not this.isCrossed
+        this.isCrossed := true
+        if draw
+            ictMsX1.push(this.lastIndex)
+            ictMsX2.push(bar_index)
+            ictMsY.push(this.lastPrice)
+            ictMsBull_.push(isBullish)
+            ictMsTxt.push(ms.v == (isBullish ? -1 : 1) ? "MSS" : "BOS")
+            if ictMsY.size() > ictMsKeep
+                ictMsX1.shift()
+                ictMsX2.shift()
+                ictMsY.shift()
+                ictMsBull_.shift()
+                ictMsTxt.shift()
+        ms.v := isBullish ? 1 : -1
+
+method roll(IctZz this, int d, int x, float y) =>
+    this.d.unshift(d)
+    this.x.unshift(x)
+    this.y.unshift(y)
+    this.d.pop()
+    this.x.pop()
+    this.y.pop()
+
+// ----- swings: 3-bar fractals -> intermediate -> long term -----
+var IctState ictStLow = IctState.new()
+var IctState ictStHigh = IctState.new()
+var IctState ictItLow = IctState.new()
+var IctState ictItHigh = IctState.new()
+var IctState ictLtLow = IctState.new()
+var IctState ictLtHigh = IctState.new()
+var IctKind ictStKind = IctKind.new()
+var IctKind ictItKind = IctKind.new()
+var IctKind ictLtKind = IctKind.new()
+
+if f_ictPattern(low, low[1], low[2], false)
+    ictStLow.shiftIn(low[1], bar_index - 1)
+
+if f_ictPattern(high, high[1], high[2], true)
+    ictStHigh.shiftIn(high[1], bar_index - 1)
+
+bool ictCItl = ictStLow.isPattern(false)
+if ictCItl and not ictCItl[1]
+    ictItLow.shiftIn(ictStLow.midPrice, ictStLow.midIndex)
+
+bool ictCIth = ictStHigh.isPattern(true)
+if ictCIth and not ictCIth[1]
+    ictItHigh.shiftIn(ictStHigh.midPrice, ictStHigh.midIndex)
+
+bool ictCLtl = ictItLow.isPattern(false)
+if ictCLtl and not ictCLtl[1]
+    ictLtLow.isCrossed := false
+    ictLtLow.lastPrice := ictItLow.midPrice
+    ictLtLow.lastIndex := ictItLow.midIndex
+
+bool ictCLth = ictItHigh.isPattern(true)
+if ictCLth and not ictCLth[1]
+    ictLtHigh.isCrossed := false
+    ictLtHigh.lastPrice := ictItHigh.midPrice
+    ictLtHigh.lastIndex := ictItHigh.midIndex
+
+// ----- market structure -----
+if ictMsOn
+    if ictMsTerm == "Short Term"
+        ictStLow.renderStructure(ictStKind, false, ictDraw)
+        ictStHigh.renderStructure(ictStKind, true, ictDraw)
+    else if ictMsTerm == "Intermediate Term"
+        ictItLow.renderStructure(ictItKind, false, ictDraw)
+        ictItHigh.renderStructure(ictItKind, true, ictDraw)
+    else
+        ictLtLow.renderStructure(ictLtKind, false, ictDraw)
+        ictLtHigh.renderStructure(ictLtKind, true, ictDraw)
+
+// Structure events are stored as data and drawn once on the last bar, so the
+// objects are the newest and are not evicted by the shared 500-object limit.
+if barstate.islast and ictMsOn
+    f_clearLines(ictMsLines)
+    f_clearLabels(ictMsLabels)
+    if ictMsY.size() > 0
+        for i = 0 to ictMsY.size() - 1
+            bool bull = ictMsBull_.get(i)
+            color clr = bull ? cBull : cBear
+            ictMsLines.push(line.new(ictMsX1.get(i), ictMsY.get(i), ictMsX2.get(i), ictMsY.get(i), color = clr, style = f_ictLineStyle(ictMsStyle), width = 2))
+            if ictMsText
+                ictMsLabels.push(label.new(math.round((ictMsX1.get(i) + ictMsX2.get(i)) / 2.0), ictMsY.get(i), ictMsTxt.get(i), color = na, textcolor = clr, style = bull ? label.style_label_down : label.style_label_up, size = size.small))
+
+// ----- buyside / sellside liquidity -----
+int ictMaxZz = 50
+float ictAtr = ta.atr(10)
+var IctZz ictZz = IctZz.new(array.new<int>(ictMaxZz, 0), array.new<int>(ictMaxZz, 0), array.new<float>(ictMaxZz, na))
+var array<IctLiq> ictLiqBuy = array.new<IctLiq>()
+var array<IctLiq> ictLiqSell = array.new<IctLiq>()
+
+f_ictLiqScan(bool isHigh, float swing, int swingX, array<IctLiq> store, color clr, string txt) =>
+    int dir = ictZz.d.get(0)
+    float y1 = ictZz.y.get(0)
+    if isHigh
+        if dir < 1
+            ictZz.roll(1, swingX, swing)
+        else if swing > y1
+            ictZz.x.set(0, swingX)
+            ictZz.y.set(0, swing)
+    else
+        if dir > -1
+            ictZz.roll(-1, swingX, swing)
+        else if swing < y1
+            ictZz.x.set(0, swingX)
+            ictZz.y.set(0, swing)
+    float band = ictAtr / ictLiqMargin
+    int count = 0
+    int stB = 0
+    float stP = 0.0
+    float hiP = 0.0
+    float loP = 10e6
+    for i = 0 to ictMaxZz - 1
+        if ictZz.d.get(i) == (isHigh ? 1 : -1)
+            float yy = ictZz.y.get(i)
+            if (isHigh and yy > swing + band) or (not isHigh and yy < swing - band)
+                break
+            else if yy > swing - band and yy < swing + band
+                count += 1
+                stB := ictZz.x.get(i)
+                stP := yy
+                hiP := math.max(hiP, yy)
+                loP := math.min(loP, yy)
+    if count > 2 and ictDraw
+        float mid = math.avg(hiP, loP)
+        if store.size() > 0 and stB == store.get(0).bx.get_left()
+            store.get(0).bx.set_top(mid + band)
+            store.get(0).bx.set_rightbottom(bar_index + 10, mid - band)
+        else
+            store.unshift(IctLiq.new(
+                 box.new(stB, mid + band, bar_index + 10, mid - band, border_color = na, bgcolor = na),
+                 box.new(stB, stP, bar_index + 10, stP, border_color = na, bgcolor = na, text = isHigh ? "Buyside liquidity" : "Sellside liquidity", text_size = size.tiny, text_halign = text.align_left, text_valign = isHigh ? text.align_bottom : text.align_top, text_color = color.new(clr, 25)),
+                 line.new(stB, stP, bar_index - 1, stP, color = clr),
+                 line.new(bar_index - 1, stP, bar_index, stP, color = clr, style = line.style_dotted)))
+        if store.size() > ictLiqVisible
+            IctLiq last = store.pop()
+            last.bx.delete()
+            last.bxt.delete()
+            last.ln.delete()
+            last.lne.delete()
+    true
+
+float ictTopY = na
+int ictTopX = na
+float ictBtmY = na
+int ictBtmX = na
+if ictLiqOn
+    if ictLiqTerm == "Short Term"
+        ictTopY := ictStHigh.lastPrice
+        ictTopX := ictStHigh.lastIndex
+        ictBtmY := ictStLow.lastPrice
+        ictBtmX := ictStLow.lastIndex
+    else if ictLiqTerm == "Intermediate Term"
+        ictTopY := ictItHigh.lastPrice
+        ictTopX := ictItHigh.lastIndex
+        ictBtmY := ictItLow.lastPrice
+        ictBtmX := ictItLow.lastIndex
+    else
+        ictTopY := ictLtHigh.lastPrice
+        ictTopX := ictLtHigh.lastIndex
+        ictBtmY := ictLtLow.lastPrice
+        ictBtmX := ictLtLow.lastIndex
+
+float ictSwingHigh = nz(ictTopY, 0)
+float ictSwingLow = nz(ictBtmY, 0)
+if ictSwingHigh > 0 and ictSwingHigh != ictSwingHigh[1]
+    f_ictLiqScan(true, ictSwingHigh, ictTopX, ictLiqBuy, cBull, "Buyside liquidity")
+if ictSwingLow > 0 and ictSwingLow != ictSwingLow[1]
+    f_ictLiqScan(false, ictSwingLow, ictBtmX, ictLiqSell, cBear, "Sellside liquidity")
+
+if ictLiqBuy.size() > 0
+    for i = 0 to ictLiqBuy.size() - 1
+        IctLiq lq = ictLiqBuy.get(i)
+        if not lq.brL
+            lq.lne.set_x2(bar_index)
+            if high > lq.bx.get_top()
+                lq.brL := true
+
+if ictLiqSell.size() > 0
+    for i = 0 to ictLiqSell.size() - 1
+        IctLiq lq = ictLiqSell.get(i)
+        if not lq.brL
+            lq.lne.set_x2(bar_index)
+            if low < lq.bx.get_bottom()
+                lq.brL := true
+
 
 alertcondition(alertFlip and flipBull, "Overall turns bullish", "{{ticker}}: overall bias reversed bullish at chart close. Directional context, not an entry.")
 alertcondition(alertFlip and flipBear, "Overall turns bearish", "{{ticker}}: overall bias reversed bearish at chart close. Directional context, not an entry.")

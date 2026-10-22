@@ -431,3 +431,23 @@ Hours and colors are editable and evaluated in the chosen time zone (default
 America/New_York, as in the source; hours are the source's defaults, not
 daylight-saving adjusted for you). On timeframes of 1D or higher no session
 shading appears. Sessions are context only.
+
+## ICT price action tools
+
+Adapted from `ict_price_action.pine` (no licence stated in the file). Two groups:
+**ICT market structure** (BOS / MSS on short, intermediate or long-term swings,
+drawn on the last bar from stored events so the shared 500-object limit does not
+evict them) and **ICT buyside & sellside liquidity** (three or more swings at
+nearly the same price). The source's swing dots, order/breaker blocks and
+liquidity voids were removed because they duplicate the Swing H/L labels, the
+FVG / order block module and the FVG module. Output is structural context, not
+an entry signal.
+
+## Shared style and settings
+
+Bullish / bearish colors and zone transparency are set once in **Chart module
+style (shared)** and used by supply/demand, FVG, liquidity sweeps, swing labels
+and ICT. Per-module color, width and cap inputs that rarely change (trendline and
+Elliott colors, volume profile colors, session colors, ICT limits) are now fixed
+constants near the top of their blocks. Label and line pool clean-up uses the
+shared helpers `f_trimLabels`, `f_clearLabels` and `f_clearLines`.
