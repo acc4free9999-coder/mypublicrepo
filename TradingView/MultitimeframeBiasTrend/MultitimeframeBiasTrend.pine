@@ -98,7 +98,7 @@ color cBear = input.color(color.rgb(242, 54, 69), "Bearish color", group = G_STY
 int zoneOpacity = input.int(80, "Zone transparency", minval = 40, maxval = 95, group = G_STYLE)
 
 string G_EW = "Elliott waves (chart timeframe, adapted from elliott.pine)"
-bool ewEnabled = input.bool(true, "Draw Elliott waves", group = G_EW, tooltip = "Three zigzag lengths find 1-2-3-4-5 motive waves and a following (a)(b)(c) correction on the chart timeframe, with Fibonacci retracement zone and break marks. Adapted from the supplied elliott.pine (no licence stated in that file). Pivots confirm 1 bar after the swing for each length, so the last leg is provisional until the next swing forms. Pattern detection is a candidate, not a forecast.")
+bool ewEnabled = input.bool(false, "Draw Elliott waves", group = G_EW, tooltip = "Three zigzag lengths find 1-2-3-4-5 motive waves and a following (a)(b)(c) correction on the chart timeframe, with Fibonacci retracement zone and break marks. Adapted from the supplied elliott.pine (no licence stated in that file). Pivots confirm 1 bar after the swing for each length, so the last leg is provisional until the next swing forms. Pattern detection is a candidate, not a forecast.")
 string ewSrcHigh = "high"
 string ewSrcLow = "low"
 bool ewOn1 = input.bool(true, "Zigzag 1", inline = "ewZ1", group = G_EW)
@@ -2071,6 +2071,432 @@ if rdBull or rdBear
 if rdEnabled and rdShowZones and barstate.isconfirmed
     f_rdZones(rdBullZones, rdBull, true, low[5])
     f_rdZones(rdBearZones, rdBear, false, high[5])
+
+// Dealing range adaptation: isolated state; all price drawings stay on the chart.
+type drx_Pivot
+    int    bar
+    float  price
+    bool   taken
+    bool   shifted
+
+type drx_Region
+    box    shape
+    float  hi
+    float  lo
+    int    born
+    int    dir
+    bool   alive
+    string kind
+
+bool drx_enabled = input.bool(true, "Show full dealing range module", group = "DR | Range")
+string drx_GR_DR  = "DR | Range"
+int    drx_drBars   = input.int(50,  "Lookback Bars",      minval=2, maxval=5000,                 group=drx_GR_DR, display=display.none)
+bool   drx_drMid    = input.bool(true,  "Equilibrium (50%)",                                       group=drx_GR_DR, display=display.none)
+int    drx_drRight  = input.int(15,  "Extend Right",       minval=0, maxval=500,                  group=drx_GR_DR, display=display.none)
+color  drx_drFill   = input.color(color.new(#787B86, 78),  "Range Fill",                          group=drx_GR_DR, display=display.none)
+color  drx_drTop    = input.color(color.new(#2962FF,  0),  "Top Line",                            group=drx_GR_DR, display=display.none)
+color  drx_drBot    = input.color(color.new(#f23645,  0),  "Bottom Line",                         group=drx_GR_DR, display=display.none)
+color  drx_drEq     = input.color(color.new(color.gray, 0),"Mid Line",                            group=drx_GR_DR, display=display.none)
+
+string drx_GR_FVG = "DR | FVG / IFVG"
+bool   drx_fvgOn    = input.bool(true,  "FVG",                                  inline="f1",       group=drx_GR_FVG, display=display.none)
+bool   drx_fvgDR    = input.bool(true,  "DR Filter",                            inline="f1",       group=drx_GR_FVG, tooltip="Keep only FVGs inside the dealing range.", display=display.none)
+int    drx_fvgExt   = input.int(8, "Extend", minval=1, maxval=500,              inline="f1",       group=drx_GR_FVG, display=display.none)
+color  drx_fvgUp    = input.color(color.new(#4DD0E1, 80),  "Bull",              inline="f2",       group=drx_GR_FVG, display=display.none)
+color  drx_fvgDn    = input.color(color.new(#F48FB1, 80),  "Bear",              inline="f2",       group=drx_GR_FVG, display=display.none)
+bool   drx_ifvgOn   = input.bool(true,  "IFVG",                                 inline="f3",       group=drx_GR_FVG, display=display.none)
+color  drx_ifvgUp   = input.color(color.new(#00BCD4, 75),  "iBull",             inline="f3",       group=drx_GR_FVG, display=display.none)
+color  drx_ifvgDn   = input.color(color.new(#E91E63, 75),  "iBear",             inline="f3",       group=drx_GR_FVG, display=display.none)
+
+string drx_GR_OB  = "DR | Order blocks"
+int    drx_pivLen   = input.int(10, "Pivot",  minval=1, maxval=50,              inline="o1",       group=drx_GR_OB, tooltip="Pivot length used for OB/BB structure.", display=display.none)
+bool   drx_obOn     = input.bool(true,  "OB",                                   inline="o1",       group=drx_GR_OB, display=display.none)
+bool   drx_obDR     = input.bool(true,  "DR Filter",                            inline="o1",       group=drx_GR_OB, display=display.none)
+int    drx_obExt    = input.int(15, "Extend", minval=1, maxval=500,             inline="o1",       group=drx_GR_OB, display=display.none)
+int    drx_obScan   = input.int(20, "OB Scan", minval=1, maxval=100,            inline="o2",       group=drx_GR_OB, tooltip="Bars to scan back from MSS for the OB candle.", display=display.none)
+color  drx_obUp     = input.color(color.new(#00BCD4, 70),  "Bull",              inline="o3",       group=drx_GR_OB, display=display.none)
+color  drx_obDn     = input.color(color.new(#9C27B0, 70),  "Bear",              inline="o3",       group=drx_GR_OB, display=display.none)
+
+string drx_GR_BB  = "DR | Breaker blocks"
+bool   drx_bbOn     = input.bool(true,  "BB",                                   inline="b1",       group=drx_GR_BB, display=display.none)
+bool   drx_bbDR     = input.bool(true,  "DR Filter",                            inline="b1",       group=drx_GR_BB, display=display.none)
+int    drx_bbExt    = input.int(15, "Extend", minval=1, maxval=500,             inline="b1",       group=drx_GR_BB, display=display.none)
+int    drx_bbAge    = input.int(80, "Max Age", minval=10, maxval=500,           inline="b2",       group=drx_GR_BB, tooltip="Breakers older than this many bars are dropped.", display=display.none)
+color  drx_bbUp     = input.color(color.new(#089981, 70),  "Bull",              inline="b3",       group=drx_GR_BB, display=display.none)
+color  drx_bbDn     = input.color(color.new(#f23645, 70),  "Bear",              inline="b3",       group=drx_GR_BB, display=display.none)
+
+string drx_GR_ST  = "DR | Style / retention"
+color  drx_txtCol   = input.color(color.white, "Label Color",                                      group=drx_GR_ST, display=display.none)
+bool   drx_showLbl  = input.bool(true,  "Show Labels",                                             group=drx_GR_ST, display=display.none)
+bool   drx_keepDead = input.bool(false, "Fade Mitigated Zones",                                    group=drx_GR_ST, display=display.none)
+int    drx_deadOp   = input.int(90, "Faded Opacity", minval=70, maxval=98,                         group=drx_GR_ST, display=display.none)
+int    drx_perKind  = input.int(8,  "Max per Category", minval=2, maxval=15,                       group=drx_GR_ST, display=display.none)
+
+var box  drx_rngBox  = na
+var line drx_rngTop  = na
+var line drx_rngBot  = na
+var line drx_rngEq   = na
+
+var array<drx_Pivot>  drx_highs   = array.new<drx_Pivot>()
+var array<drx_Pivot>  drx_lows    = array.new<drx_Pivot>()
+var array<drx_Region> drx_obBull  = array.new<drx_Region>()
+var array<drx_Region> drx_obBear  = array.new<drx_Region>()
+var array<drx_Region> drx_bbBull  = array.new<drx_Region>()
+var array<drx_Region> drx_bbBear  = array.new<drx_Region>()
+var array<drx_Region> drx_fvgBull = array.new<drx_Region>()
+var array<drx_Region> drx_fvgBear = array.new<drx_Region>()
+
+var int  drx_bias       = 0
+var bool drx_wantBullOB = false
+var bool drx_wantBearOB = false
+
+drx_nzAtr() =>
+    float a = ta.atr(14)
+    na(a) ? 0.0 : a
+
+drx_inRange(float zHi, float zLo, float dHi, float dLo) =>
+    not na(zHi) and not na(zLo) and not na(dHi) and not na(dLo) and zHi <= dHi and zLo >= dLo
+
+drx_inWindow(int birthBar, int leftEdge) =>
+    birthBar >= leftEdge
+
+drx_pushRegion(array<drx_Region> bag, drx_Region r) =>
+    bag.unshift(r)
+    if bag.size() > drx_perKind
+        drx_Region drop = bag.pop()
+        box.delete(drop.shape)
+
+drx_killRegion(drx_Region r, color paint) =>
+    r.alive := false
+    if drx_keepDead
+        box.set_bgcolor(r.shape, color.new(paint, drx_deadOp))
+        box.set_border_color(r.shape, color.new(paint, drx_deadOp))
+    else
+        box.delete(r.shape)
+
+drx_sweepGroup(array<drx_Region> bag, color paint, int ext, bool useAge, int maxAge) =>
+    if bag.size() > 0
+        for i = bag.size() - 1 to 0
+            drx_Region r = bag.get(i)
+            if r.alive
+                bool gone = r.dir > 0 ? close < r.lo : close > r.hi
+                bool old  = useAge and (bar_index - r.born) > maxAge
+                bool drop = gone or old
+                if drop
+                    drx_killRegion(r, paint)
+                    if not drx_keepDead
+                        bag.remove(i)
+                if not drop
+                    box.set_right(r.shape, bar_index + ext)
+
+drx_pruneOutsideDR(array<drx_Region> bag, float dHi, float dLo, int leftEdge, bool filterOn) =>
+    if filterOn and bag.size() > 0
+        for i = bag.size() - 1 to 0
+            drx_Region r = bag.get(i)
+            if not drx_inRange(r.hi, r.lo, dHi, dLo) or not drx_inWindow(r.born, leftEdge)
+                box.delete(r.shape)
+                bag.remove(i)
+
+drx_findOBCandle(int maxBack, bool needBearishCandle) =>
+    int found = -1
+    int n     = math.min(bar_index, maxBack)
+    if n >= 1
+        for k = 1 to n
+            bool isBear = close[k] < open[k]
+            bool isBull = close[k] > open[k]
+            bool hit    = needBearishCandle ? isBear : isBull
+            if hit
+                found := k
+                break
+    found
+
+float drx_drHi   = ta.highest(high, drx_drBars)
+float drx_drLo   = ta.lowest (low,  drx_drBars)
+float drx_drMd   = (drx_drHi + drx_drLo) * 0.5
+int   drx_leftX  = math.max(bar_index - drx_drBars + 1, 0)
+int   drx_rightX = bar_index + drx_drRight
+bool  drx_drOk   = not na(drx_drHi) and not na(drx_drLo) and drx_drHi > drx_drLo
+
+if barstate.islast and drx_enabled
+    box.delete(drx_rngBox)
+    line.delete(drx_rngTop)
+    line.delete(drx_rngBot)
+    line.delete(drx_rngEq)
+    drx_rngBox := na
+    drx_rngTop := na
+    drx_rngBot := na
+    drx_rngEq := na
+    if drx_drOk
+        if na(drx_rngBox)
+            drx_rngBox := box.new(drx_leftX, drx_drHi, drx_rightX, drx_drLo, xloc=xloc.bar_index, bgcolor=drx_drFill, border_color=color.new(drx_drFill, 40), border_width=1, force_overlay = true)
+        else
+            box.set_lefttop(drx_rngBox, drx_leftX, drx_drHi)
+            box.set_rightbottom(drx_rngBox, drx_rightX, drx_drLo)
+            box.set_bgcolor(drx_rngBox, drx_drFill)
+            box.set_border_color(drx_rngBox, color.new(drx_drFill, 40))
+
+        if na(drx_rngTop)
+            drx_rngTop := line.new(drx_leftX, drx_drHi, drx_rightX, drx_drHi, xloc=xloc.bar_index, color=drx_drTop, width=2, force_overlay = true)
+        else
+            line.set_xy1(drx_rngTop, drx_leftX, drx_drHi)
+            line.set_xy2(drx_rngTop, drx_rightX, drx_drHi)
+            line.set_color(drx_rngTop, drx_drTop)
+
+        if na(drx_rngBot)
+            drx_rngBot := line.new(drx_leftX, drx_drLo, drx_rightX, drx_drLo, xloc=xloc.bar_index, color=drx_drBot, width=2, force_overlay = true)
+        else
+            line.set_xy1(drx_rngBot, drx_leftX, drx_drLo)
+            line.set_xy2(drx_rngBot, drx_rightX, drx_drLo)
+            line.set_color(drx_rngBot, drx_drBot)
+
+        if drx_drMid
+            if na(drx_rngEq)
+                drx_rngEq := line.new(drx_leftX, drx_drMd, drx_rightX, drx_drMd, xloc=xloc.bar_index, color=drx_drEq, width=1, style=line.style_dashed, force_overlay = true)
+            else
+                line.set_xy1(drx_rngEq, drx_leftX, drx_drMd)
+                line.set_xy2(drx_rngEq, drx_rightX, drx_drMd)
+                line.set_color(drx_rngEq, drx_drEq)
+        else
+            if not na(drx_rngEq)
+                line.delete(drx_rngEq)
+                drx_rngEq := na
+    else
+        if not na(drx_rngBox)
+            box.delete(drx_rngBox)
+            drx_rngBox := na
+        if not na(drx_rngTop)
+            line.delete(drx_rngTop)
+            drx_rngTop := na
+        if not na(drx_rngBot)
+            line.delete(drx_rngBot)
+            drx_rngBot := na
+        if not na(drx_rngEq)
+            line.delete(drx_rngEq)
+            drx_rngEq := na
+
+float drx_atrVal = drx_nzAtr()
+bool  drx_atrOk  = drx_atrVal > 0
+
+float drx_pvH = ta.pivothigh(high, drx_pivLen, drx_pivLen)
+float drx_pvL = ta.pivotlow (low,  drx_pivLen, drx_pivLen)
+
+if drx_enabled and barstate.isconfirmed
+    if not na(drx_pvH)
+        int pvBar = bar_index - drx_pivLen
+        drx_highs.unshift(drx_Pivot.new(pvBar, drx_pvH, false, false))
+        if drx_highs.size() > 15
+            drx_highs.pop()
+
+    if not na(drx_pvL)
+        int pvBar = bar_index - drx_pivLen
+        drx_lows.unshift(drx_Pivot.new(pvBar, drx_pvL, false, false))
+        if drx_lows.size() > 15
+            drx_lows.pop()
+
+    bool drx_bullSwept = false
+    bool drx_bearSwept = false
+
+    if drx_highs.size() > 0
+        int loopN = math.min(drx_highs.size() - 1, 10)
+        for i = 0 to loopN
+            drx_Pivot p = drx_highs.get(i)
+            if not p.taken and high > p.price
+                p.taken := true
+                drx_bullSwept := true
+                drx_highs.set(i, p)
+
+    if drx_lows.size() > 0
+        int loopN = math.min(drx_lows.size() - 1, 10)
+        for i = 0 to loopN
+            drx_Pivot p = drx_lows.get(i)
+            if not p.taken and low < p.price
+                p.taken := true
+                drx_bearSwept := true
+                drx_lows.set(i, p)
+
+    if drx_bearSwept
+        drx_wantBullOB := true
+    if drx_bullSwept
+        drx_wantBearOB := true
+
+    bool drx_mssUp   = false
+    bool drx_mssDown = false
+
+    if drx_highs.size() >= 2
+        int loopN = math.min(drx_highs.size() - 1, 10)
+        for i = 1 to loopN
+            drx_Pivot p = drx_highs.get(i)
+            if not p.shifted
+                if close > p.price
+                    p.shifted := true
+                    drx_bias      := 1
+                    drx_mssUp     := true
+                    drx_highs.set(i, p)
+                break
+
+    if drx_lows.size() >= 2
+        int loopN = math.min(drx_lows.size() - 1, 10)
+        for i = 1 to loopN
+            drx_Pivot p = drx_lows.get(i)
+            if not p.shifted
+                if close < p.price
+                    p.shifted := true
+                    drx_bias      := -1
+                    drx_mssDown   := true
+                    drx_lows.set(i, p)
+                break
+
+    if drx_obOn
+        if drx_mssUp and drx_wantBullOB
+            int back = drx_findOBCandle(drx_obScan, true)
+            if back >= 0
+                float oHi = high[back]
+                float oLo = low[back]
+                int   oId = bar_index - back
+                bool  ok  = drx_drOk and (not drx_obDR or drx_inRange(oHi, oLo, drx_drHi, drx_drLo)) and drx_inWindow(oId, drx_leftX)
+                if ok
+                    box bx = box.new(oId, oHi, bar_index + drx_obExt, oLo, bgcolor=drx_obUp, border_width=1, border_color=drx_obUp, text=drx_showLbl ? "OB+" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                    drx_pushRegion(drx_obBull, drx_Region.new(bx, oHi, oLo, oId, 1, true, "OB"))
+            drx_wantBullOB := false
+
+        if drx_mssDown and drx_wantBearOB
+            int back = drx_findOBCandle(drx_obScan, false)
+            if back >= 0
+                float oHi = high[back]
+                float oLo = low[back]
+                int   oId = bar_index - back
+                bool  ok  = drx_drOk and (not drx_obDR or drx_inRange(oHi, oLo, drx_drHi, drx_drLo)) and drx_inWindow(oId, drx_leftX)
+                if ok
+                    box bx = box.new(oId, oHi, bar_index + drx_obExt, oLo, bgcolor=drx_obDn, border_width=1, border_color=drx_obDn, text=drx_showLbl ? "OB-" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                    drx_pushRegion(drx_obBear, drx_Region.new(bx, oHi, oLo, oId, -1, true, "OB"))
+            drx_wantBearOB := false
+
+    if drx_bbOn and drx_highs.size() >= 2 and drx_lows.size() >= 2
+
+        bool placedBear = false
+        int  hCap       = math.min(drx_highs.size() - 2, 8)
+        for hi = 0 to hCap
+            if placedBear
+                break
+            drx_Pivot h2 = drx_highs.get(hi)
+            drx_Pivot h1 = drx_highs.get(hi + 1)
+            if h2.price > h1.price
+                int lCap = math.min(drx_lows.size() - 1, 8)
+                for j = 0 to lCap
+                    drx_Pivot mid = drx_lows.get(j)
+                    if h1.bar < mid.bar and mid.bar < h2.bar
+                        if close < mid.price
+                            int lb = bar_index - mid.bar
+                            if lb >= 0 and lb < 500
+                                float zHi = high[lb]
+                                float zLo = low[lb]
+                                bool dup = false
+                                if drx_bbBear.size() > 0
+                                    for d = 0 to drx_bbBear.size() - 1
+                                        if drx_atrOk and math.abs(drx_bbBear.get(d).hi - zHi) < drx_atrVal * 0.05
+                                            dup := true
+                                            break
+                                bool ok = not dup and drx_drOk and (not drx_bbDR or drx_inRange(zHi, zLo, drx_drHi, drx_drLo)) and drx_inWindow(mid.bar, drx_leftX)
+                                if ok
+                                    box bx = box.new(mid.bar, zHi, bar_index + drx_bbExt, zLo, bgcolor=drx_bbDn, border_width=1, border_color=drx_bbDn, text=drx_showLbl ? "BB-" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                                    drx_pushRegion(drx_bbBear, drx_Region.new(bx, zHi, zLo, mid.bar, -1, true, "BB"))
+                                    placedBear := true
+                        break
+
+        bool placedBull = false
+        int  lCap2      = math.min(drx_lows.size() - 2, 8)
+        for li = 0 to lCap2
+            if placedBull
+                break
+            drx_Pivot l2 = drx_lows.get(li)
+            drx_Pivot l1 = drx_lows.get(li + 1)
+            if l2.price < l1.price
+                int hCap2 = math.min(drx_highs.size() - 1, 8)
+                for j = 0 to hCap2
+                    drx_Pivot mid = drx_highs.get(j)
+                    if l1.bar < mid.bar and mid.bar < l2.bar
+                        if close > mid.price
+                            int lb = bar_index - mid.bar
+                            if lb >= 0 and lb < 500
+                                float zHi = high[lb]
+                                float zLo = low[lb]
+                                bool dup = false
+                                if drx_bbBull.size() > 0
+                                    for d = 0 to drx_bbBull.size() - 1
+                                        if drx_atrOk and math.abs(drx_bbBull.get(d).lo - zLo) < drx_atrVal * 0.05
+                                            dup := true
+                                            break
+                                bool ok = not dup and drx_drOk and (not drx_bbDR or drx_inRange(zHi, zLo, drx_drHi, drx_drLo)) and drx_inWindow(mid.bar, drx_leftX)
+                                if ok
+                                    box bx = box.new(mid.bar, zHi, bar_index + drx_bbExt, zLo, bgcolor=drx_bbUp, border_width=1, border_color=drx_bbUp, text=drx_showLbl ? "BB+" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                                    drx_pushRegion(drx_bbBull, drx_Region.new(bx, zHi, zLo, mid.bar, 1, true, "BB"))
+                                    placedBull := true
+                        break
+
+    if drx_fvgOn
+
+        float upBase = high[2]
+        float upTop  = low
+        bool  upGap  = not na(upBase) and not na(upTop) and upTop > upBase
+        if upGap
+            float thick   = upTop - upBase
+            bool  thickOk = drx_atrOk and thick >= drx_atrVal * 0.1
+            bool  win     = drx_drOk and (not drx_fvgDR or drx_inRange(upTop, upBase, drx_drHi, drx_drLo)) and drx_inWindow(bar_index - 1, drx_leftX)
+            if thickOk and win
+                box bx = box.new(bar_index - 1, upTop, bar_index + drx_fvgExt, upBase, bgcolor=drx_fvgUp, border_width=1, border_color=drx_fvgUp, text=drx_showLbl ? "FVG+" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                drx_pushRegion(drx_fvgBull, drx_Region.new(bx, upTop, upBase, bar_index - 1, 1, true, "FVG"))
+
+        float dnBase = low[2]
+        float dnBot  = high
+        bool  dnGap  = not na(dnBase) and not na(dnBot) and dnBase > dnBot
+        if dnGap
+            float thick   = dnBase - dnBot
+            bool  thickOk = drx_atrOk and thick >= drx_atrVal * 0.1
+            bool  win     = drx_drOk and (not drx_fvgDR or drx_inRange(dnBase, dnBot, drx_drHi, drx_drLo)) and drx_inWindow(bar_index - 1, drx_leftX)
+            if thickOk and win
+                box bx = box.new(bar_index - 1, dnBase, bar_index + drx_fvgExt, dnBot, bgcolor=drx_fvgDn, border_width=1, border_color=drx_fvgDn, text=drx_showLbl ? "FVG-" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                drx_pushRegion(drx_fvgBear, drx_Region.new(bx, dnBase, dnBot, bar_index - 1, -1, true, "FVG"))
+
+    if drx_ifvgOn
+
+        if drx_fvgBull.size() > 0
+            for i = drx_fvgBull.size() - 1 to 0
+                drx_Region r = drx_fvgBull.get(i)
+                if r.alive and r.kind == "FVG" and close < r.lo
+                    bool win = drx_drOk and (not drx_fvgDR or drx_inRange(r.hi, r.lo, drx_drHi, drx_drLo)) and drx_inWindow(r.born, drx_leftX)
+                    if win
+                        box bx = box.new(r.born, r.hi, bar_index + drx_fvgExt, r.lo, bgcolor=drx_ifvgDn, border_width=1, border_color=drx_ifvgDn, text=drx_showLbl ? "IFVG-" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                        drx_pushRegion(drx_fvgBear, drx_Region.new(bx, r.hi, r.lo, r.born, -1, true, "IFVG"))
+                    box.delete(r.shape)
+                    drx_fvgBull.remove(i)
+                    break
+
+        if drx_fvgBear.size() > 0
+            for i = drx_fvgBear.size() - 1 to 0
+                drx_Region r = drx_fvgBear.get(i)
+                if r.alive and r.kind == "FVG" and close > r.hi
+                    bool win = drx_drOk and (not drx_fvgDR or drx_inRange(r.hi, r.lo, drx_drHi, drx_drLo)) and drx_inWindow(r.born, drx_leftX)
+                    if win
+                        box bx = box.new(r.born, r.hi, bar_index + drx_fvgExt, r.lo, bgcolor=drx_ifvgUp, border_width=1, border_color=drx_ifvgUp, text=drx_showLbl ? "IFVG+" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                        drx_pushRegion(drx_fvgBull, drx_Region.new(bx, r.hi, r.lo, r.born, 1, true, "IFVG"))
+                    box.delete(r.shape)
+                    drx_fvgBear.remove(i)
+                    break
+
+    drx_pruneOutsideDR(drx_obBull,  drx_drHi, drx_drLo, drx_leftX, drx_obDR)
+    drx_pruneOutsideDR(drx_obBear,  drx_drHi, drx_drLo, drx_leftX, drx_obDR)
+    drx_pruneOutsideDR(drx_bbBull,  drx_drHi, drx_drLo, drx_leftX, drx_bbDR)
+    drx_pruneOutsideDR(drx_bbBear,  drx_drHi, drx_drLo, drx_leftX, drx_bbDR)
+    drx_pruneOutsideDR(drx_fvgBull, drx_drHi, drx_drLo, drx_leftX, drx_fvgDR)
+    drx_pruneOutsideDR(drx_fvgBear, drx_drHi, drx_drLo, drx_leftX, drx_fvgDR)
+
+    drx_sweepGroup(drx_obBull,  drx_obUp,  drx_obExt,  false, 0)
+    drx_sweepGroup(drx_obBear,  drx_obDn,  drx_obExt,  false, 0)
+    drx_sweepGroup(drx_bbBull,  drx_bbUp,  drx_bbExt,  true,  drx_bbAge)
+    drx_sweepGroup(drx_bbBear,  drx_bbDn,  drx_bbExt,  true,  drx_bbAge)
+    drx_sweepGroup(drx_fvgBull, drx_fvgUp, drx_fvgExt, false, 0)
+    drx_sweepGroup(drx_fvgBear, drx_fvgDn, drx_fvgExt, false, 0)
+
 
 alertcondition(alertFlip and flipBull, "Overall turns bullish", "{{ticker}}: overall bias reversed bullish at chart close. Directional context, not an entry.")
 alertcondition(alertFlip and flipBear, "Overall turns bearish", "{{ticker}}: overall bias reversed bearish at chart close. Directional context, not an entry.")

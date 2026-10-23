@@ -516,3 +516,43 @@ and price labels are capped separately at twice the retention setting. In the
 main indicator they share its existing 500-line/500-label budget and may still
 be evicted by other modules. Synthetic charts use chart OHLC for this module.
 Divergence is context, not an entry signal or guarantee.
+
+## Full ICT dealing range
+
+Adapted from [dealing_range.pine](./dealing_range.pine) into the main indicator;
+no second indicator is required. All its boxes and lines use `force_overlay`
+to stay on the **price chart**, not the RSI pane.
+
+The **DR | ...** settings groups retain the source controls and defaults:
+
+- **Range:** master switch, 50-bar rolling high/low box, upper/lower lines,
+  optional dashed 50% equilibrium, 15-bar right extension and colors.
+- **FVG / IFVG:** three-candle gaps at least 0.1 ATR(14), optional range/window
+  filter, extensions and separate colors for original and inverted gaps.
+- **Order blocks:** confirmed pivots (10 bars left/right by default), liquidity
+  sweeps followed by structural closes, and the last opposite candle found in
+  the preceding 20 bars.
+- **Breaker blocks:** H-L-H / L-H-L patterns, ATR-based duplicate suppression,
+  range filtering and an 80-bar maximum age.
+- **Style / retention:** zone labels, optional fading of invalidated zones,
+  faded opacity and a per-side/category retention cap (eight by default).
+
+The rolling range updates live; pivot, sweep, structure and zone state changes
+are committed only at chart candle close. Pivot confirmation is delayed by the
+pivot length. Like the reference, structure scanning skips the newest pivot and
+tests the first older unshifted pivot; sweep flags remain pending until the
+matching structural close consumes them. Filters require the zone's full price
+range and origin bar to fit the current dealing range/window when enabled.
+Zones expire on an opposite close beyond their boundary, not on a simple touch.
+
+Safety differences from the reference: the OB scan does not run on empty
+history, faded zones stay owned by their capped arrays, and only original FVGs
+invert (IFVGs do not repeatedly flip back into FVGs). The range drawings are
+refreshed on the last bar. This module adds no plots or alert conditions.
+
+The older **Fair value gaps and order blocks** module is unchanged. Disable its
+FVG/OB switches if you want only the dealing-range versions; their detection
+rules differ. The full DR module can retain up to six capped arrays of zones,
+plus its range box and three lines. All modules still share TradingView's
+500-box/line/label limits, so objects can be evicted under heavy use. No trading
+signals or guaranteed outcomes are implied.
