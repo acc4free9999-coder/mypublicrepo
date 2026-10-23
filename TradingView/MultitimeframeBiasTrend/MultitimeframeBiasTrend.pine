@@ -1,5 +1,5 @@
 //@version=6
-indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, dynamic_requests = true)
+indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = false, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, dynamic_requests = true)
 
 max_bars_back(time, 5000)
 max_bars_back(high, 5000)
@@ -13,6 +13,10 @@ bool showDashboard = input.bool(true, "Show market bias panel", group = G_PANELS
 bool showPullbackChecklist = input.bool(true, "Show pullback checklist panel", group = G_PANELS)
 
 string G_DATA = "Data and indicators"
+string G_RD = "RSI momentum divergence"
+bool rdEnabled = input.bool(true, "Show RSI divergence", group = G_RD, tooltip = "RSI of 10-bar momentum, using the RSI length below. The oscillator is in this indicator's lower pane; price drawings and dashboards stay on the main chart. Regular bullish/bearish divergence confirms five bars after an RSI pivot, at candle close.")
+bool rdShowZones = input.bool(true, "Show divergence zones", group = G_RD)
+int rdKeep = input.int(10, "Zones per side / recent signals", minval = 1, maxval = 20, group = G_RD)
 bool confirmed = input.bool(true, "Confirmed candles (recommended)", group = G_DATA, tooltip = "HTF/equal: previous closed candle. LTF: latest available closed intrabar. Off: live security values can repaint.")
 int fastLen = input.int(20, "Fast EMA", minval = 2, maxval = 1000, group = G_DATA)
 int midLen = input.int(50, "Middle EMA", minval = 2, maxval = 1000, group = G_DATA)
@@ -468,7 +472,7 @@ f_clearLines(array<line> pool) =>
     true
 
 f_addLabel(array<label> labels, string value, float price, bool above, color background) =>
-    label item = label.new(bar_index, price, value, style = above ? label.style_label_down : label.style_label_up, color = background, textcolor = textColor, size = size.tiny)
+    label item = label.new(bar_index, price, value, style = above ? label.style_label_down : label.style_label_up, color = background, textcolor = textColor, size = size.tiny, force_overlay = true)
     array.push(labels, item)
     f_trimLabels(labels, labelLimit)
 
@@ -583,7 +587,7 @@ f_luxDraw(bool toggle, int tH, float ph, float pl, color shade, string lineStyle
             if trend < 1
                 if v > prevPh.price and x - prevPh.index > 5 and n - prevPl.index < 5000
                     trend := 1
-                    bn := TlBin.new(line.new(prevPl.index, prevPl.price, n, prevPl.price, color = shade, style = lineStyle, width = lineWidth), 0.0, true, chart.point.from_index(prevPl.index, prevPl.price))
+                    bn := TlBin.new(line.new(prevPl.index, prevPl.price, n, prevPl.price, color = shade, style = lineStyle, width = lineWidth, force_overlay = true), 0.0, true, chart.point.from_index(prevPl.index, prevPl.price))
                 else
                     if bn.active
                         float slope = (v - bn.cp.price) / (x - bn.cp.index)
@@ -591,7 +595,7 @@ f_luxDraw(bool toggle, int tH, float ph, float pl, color shade, string lineStyle
                             float priceLin = bn.lin.get_price(n - idx)
                             if c < priceLin
                                 if bn.slope != 0
-                                    label.new(n - idx, priceLin, style = label.style_label_center, text = '●', color = color(na), textcolor = shade)
+                                    label.new(n - idx, priceLin, style = label.style_label_center, text = '●', color = color(na), textcolor = shade, force_overlay = true)
                                 bn.lin.set_xy2(n, v + slope * idx)
                                 if bn.slope == 0
                                     bool stop = false
@@ -641,7 +645,7 @@ f_luxDraw(bool toggle, int tH, float ph, float pl, color shade, string lineStyle
             if trend > -1
                 if v < prevPl.price and x - prevPl.index > 5 and n - prevPh.index < 5000
                     trend := -1
-                    bn := TlBin.new(line.new(prevPh.index, prevPh.price, n, prevPh.price, color = shade, style = lineStyle, width = lineWidth), 0.0, true, chart.point.from_index(prevPh.index, prevPh.price))
+                    bn := TlBin.new(line.new(prevPh.index, prevPh.price, n, prevPh.price, color = shade, style = lineStyle, width = lineWidth, force_overlay = true), 0.0, true, chart.point.from_index(prevPh.index, prevPh.price))
                 else
                     if bn.active
                         float slope = (v - bn.cp.price) / (x - bn.cp.index)
@@ -649,7 +653,7 @@ f_luxDraw(bool toggle, int tH, float ph, float pl, color shade, string lineStyle
                             float priceLin = bn.lin.get_price(n - idx)
                             if c > priceLin
                                 if bn.slope != 0
-                                    label.new(n - idx, priceLin, style = label.style_label_center, text = '●', color = color(na), textcolor = shade)
+                                    label.new(n - idx, priceLin, style = label.style_label_center, text = '●', color = color(na), textcolor = shade, force_overlay = true)
                                 bn.lin.set_xy2(n, v + slope * idx)
                                 if bn.slope == 0
                                     bool stop = false
@@ -739,7 +743,7 @@ if barstate.islast
                     int slot = tfIndex * 3 + lvl
                     int luxDir = array.get(luxTrend, slot)
                     if array.get(luxActive, slot) and luxDir != 0 and not na(array.get(luxY, slot))
-                        array.push(tlLabelPool, label.new(bar_index, array.get(luxY, slot), array.get(names, tfIndex) + (luxDir == -1 ? " down" : " up"), style = luxDir == -1 ? label.style_label_down : label.style_label_up, color = color.new(array.get(tlColors, tfIndex), 20), textcolor = color.white, size = size.tiny))
+                        array.push(tlLabelPool, label.new(bar_index, array.get(luxY, slot), array.get(names, tfIndex) + (luxDir == -1 ? " down" : " up"), style = luxDir == -1 ? label.style_label_down : label.style_label_up, color = color.new(array.get(tlColors, tfIndex), 20), textcolor = color.white, size = size.tiny, force_overlay = true))
 
 // Elliott waves adapted from the supplied elliott.pine (three zigzag lengths, 1-2-3-4-5 and a-b-c, Fibonacci zone, break marks).
 type ZZ
@@ -792,7 +796,7 @@ float lo = ewSrcLow == "low" ? low : ewSrcLow == "close" ? close : math.min(open
 in_out(aZZ, d, x1, y1, x2, y2, col) =>
     aZZ.d.unshift(d), aZZ.x.unshift(x2), aZZ.y.unshift(y2), aZZ.d.pop(), aZZ.x.pop(), aZZ.y.pop()
     if ewShowZz
-        aZZ.l.unshift(line.new(x1, y1, x2, y2, color= col)), aZZ.l.pop().delete()
+        aZZ.l.unshift(line.new(x1, y1, x2, y2, color= col, force_overlay = true)), aZZ.l.pop().delete()
 
 method isSame(Ewave gEW, _1x, _2x, _3x, _4x) =>
     t1 = _1x == gEW.l1.get_x1()
@@ -889,14 +893,14 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
     float pl = ta.pivotlow(lo, left, 1)
     if enabled
         var fibL nFibL = fibL.new(
-           wave1_0_500 = line.new(na, na, na, na, color= color.new(col, 50), style= line.style_solid ),
-           wave1_0_618 = line.new(na, na, na, na, color= color.new(col, 38), style= line.style_solid ),
-           wave1_0_764 = line.new(na, na, na, na, color= color.new(col, 24), style= line.style_solid ),
-           wave1_0_854 = line.new(na, na, na, na, color= color.new(col, 15), style= line.style_solid ),
-           wave1_pole_ = line.new(na, na, na, na, color= color.new(col, 50), style= line.style_dashed),
+           wave1_0_500 = line.new(na, na, na, na, color= color.new(col, 50), style= line.style_solid , force_overlay = true),
+           wave1_0_618 = line.new(na, na, na, na, color= color.new(col, 38), style= line.style_solid , force_overlay = true),
+           wave1_0_764 = line.new(na, na, na, na, color= color.new(col, 24), style= line.style_solid , force_overlay = true),
+           wave1_0_854 = line.new(na, na, na, na, color= color.new(col, 15), style= line.style_solid , force_overlay = true),
+           wave1_pole_ = line.new(na, na, na, na, color= color.new(col, 50), style= line.style_dashed, force_overlay = true),
                l_fill_ = linefill.new(
-                         line.new(na, na, na, na, color= color(na))
-                       , line.new(na, na, na, na, color= color(na))
+                         line.new(na, na, na, na, color= color(na), force_overlay = true)
+                       , line.new(na, na, na, na, color= color(na), force_overlay = true)
                        ,                          color= color(na))
                        ,                         _break_   =   false
                )
@@ -913,7 +917,7 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
                 aZZ.d.unshift(0)
                 aZZ.x.unshift(0)
                 aZZ.y.unshift(0)
-                aZZ.l.unshift(ewShowZz ? line.new(na, na, na, na) : na)
+                aZZ.l.unshift(ewShowZz ? line.new(na, na, na, na, force_overlay = true) : na)
         //
         sz       = aZZ.d.size( )
         x2      := bar_index -1
@@ -967,16 +971,16 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
                         tx := '(1)'
                     //
                     wave = Ewave.new(
-                     l1  = line.new (_1x, _1y, _2x, _2y                      , color=col       , style= line.style_solid     ),
-                     l2  = line.new (_2x, _2y, _3x, _3y                      , color=col       , style= line.style_solid     ),
-                     l3  = line.new (_3x, _3y, _4x, _4y                      , color=col       , style= line.style_solid     ),
-                     l4  = line.new (_4x, _4y, _5x, _5y                      , color=col       , style= line.style_solid     ),
-                     l5  = line.new (_5x, _5y, _6x, _6y                      , color=col       , style= line.style_solid     ),
-                     b1  = label.new(_2x, _2y, text= tx    + t, textcolor=col, color= color(na), style=label.style_label_down),
-                     b2  = label.new(_3x, _3y, text= t + '(2)', textcolor=col, color= color(na), style=label.style_label_up  ),
-                     b3  = label.new(_4x, _4y, text= '(3)' + t, textcolor=col, color= color(na), style=label.style_label_down),
-                     b4  = label.new(_5x, _5y, text= t + '(4)', textcolor=col, color= color(na), style=label.style_label_up  ),
-                     b5  = label.new(_6x, _6y, text= '(5)' + t, textcolor=col, color= color(na), style=label.style_label_down),
+                     l1  = line.new (_1x, _1y, _2x, _2y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l2  = line.new (_2x, _2y, _3x, _3y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l3  = line.new (_3x, _3y, _4x, _4y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l4  = line.new (_4x, _4y, _5x, _5y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l5  = line.new (_5x, _5y, _6x, _6y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     b1  = label.new(_2x, _2y, text= tx    + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true),
+                     b2  = label.new(_3x, _3y, text= t + '(2)', textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true),
+                     b3  = label.new(_4x, _4y, text= '(3)' + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true),
+                     b4  = label.new(_5x, _5y, text= t + '(4)', textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true),
+                     b5  = label.new(_6x, _6y, text= '(5)' + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true),
                      on  = true                                                                                               ,
                      br  = false                                                                                              ,
                      dir = 1
@@ -1011,10 +1015,10 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
                     if isSame2 and getEW.bA.get_x() > _3x
                         getEW.lC.set_xy1(_5x, _5y), getEW.lC.set_xy2(_6x, _6y), getEW.bC.set_xy(_6x, _6y), getEW.bx.set_lefttop(_6x, _6y), getEW.bx.set_right(_6x + width)
                     else
-                        getEW.lA := line.new (_3x, _3y, _4x, _4y, color=col), getEW.bA := label.new(_4x, _4y, text= '(a)' + t, textcolor=col, color= color(na), style=label.style_label_down)
-                        getEW.lB := line.new (_4x, _4y, _5x, _5y, color=col), getEW.bB := label.new(_5x, _5y, text= t + '(b)', textcolor=col, color= color(na), style=label.style_label_up  )
-                        getEW.lC := line.new (_5x, _5y, _6x, _6y, color=col), getEW.bC := label.new(_6x, _6y, text= '(c)' + t, textcolor=col, color= color(na), style=label.style_label_down)
-                        getEW.bx := box.new  (_6x, _6y, _6x + width, _4y, bgcolor=color.new(col, 93), border_color=color.new(col, 65))
+                        getEW.lA := line.new (_3x, _3y, _4x, _4y, color=col, force_overlay = true), getEW.bA := label.new(_4x, _4y, text= '(a)' + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true)
+                        getEW.lB := line.new (_4x, _4y, _5x, _5y, color=col, force_overlay = true), getEW.bB := label.new(_5x, _5y, text= t + '(b)', textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true)
+                        getEW.lC := line.new (_5x, _5y, _6x, _6y, color=col, force_overlay = true), getEW.bC := label.new(_6x, _6y, text= '(c)' + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true)
+                        getEW.bx := box.new  (_6x, _6y, _6x + width, _4y, bgcolor=color.new(col, 93), border_color=color.new(col, 65), force_overlay = true)
                         alert('New EW Corrective Bullish Pattern found'  , alert.freq_once_per_bar_close)
                 else
                     if isSame2 and getEW.bA.get_x() > _3x
@@ -1027,7 +1031,7 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
                    _6y >  getEW.b5.get_y() and
                    getEW.next  == false
                     getEW.next := true
-                    getEW.lb   := label.new(_6x, _6y, style=label.style_circle, color=color.new(col, 65), yloc=yloc.abovebar, size=size.tiny)
+                    getEW.lb   := label.new(_6x, _6y, style=label.style_circle, color=color.new(col, 65), yloc=yloc.abovebar, size=size.tiny, force_overlay = true)
                     alert('Possible new start of EW Motive Bullish Wave', alert.freq_once_per_bar_close)
         //
         // when a new Pivot Low is found
@@ -1078,16 +1082,16 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
                         tx := '(1)'
                     //
                     wave = Ewave.new(
-                     l1  = line.new (_1x, _1y, _2x, _2y                      , color=col       , style= line.style_solid     ),
-                     l2  = line.new (_2x, _2y, _3x, _3y                      , color=col       , style= line.style_solid     ),
-                     l3  = line.new (_3x, _3y, _4x, _4y                      , color=col       , style= line.style_solid     ),
-                     l4  = line.new (_4x, _4y, _5x, _5y                      , color=col       , style= line.style_solid     ),
-                     l5  = line.new (_5x, _5y, _6x, _6y                      , color=col       , style= line.style_solid     ),
-                     b1  = label.new(_2x, _2y, text= t    + tx, textcolor=col, color= color(na), style=label.style_label_up  ),
-                     b2  = label.new(_3x, _3y, text= '(2)' + t, textcolor=col, color= color(na), style=label.style_label_down),
-                     b3  = label.new(_4x, _4y, text= t + '(3)', textcolor=col, color= color(na), style=label.style_label_up  ),
-                     b4  = label.new(_5x, _5y, text= '(4)' + t, textcolor=col, color= color(na), style=label.style_label_down),
-                     b5  = label.new(_6x, _6y, text= t + '(5)', textcolor=col, color= color(na), style=label.style_label_up  ),
+                     l1  = line.new (_1x, _1y, _2x, _2y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l2  = line.new (_2x, _2y, _3x, _3y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l3  = line.new (_3x, _3y, _4x, _4y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l4  = line.new (_4x, _4y, _5x, _5y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     l5  = line.new (_5x, _5y, _6x, _6y                      , color=col       , style= line.style_solid     , force_overlay = true),
+                     b1  = label.new(_2x, _2y, text= t    + tx, textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true),
+                     b2  = label.new(_3x, _3y, text= '(2)' + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true),
+                     b3  = label.new(_4x, _4y, text= t + '(3)', textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true),
+                     b4  = label.new(_5x, _5y, text= '(4)' + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true),
+                     b5  = label.new(_6x, _6y, text= t + '(5)', textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true),
                      on  = true                                                                                               ,
                      br  = false                                                                                              ,
                      dir =-1
@@ -1122,10 +1126,10 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
                     if isSame2 and getEW.bA.get_x() > _3x
                         getEW.lC.set_xy1(_5x, _5y), getEW.lC.set_xy2(_6x, _6y), getEW.bC.set_xy(_6x, _6y), getEW.bx.set_lefttop(_6x, _6y), getEW.bx.set_right(_6x + width)
                     else
-                        getEW.lA := line.new (_3x, _3y, _4x, _4y, color=col), getEW.bA := label.new(_4x, _4y, text= t + '(a)', textcolor=col, color= color(na), style=label.style_label_up  )
-                        getEW.lB := line.new (_4x, _4y, _5x, _5y, color=col), getEW.bB := label.new(_5x, _5y, text= '(b)' + t, textcolor=col, color= color(na), style=label.style_label_down)
-                        getEW.lC := line.new (_5x, _5y, _6x, _6y, color=col), getEW.bC := label.new(_6x, _6y, text= t + '(c)', textcolor=col, color= color(na), style=label.style_label_up  )
-                        getEW.bx := box.new  (_6x, _6y, _6x + width, _4y, bgcolor=color.new(col, 93), border_color=color.new(col, 65))
+                        getEW.lA := line.new (_3x, _3y, _4x, _4y, color=col, force_overlay = true), getEW.bA := label.new(_4x, _4y, text= t + '(a)', textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true)
+                        getEW.lB := line.new (_4x, _4y, _5x, _5y, color=col, force_overlay = true), getEW.bB := label.new(_5x, _5y, text= '(b)' + t, textcolor=col, color= color(na), style=label.style_label_down, force_overlay = true)
+                        getEW.lC := line.new (_5x, _5y, _6x, _6y, color=col, force_overlay = true), getEW.bC := label.new(_6x, _6y, text= t + '(c)', textcolor=col, color= color(na), style=label.style_label_up  , force_overlay = true)
+                        getEW.bx := box.new  (_6x, _6y, _6x + width, _4y, bgcolor=color.new(col, 93), border_color=color.new(col, 65), force_overlay = true)
                         alert('New EW Corrective Bearish Pattern found'  , alert.freq_once_per_bar_close)
                 else
                     if isSame2 and getEW.bA.get_x() > _3x
@@ -1138,7 +1142,7 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
                    _6y <  getEW.b5.get_y() and
                    getEW.next  == false
                     getEW.next := true
-                    getEW.lb   := label.new(_6x, _6y, style=label.style_circle, color=color.new(col, 65), yloc=yloc.belowbar, size=size.tiny)
+                    getEW.lb   := label.new(_6x, _6y, style=label.style_circle, color=color.new(col, 65), yloc=yloc.belowbar, size=size.tiny, force_overlay = true)
                     alert('Possible new start of EW Motive Bearish Wave', alert.freq_once_per_bar_close)
         //
         // –––[ check for break box ]–––
@@ -1146,10 +1150,10 @@ f_ewZigzag(bool enabled, int left, color col, int n) =>
             gEW    := aEW.get(0)
             if gEW.dir == 1
                 if ta.crossunder(low , gEW.bx.get_bottom()) and bar_index <= gEW.bx.get_right()
-                    label.new(bar_index, low , yloc= yloc.belowbar, style= label.style_xcross, color=color.red, size=size.tiny)
+                    label.new(bar_index, low , yloc= yloc.belowbar, style= label.style_xcross, color=color.red, size=size.tiny, force_overlay = true)
             else
                 if ta.crossover (high, gEW.bx.get_top   ()) and bar_index <= gEW.bx.get_right()
-                    label.new(bar_index, high, yloc= yloc.abovebar, style= label.style_xcross, color=color.red, size=size.tiny)
+                    label.new(bar_index, high, yloc= yloc.abovebar, style= label.style_xcross, color=color.red, size=size.tiny, force_overlay = true)
         //
         if barstate.islast
             //  –––[ get last 2 EW's ]–––
@@ -1276,7 +1280,7 @@ if sdEnabled and barstate.isconfirmed
                     overlaps := true
         if not overlaps and zoneTop > zoneBottom
             color zoneColor = newDir == 1 ? cBull : cBear
-            array.push(sdBoxes, box.new(bar_index - sdBase, zoneTop, bar_index, zoneBottom, border_color = zoneColor, bgcolor = color.new(zoneColor, zoneOpacity), extend = extend.right, text = sdText ? (newDir == 1 ? "D" : "S") : "", text_color = textColor, text_size = size.tiny, text_halign = text.align_right))
+            array.push(sdBoxes, box.new(bar_index - sdBase, zoneTop, bar_index, zoneBottom, border_color = zoneColor, bgcolor = color.new(zoneColor, zoneOpacity), extend = extend.right, text = sdText ? (newDir == 1 ? "D" : "S") : "", text_color = textColor, text_size = size.tiny, text_halign = text.align_right, force_overlay = true))
             array.push(sdDirs, newDir)
             array.push(sdTops, zoneTop)
             array.push(sdBottoms, zoneBottom)
@@ -1338,7 +1342,7 @@ f_trimZones(array<box> boxes, array<int> dirs, array<float> tops, array<float> b
         f_dropZone(boxes, dirs, tops, bots, done, oldest)
 
 f_newZone(array<box> boxes, array<int> dirs, array<float> tops, array<float> bots, array<bool> done, int leftBar, float top, float bottom, int dir, color base, string txt) =>
-    array.push(boxes, box.new(leftBar, top, bar_index, bottom, border_color = na, bgcolor = f_zoneColor(base), extend = extend.right, text = foLabels ? txt : "", text_size = size.tiny, text_color = color.white, text_halign = text.align_center))
+    array.push(boxes, box.new(leftBar, top, bar_index, bottom, border_color = na, bgcolor = f_zoneColor(base), extend = extend.right, text = foLabels ? txt : "", text_size = size.tiny, text_color = color.white, text_halign = text.align_center, force_overlay = true))
     array.push(dirs, dir)
     array.push(tops, top)
     array.push(bots, bottom)
@@ -1455,12 +1459,12 @@ var array<LsArea> lsAreas = array.new<LsArea>()
 
 f_lsLevel(LsPivot pv, color c, string styleName) =>
     string st = styleName == "dotted" ? line.style_dotted : line.style_dashed
-    line.new(pv.bix, pv.prc, bar_index, pv.prc, color = c, style = st)
+    line.new(pv.bix, pv.prc, bar_index, pv.prc, color = c, style = st, force_overlay = true)
 
 f_lsArea(LsPivot pv, color fill, color edge, int dir) =>
     float y1 = dir == 1 ? high : pv.prc
     float y2 = dir == 1 ? pv.prc : low
-    LsArea area = LsArea.new(box.new(bar_index - 1, y1, bar_index + 1, y2, border_color = na, bgcolor = fill), line.new(bar_index, y1, bar_index, y2, color = edge, width = 3), false, dir)
+    LsArea area = LsArea.new(box.new(bar_index - 1, y1, bar_index + 1, y2, border_color = na, bgcolor = fill, force_overlay = true), line.new(bar_index, y1, bar_index, y2, color = edge, width = 3, force_overlay = true), false, dir)
     array.unshift(lsAreas, area)
     if array.size(lsAreas) > lsMaxAreas
         LsArea old = array.pop(lsAreas)
@@ -1469,7 +1473,7 @@ f_lsArea(LsPivot pv, color fill, color edge, int dir) =>
     true
 
 f_lsDot(float y, color c) =>
-    line.new(bar_index, y, bar_index + 3, y, color = c, style = line.style_dotted)
+    line.new(bar_index, y, bar_index + 3, y, color = c, style = line.style_dotted, force_overlay = true)
 
 float lsPh = ta.pivothigh(high, lsLen, lsLen)
 float lsPl = ta.pivotlow(low, lsLen, lsLen)
@@ -1555,9 +1559,9 @@ if lsEnabled
 // Optional overlays use chart OHLC, not requested source OHLC on synthetic charts.
 Snapshot chartData = f_engine(0)
 Snapshot chartClosed = barstate.isconfirmed ? chartData : chartData[1]
-plot(showSlow and not na(chartClosed) ? chartClosed.slow : na, "Chart slow EMA", color = color.orange, linewidth = 2)
-plot(showSwings and not na(chartClosed) ? chartClosed.swingHigh : na, "Confirmed swing high", color = bearColor, style = plot.style_stepline)
-plot(showSwings and not na(chartClosed) ? chartClosed.swingLow : na, "Confirmed swing low", color = bullColor, style = plot.style_stepline)
+plot(showSlow and not na(chartClosed) ? chartClosed.slow : na, "Chart slow EMA", color = color.orange, linewidth = 2, force_overlay = true)
+plot(showSwings and not na(chartClosed) ? chartClosed.swingHigh : na, "Confirmed swing high", color = bearColor, style = plot.style_stepline, force_overlay = true)
+plot(showSwings and not na(chartClosed) ? chartClosed.swingLow : na, "Confirmed swing low", color = bullColor, style = plot.style_stepline, force_overlay = true)
 var array<label> chartLabels = array.new<label>()
 bool chartBreak = barstate.isconfirmed and chartData.breakTime == time
 if barstate.isconfirmed
@@ -1625,8 +1629,8 @@ var array<line> vpLines = array.new<line>()
 var line vpPoc = na
 if barstate.isfirst and vpEnabled
     for i = 0 to vpRows - 1
-        vpLines.push(line.new(na, na, na, na))
-    vpPoc = line.new(na, na, na, na, style = line.style_dotted)
+        vpLines.push(line.new(na, na, na, na, force_overlay = true))
+    vpPoc = line.new(na, na, na, na, style = line.style_dotted, force_overlay = true)
 
 int vpLen = math.min(vpLength, bar_index + 1)
 float vpHi = ta.highest(high, vpLength)
@@ -1661,7 +1665,7 @@ if vpEnabled and (vpRolling or barstate.islast) and vpLen >= 2 and vpHi > vpLo
             vpPoc.set_xy2(bar_index, vpRollPoc)
             vpPoc.set_color(vpGrad ? vpHigh : vpPocColor)
             vpPoc.set_width(vpBarWidth)
-plot(vpEnabled and vpRolling ? vpRollPoc : na, "Rolling POC", color = color.rgb(255, 17, 0))
+plot(vpEnabled and vpRolling ? vpRollPoc : na, "Rolling POC", color = color.rgb(255, 17, 0), force_overlay = true)
 
 // ===== Swing highs/lows with candle patterns (adapted from swing_h_l_candle.pine) =====
 // The pivot is confirmed swLen bars after the swing candle, so the pattern is read
@@ -1703,11 +1707,11 @@ if swEnabled and swPatterns and (not na(swPh) or not na(swPl))
 
 if swEnabled and not na(swPh)
     string tag = na(swPrevHigh) or swPh > swPrevHigh ? "HH" : "LH"
-    swLabels.push(label.new(bar_index - swLen, swPh, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_down, textcolor = cBear))
+    swLabels.push(label.new(bar_index - swLen, swPh, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_down, textcolor = cBear, force_overlay = true))
     swPrevHigh := swPh
 else if swEnabled and not na(swPl)
     string tag = na(swPrevLow) or swPl < swPrevLow ? "LL" : "HL"
-    swLabels.push(label.new(bar_index - swLen, swPl, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_up, textcolor = cBull))
+    swLabels.push(label.new(bar_index - swLen, swPl, tag + (swPattern == "" ? "" : "\n" + swPattern), color = color(na), style = label.style_label_up, textcolor = cBull, force_overlay = true))
     swPrevLow := swPl
 f_trimLabels(swLabels, swMaxLabels)
 
@@ -1731,22 +1735,22 @@ f_session(string sess) =>
 [ssSyLo, ssSyHi, ssSyIn] = f_session(ssSydney)
 
 color ssClear = color.new(color.black, 100)
-ssLnLoP = plot(ssLondonOn and ssHighLow ? ssLnLo : na, "London low", ssClear, editable = false)
-ssLnHiP = plot(ssLondonOn and ssHighLow ? ssLnHi : na, "London high", ssClear, editable = false)
-ssNyLoP = plot(ssNyOn and ssHighLow ? ssNyLo : na, "New York low", ssClear, editable = false)
-ssNyHiP = plot(ssNyOn and ssHighLow ? ssNyHi : na, "New York high", ssClear, editable = false)
-ssTkLoP = plot(ssTokyoOn and ssHighLow ? ssTkLo : na, "Tokyo low", ssClear, editable = false)
-ssTkHiP = plot(ssTokyoOn and ssHighLow ? ssTkHi : na, "Tokyo high", ssClear, editable = false)
-ssSyLoP = plot(ssSydneyOn and ssHighLow ? ssSyLo : na, "Sydney low", ssClear, editable = false)
-ssSyHiP = plot(ssSydneyOn and ssHighLow ? ssSyHi : na, "Sydney high", ssClear, editable = false)
+ssLnLoP = plot(ssLondonOn and ssHighLow ? ssLnLo : na, "London low", ssClear, editable = false, force_overlay = true)
+ssLnHiP = plot(ssLondonOn and ssHighLow ? ssLnHi : na, "London high", ssClear, editable = false, force_overlay = true)
+ssNyLoP = plot(ssNyOn and ssHighLow ? ssNyLo : na, "New York low", ssClear, editable = false, force_overlay = true)
+ssNyHiP = plot(ssNyOn and ssHighLow ? ssNyHi : na, "New York high", ssClear, editable = false, force_overlay = true)
+ssTkLoP = plot(ssTokyoOn and ssHighLow ? ssTkLo : na, "Tokyo low", ssClear, editable = false, force_overlay = true)
+ssTkHiP = plot(ssTokyoOn and ssHighLow ? ssTkHi : na, "Tokyo high", ssClear, editable = false, force_overlay = true)
+ssSyLoP = plot(ssSydneyOn and ssHighLow ? ssSyLo : na, "Sydney low", ssClear, editable = false, force_overlay = true)
+ssSyHiP = plot(ssSydneyOn and ssHighLow ? ssSyHi : na, "Sydney high", ssClear, editable = false, force_overlay = true)
 fill(ssLnLoP, ssLnHiP, ssLnIn and ssLondonOn and ssHighLow ? ssLondonCss : na)
 fill(ssNyLoP, ssNyHiP, ssNyIn and ssNyOn and ssHighLow ? ssNyCss : na)
 fill(ssTkLoP, ssTkHiP, ssTkIn and ssTokyoOn and ssHighLow ? ssTokyoCss : na)
 fill(ssSyLoP, ssSyHiP, ssSyIn and ssSydneyOn and ssHighLow ? ssSydneyCss : na)
-bgcolor(ssLnIn and ssLondonOn and not ssHighLow ? ssLondonCss : na)
-bgcolor(ssNyIn and ssNyOn and not ssHighLow ? ssNyCss : na)
-bgcolor(ssTkIn and ssTokyoOn and not ssHighLow ? ssTokyoCss : na)
-bgcolor(ssSyIn and ssSydneyOn and not ssHighLow ? ssSydneyCss : na)
+bgcolor(ssLnIn and ssLondonOn and not ssHighLow ? ssLondonCss : na, force_overlay = true)
+bgcolor(ssNyIn and ssNyOn and not ssHighLow ? ssNyCss : na, force_overlay = true)
+bgcolor(ssTkIn and ssTokyoOn and not ssHighLow ? ssTokyoCss : na, force_overlay = true)
+bgcolor(ssSyIn and ssSydneyOn and not ssHighLow ? ssSydneyCss : na, force_overlay = true)
 
 // ===== ICT price action tools (adapted from ict_price_action.pine) =====
 // Market structure, swing dots, order/breaker blocks, buyside/sellside liquidity
@@ -1888,9 +1892,9 @@ if barstate.islast and ictMsOn
         for i = 0 to ictMsY.size() - 1
             bool bull = ictMsBull_.get(i)
             color clr = bull ? cBull : cBear
-            ictMsLines.push(line.new(ictMsX1.get(i), ictMsY.get(i), ictMsX2.get(i), ictMsY.get(i), color = clr, style = f_ictLineStyle(ictMsStyle), width = 2))
+            ictMsLines.push(line.new(ictMsX1.get(i), ictMsY.get(i), ictMsX2.get(i), ictMsY.get(i), color = clr, style = f_ictLineStyle(ictMsStyle), width = 2, force_overlay = true))
             if ictMsText
-                ictMsLabels.push(label.new(math.round((ictMsX1.get(i) + ictMsX2.get(i)) / 2.0), ictMsY.get(i), ictMsTxt.get(i), color = na, textcolor = clr, style = bull ? label.style_label_down : label.style_label_up, size = size.small))
+                ictMsLabels.push(label.new(math.round((ictMsX1.get(i) + ictMsX2.get(i)) / 2.0), ictMsY.get(i), ictMsTxt.get(i), color = na, textcolor = clr, style = bull ? label.style_label_down : label.style_label_up, size = size.small, force_overlay = true))
 
 // ----- buyside / sellside liquidity -----
 int ictMaxZz = 50
@@ -1938,10 +1942,10 @@ f_ictLiqScan(bool isHigh, float swing, int swingX, array<IctLiq> store, color cl
             store.get(0).bx.set_rightbottom(bar_index + 10, mid - band)
         else
             store.unshift(IctLiq.new(
-                 box.new(stB, mid + band, bar_index + 10, mid - band, border_color = na, bgcolor = na),
-                 box.new(stB, stP, bar_index + 10, stP, border_color = na, bgcolor = na, text = isHigh ? "Buyside liquidity" : "Sellside liquidity", text_size = size.tiny, text_halign = text.align_left, text_valign = isHigh ? text.align_bottom : text.align_top, text_color = color.new(clr, 25)),
-                 line.new(stB, stP, bar_index - 1, stP, color = clr),
-                 line.new(bar_index - 1, stP, bar_index, stP, color = clr, style = line.style_dotted)))
+                 box.new(stB, mid + band, bar_index + 10, mid - band, border_color = na, bgcolor = na, force_overlay = true),
+                 box.new(stB, stP, bar_index + 10, stP, border_color = na, bgcolor = na, text = isHigh ? "Buyside liquidity" : "Sellside liquidity", text_size = size.tiny, text_halign = text.align_left, text_valign = isHigh ? text.align_bottom : text.align_top, text_color = color.new(clr, 25), force_overlay = true),
+                 line.new(stB, stP, bar_index - 1, stP, color = clr, force_overlay = true),
+                 line.new(bar_index - 1, stP, bar_index, stP, color = clr, style = line.style_dotted, force_overlay = true)))
         if store.size() > ictLiqVisible
             IctLiq last = store.pop()
             last.bx.delete()
@@ -1995,6 +1999,79 @@ if ictLiqSell.size() > 0
                 lq.brL := true
 
 
+// RSI is applied to momentum, not directly to close (as in rsi_divergence.pine).
+color rdBullColor = #33c570
+color rdBearColor = #ae4ce6
+type RdZone
+    line primary
+    line glow
+    bool active = true
+
+f_rdZones(array<RdZone> zones, bool signal, bool bullish, float level) =>
+    if signal
+        zones.push(RdZone.new(
+             line.new(bar_index - 5, level, bar_index, level, color = bullish ? rdBullColor : rdBearColor, force_overlay = true),
+             line.new(bar_index - 5, level, bar_index, level, color = color.new(bullish ? rdBullColor : rdBearColor, 70), width = 6, force_overlay = true)))
+    while zones.size() > rdKeep
+        RdZone expired = zones.shift()
+        expired.primary.delete()
+        expired.glow.delete()
+    if zones.size() > 0
+        for i = zones.size() - 1 to 0
+            RdZone zone = zones.get(i)
+            if zone.active
+                bool intact = bullish ? high > zone.primary.get_y1() : low < zone.primary.get_y1()
+                zone.primary.set_x2(intact ? bar_index + 15 : bar_index)
+                if intact
+                    zone.glow.set_x2(bar_index + 15)
+                else
+                    zone.active := false
+                    zone.primary.set_style(line.style_dashed)
+                    zone.glow.delete()
+    true
+
+float rdRsi = ta.rsi(ta.mom(close, 10), rsiLen)
+bool rdLow = not na(ta.pivotlow(rdRsi, 5, 5))
+bool rdHigh = not na(ta.pivothigh(rdRsi, 5, 5))
+float rdPrevLowRsi = ta.valuewhen(rdLow, rdRsi[5], 1)
+float rdPrevHighRsi = ta.valuewhen(rdHigh, rdRsi[5], 1)
+float rdPrevLow = ta.valuewhen(rdLow, low[5], 1)
+float rdPrevHigh = ta.valuewhen(rdHigh, high[5], 1)
+int rdPrevLowBar = ta.valuewhen(rdLow, bar_index - 5, 1)
+int rdPrevHighBar = ta.valuewhen(rdHigh, bar_index - 5, 1)
+int rdLowGap = ta.barssince(rdLow[1])
+int rdHighGap = ta.barssince(rdHigh[1])
+bool rdBull = rdEnabled and barstate.isconfirmed and rdLow and rdLowGap >= 5 and rdLowGap <= 50 and rdRsi[5] > rdPrevLowRsi and low[5] < rdPrevLow
+bool rdBear = rdEnabled and barstate.isconfirmed and rdHigh and rdHighGap >= 5 and rdHighGap <= 50 and rdRsi[5] < rdPrevHighRsi and high[5] > rdPrevHigh
+rdRsiPlot = plot(rdRsi, "RSI of momentum", color = color.from_gradient(rdRsi, 30, 70, rdBullColor, rdBearColor), linewidth = 1)
+rdMidPlot = plot(50, "RSI midline", color = color.gray)
+hline(70, "RSI upper band", color = color.gray, linestyle = hline.style_dashed)
+hline(30, "RSI lower band", color = color.gray, linestyle = hline.style_dashed)
+fill(rdRsiPlot, rdMidPlot, 70, 30, rdBearColor, na, title = "RSI bearish gradient")
+fill(rdRsiPlot, rdMidPlot, 70, 30, na, rdBullColor, title = "RSI bullish gradient")
+plotshape(rdBull ? rdRsi[5] : na, "Bullish RSI divergence", shape.labelup, location.absolute, rdBullColor, offset = -5, text = "Bull", textcolor = color.white)
+plotshape(rdBear ? rdRsi[5] : na, "Bearish RSI divergence", shape.labeldown, location.absolute, rdBearColor, offset = -5, text = "Bear", textcolor = color.white)
+var array<RdZone> rdBullZones = array.new<RdZone>()
+var array<RdZone> rdBearZones = array.new<RdZone>()
+var array<line> rdPriceLines = array.new<line>()
+var array<line> rdOscLines = array.new<line>()
+var array<label> rdPriceLabels = array.new<label>()
+if rdBull or rdBear
+    bool bullish = rdBull
+    float price = bullish ? low[5] : high[5]
+    color shade = bullish ? rdBullColor : rdBearColor
+    rdOscLines.push(line.new(bullish ? rdPrevLowBar : rdPrevHighBar, bullish ? rdPrevLowRsi : rdPrevHighRsi, bar_index - 5, rdRsi[5], color = shade, width = 2))
+    rdPriceLines.push(line.new(bullish ? rdPrevLowBar : rdPrevHighBar, bullish ? rdPrevLow : rdPrevHigh, bar_index - 5, price, color = shade, width = 2, force_overlay = true))
+    rdPriceLabels.push(label.new(bar_index - 5, price, bullish ? "RSIM Bull" : "RSIM Bear", style = bullish ? label.style_label_up : label.style_label_down, color = shade, textcolor = color.white, size = size.small, force_overlay = true, tooltip = "Regular RSI-of-momentum divergence. Confirmed five bars after this pivot; context, not an entry."))
+    while rdPriceLines.size() > rdKeep * 2
+        rdPriceLines.shift().delete()
+    while rdOscLines.size() > rdKeep * 2
+        rdOscLines.shift().delete()
+    f_trimLabels(rdPriceLabels, rdKeep * 2)
+if rdEnabled and rdShowZones and barstate.isconfirmed
+    f_rdZones(rdBullZones, rdBull, true, low[5])
+    f_rdZones(rdBearZones, rdBear, false, high[5])
+
 alertcondition(alertFlip and flipBull, "Overall turns bullish", "{{ticker}}: overall bias reversed bullish at chart close. Directional context, not an entry.")
 alertcondition(alertFlip and flipBear, "Overall turns bearish", "{{ticker}}: overall bias reversed bearish at chart close. Directional context, not an entry.")
 alertcondition(alertHtf and newHtfBull, "HTF bullish alignment", "{{ticker}}: enabled higher timeframes aligned bullish at chart close.")
@@ -2008,7 +2085,7 @@ alertcondition(alertStructure and chartBreak and chartData.breakCode < 0, "Chart
 
 int columnCount = 1 + (colBias ? 1 : 0) + (colEma ? 1 : 0) + (colStructure ? 1 : 0) + (colAdx ? 1 : 0) + (colRsi ? 1 : 0) + (colScore ? 1 : 0) + (colPrice ? 1 : 0) + (colDistance ? 1 : 0) + (colAtr ? 1 : 0)
 string panelPosition = locationInput == "Top Left" ? position.top_left : locationInput == "Bottom Left" ? position.bottom_left : position.top_right
-var table panel = table.new(panelPosition, columnCount, 13 + enabledCount, bgcolor = color.new(bgColor, transparency), frame_color = neutralColor, frame_width = 1, border_width = 0)
+var table panel = table.new(panelPosition, columnCount, 13 + enabledCount, bgcolor = color.new(bgColor, transparency), frame_color = neutralColor, frame_width = 1, border_width = 0, force_overlay = true)
 if barstate.isfirst and columnCount > 1
     for row = 0 to 9
         table.merge_cells(panel, 0, row, columnCount - 1, row)
@@ -2069,7 +2146,7 @@ if barstate.islast
 f_checklistCell(table checklist, int column, int row, string value, color background, color foreground, string tip = "") =>
     table.cell(checklist, column, row, value, bgcolor = background, text_color = foreground, text_size = size.tiny, text_halign = text.align_left, tooltip = tip)
 
-var table pullbackChecklist = table.new(position.bottom_right, 3, 22, bgcolor = showPullbackChecklist ? color.rgb(20, 25, 33) : na, frame_color = color.gray, frame_width = showPullbackChecklist ? 1 : 0)
+var table pullbackChecklist = table.new(position.bottom_right, 3, 22, bgcolor = showPullbackChecklist ? color.rgb(20, 25, 33) : na, frame_color = color.gray, frame_width = showPullbackChecklist ? 1 : 0, force_overlay = true)
 if barstate.isfirst
     table.merge_cells(pullbackChecklist, 0, 0, 2, 0)
     for row = 16 to 21

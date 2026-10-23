@@ -473,3 +473,46 @@ points only in its stated qualifying bands.
 Bottom right is reserved for this checklist. If the existing bias dashboard's
 Position is set to Bottom Right, it is placed at Top Right instead to avoid
 two tables occupying the same anchor. Other dashboard positions are unchanged.
+
+## RSI momentum divergence: chart and full pane
+
+Adapted from [rsi_divergence.pine](./rsi_divergence.pine). The main indicator
+shows bullish/bearish price labels, pivot-to-pivot price lines and horizontal
+divergence zones. **RSI momentum divergence** settings control detection, zones
+and retention. It reuses **Data and indicators → RSI length**, independently of
+the bias engine's RSI filter.
+
+**One indicator now shows both surfaces.** Its own lower pane shows the RSI
+curve, midline, 30/70 bands, gradient fills, Bull/Bear pivot labels and connecting
+oscillator lines. RSI uses the reference's thin green-to-purple curve, green
+bullish and purple bearish fills/labels/lines, independent of the shared chart
+colors, with dashed 30/70 guides and a solid 50 midline. All existing price plots, trendlines, Elliott drawings, zones,
+session shading and both dashboards use `force_overlay = true` to remain on the
+price chart. Session high/low fills follow their chart-overlay boundary plots.
+No companion indicator is required; the previously supplied companion was removed.
+The existing alert conditions are unchanged.
+
+After updating, **remove the old instance and add the indicator again** so
+TradingView applies the new `overlay = false` pane placement. Do not move the
+entire script onto the main price chart: that would put the RSI on the price
+scale. The divergence switch controls the signals, while the RSI curve remains
+visible in the lower pane.
+
+The oscillator is **RSI of `ta.mom(close, 10)`**, not conventional RSI of close.
+Regular bullish divergence is price LL / oscillator HL; bearish is price HH /
+oscillator LH. Pivots use five left and five right bars. The source spacing rule
+is retained: `ta.barssince(pivotFound[1])` between 5 and 50, equivalent to
+6–51 bars between pivot centers. Computations run on every bar, but signals and
+zone updates are committed only on confirmed chart candles. Labels are placed
+five bars back at the pivot **only after confirmation**; they were not available
+at the pivot candle. The live oscillator curve can still change until close.
+
+Zones preserve the source's lifecycle: a bullish level extends while the bar
+high is above it; a bearish level extends while the bar low is below it.
+Otherwise the zone stops, turns dashed and loses its glow. Unlike the source,
+stopped lines remain tracked and count toward the per-side retention cap, so
+historical objects do not accumulate without bounds. Recent connecting lines
+and price labels are capped separately at twice the retention setting. In the
+main indicator they share its existing 500-line/500-label budget and may still
+be evicted by other modules. Synthetic charts use chart OHLC for this module.
+Divergence is context, not an entry signal or guarantee.
