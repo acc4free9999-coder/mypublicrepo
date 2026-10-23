@@ -556,3 +556,34 @@ rules differ. The full DR module can retain up to six capped arrays of zones,
 plus its range box and three lines. All modules still share TradingView's
 500-box/line/label limits, so objects can be evicted under heavy use. No trading
 signals or guaranteed outcomes are implied.
+
+## Sideways phase boxes
+
+**Sideways phase (chart timeframe)** adds a chart-overlay box with a show/hide
+switch, method selector, thresholds, confirmation count, fill and retention cap.
+It does not change the dashboard's existing market-condition classification.
+
+| Method | Qualification |
+| --- | --- |
+| ADX | ADX <= 20 by default; uses the existing DI/ADX lengths |
+| Bollinger Band Width | 100 × band width / absolute SMA <= 1% (two-standard-deviation bands) |
+| ATR-normalized range | Window high minus low <= 4 ATR by default |
+| EMA compression | Fast/middle EMA spread and each EMA's one-bar movement <= 0.5 ATR |
+| Choppiness Index | 100 × log10(sum(true range) / window range) / log10(window length) >= 61.8 |
+| All methods | All five qualify (default, strict) |
+| Any method | At least one qualifies (permissive) |
+
+Defaults use a 20-bar measurement window and three consecutive qualifying
+closes. All modes wait for valid common data including positive ATR. A box
+becomes available **only at the confirming close**, but its left edge covers
+the measured window retrospectively; this is not an earlier signal.
+High/low boundaries freeze at creation. The right edge advances until a close
+outside those boundaries or a failed method test ends the phase. The exiting
+candle is excluded, no replacement starts on that candle, and confirmation
+must build again. Wicks outside the fixed boundaries alone do not end the phase.
+Recent boxes are kept (10 by default), sharing the script's 500-box budget.
+
+Thresholds need adjustment for instrument and timeframe; particularly Bollinger
+width is a percentage, not an absolute price distance. Low ADX alone indicates
+weak trend, not necessarily consolidation. No method guarantees a breakout or
+trade opportunity. No plots, requests or alerts are added.

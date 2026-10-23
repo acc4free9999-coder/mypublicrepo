@@ -13,6 +13,19 @@ bool showDashboard = input.bool(true, "Show market bias panel", group = G_PANELS
 bool showPullbackChecklist = input.bool(true, "Show pullback checklist panel", group = G_PANELS)
 
 string G_DATA = "Data and indicators"
+string G_SIDE = "Sideways phase (chart timeframe)"
+bool sideEnabled = input.bool(true, "Show sideways boxes", group = G_SIDE)
+string sideMethod = input.string("All methods", "Detection method", options = ["ADX", "Bollinger Band Width", "ATR-normalized range", "EMA compression", "Choppiness Index", "All methods", "Any method"], group = G_SIDE, tooltip = "All/Any combines all five tests. Low ADX alone means weak trend, not necessarily a tight range.")
+int sideLength = input.int(20, "Measurement window", minval = 5, maxval = 200, group = G_SIDE)
+int sideConfirm = input.int(3, "Consecutive qualifying closes", minval = 1, maxval = 50, group = G_SIDE)
+float sideAdxMax = input.float(20, "ADX maximum", minval = 1, maxval = 100, group = G_SIDE, tooltip = "Uses the existing DI length and ADX smoothing settings.")
+float sideBbMax = input.float(1, "Bollinger width maximum (%)", minval = 0.01, step = 0.1, group = G_SIDE, tooltip = "100 * (upper - lower) / abs(SMA), with bands at two standard deviations. Instrument-dependent.")
+float sideRangeMax = input.float(4, "Range maximum (ATR multiples)", minval = 0.1, step = 0.1, group = G_SIDE)
+float sideEmaMax = input.float(0.5, "EMA spread maximum (ATR multiples)", minval = 0.01, step = 0.05, group = G_SIDE, tooltip = "Absolute spread of the existing fast/middle EMAs divided by ATR. Also requires each EMA's one-bar movement <= this threshold.")
+float sideChopMin = input.float(61.8, "Choppiness minimum", minval = 0, maxval = 100, step = 0.1, group = G_SIDE)
+int sideKeep = input.int(10, "Maximum boxes kept", minval = 1, maxval = 40, group = G_SIDE)
+color sideColor = input.color(color.new(color.aqua, 88), "Box fill", group = G_SIDE)
+
 string G_RD = "RSI momentum divergence"
 bool rdEnabled = input.bool(true, "Show RSI divergence", group = G_RD, tooltip = "RSI of 10-bar momentum, using the RSI length below. The oscillator is in this indicator's lower pane; price drawings and dashboards stay on the main chart. Regular bullish/bearish divergence confirms five bars after an RSI pivot, at candle close.")
 bool rdShowZones = input.bool(true, "Show divergence zones", group = G_RD)
@@ -1998,6 +2011,60 @@ if ictLiqSell.size() > 0
             if low < lq.bx.get_bottom()
                 lq.brL := true
 
+
+// Sideways boundaries freeze on detection; a closing breakout or failed test ends the phase.
+[sideDiPlus, sideDiMinus, sideAdx] = ta.dmi(diLen, adxLen)
+float sideAtr = ta.atr(atrLen)
+float sideHigh = ta.highest(high, sideLength)
+float sideLow = ta.lowest(low, sideLength)
+float sideSpan = sideHigh - sideLow
+float sideBasis = ta.sma(close, sideLength)
+float sideDeviation = ta.stdev(close, sideLength)
+float sideBbWidth = not na(sideBasis) and math.abs(sideBasis) > 0 ? 400 * sideDeviation / math.abs(sideBasis) : na
+float sideFast = ta.ema(close, fastLen)
+float sideMiddle = ta.ema(close, midLen)
+float sideTrSum = math.sum(ta.tr(true), sideLength)
+// A zero-range window is treated as maximally choppy; other tests still need valid ATR.
+float sideChop = sideSpan == 0 ? 100 : sideTrSum > 0 ? 100 * math.log10(sideTrSum / sideSpan) / math.log10(sideLength) : na
+bool sideReady = bar_index >= sideLength - 1 and not na(sideAdx) and not na(sideBbWidth) and not na(sideChop) and not na(sideMiddle[1]) and not na(sideAtr) and sideAtr > 0
+bool sideAdxOk = sideReady and sideAdx <= sideAdxMax
+bool sideBbOk = sideReady and sideBbWidth <= sideBbMax
+bool sideRangeOk = sideReady and sideSpan / sideAtr <= sideRangeMax
+bool sideEmaOk = sideReady and math.abs(sideFast - sideMiddle) / sideAtr <= sideEmaMax and math.abs(sideFast - sideFast[1]) / sideAtr <= sideEmaMax and math.abs(sideMiddle - sideMiddle[1]) / sideAtr <= sideEmaMax
+bool sideChopOk = sideReady and sideChop >= sideChopMin
+bool sideQualifies = switch sideMethod
+    "ADX" => sideAdxOk
+    "Bollinger Band Width" => sideBbOk
+    "ATR-normalized range" => sideRangeOk
+    "EMA compression" => sideEmaOk
+    "Choppiness Index" => sideChopOk
+    "All methods" => sideAdxOk and sideBbOk and sideRangeOk and sideEmaOk and sideChopOk
+    => sideAdxOk or sideBbOk or sideRangeOk or sideEmaOk or sideChopOk
+
+var array<box> sideBoxes = array.new<box>()
+var box sideBox = na
+var float sideTop = na
+var float sideBottom = na
+var int sideStreak = 0
+if sideEnabled and barstate.isconfirmed
+    sideStreak := sideQualifies ? sideStreak + 1 : 0
+    if not na(sideBox)
+        bool sideBreakout = close > sideTop or close < sideBottom
+        if sideBreakout or not sideQualifies
+            // The exiting candle is not part of the confirmed sideways phase.
+            sideBox.set_right(bar_index - 1)
+            sideBox := na
+            sideStreak := 0
+        else
+            sideBox.set_right(bar_index)
+    else if sideStreak >= sideConfirm
+        sideTop := sideHigh
+        sideBottom := sideLow
+        if sideTop > sideBottom
+            sideBox := box.new(bar_index - sideLength + 1, sideTop, bar_index, sideBottom, bgcolor = sideColor, border_color = color.new(sideColor, 25), text = "SIDEWAYS | " + sideMethod, text_color = color.white, text_size = size.tiny, text_halign = text.align_left, force_overlay = true)
+            sideBoxes.push(sideBox)
+            while sideBoxes.size() > sideKeep
+                sideBoxes.shift().delete()
 
 // RSI is applied to momentum, not directly to close (as in rsi_divergence.pine).
 color rdBullColor = #33c570
