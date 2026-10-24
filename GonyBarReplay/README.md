@@ -21,6 +21,8 @@ npm run build
 
 **Indicators:** EMA (configurable period), Volume and RSI (default 14, Wilder's smoothing like TradingView's `ta.rsi`). RSI has its own pane below the price chart, with dashed 70 / 30 overbought and oversold levels and a 50 midline. The pane's legend shows the value at the hovered bar, or the latest bar. Drag the pane separator to resize it. The on/off states and periods are saved in `localStorage` (`gony-bar-replay:indicators`) and restored on reload.
 
+**Pine Script indicators:** Open the **Pine** tab in the bottom panel to edit and run a Pine v5/v6 indicator on the chart. The current implementation is an intentionally limited, local interpreter (not TradingView's full Pine runtime): it supports OHLCV series, assignments, arithmetic and comparisons, boolean operators, ternary expressions, history offsets (`close[1]`), single- or double-quoted strings, constant input defaults for `input.int()` / `input.float()` / `input.string()` / `input.bool()` / `input.color()` (including string option lists and hex colors), `plot()` with title/color/linewidth options, `ta.sma()` / `ta.ema()` / `ta.rsi()`, `math.abs()` / `math.max()` / `math.min()` / `math.round()`, and common `color.*` constants. Plots are overlaid on the price chart and follow replay without looking ahead. Strategies, custom types/methods, `if`/`for` control flow, mutable arrays, drawing objects, alerts, and external requests are not supported. The editor source is saved in the browser; click **Run** to apply edits or **Stop** to remove the script's plots.
+
 ### Paper account & position sizing
 
 - Size is entered in **lots**. PnL = Δprice × lots × contract size:

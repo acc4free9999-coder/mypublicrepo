@@ -2,12 +2,13 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Check, Pencil, X } from 'lucide-react';
 import { balanceCurve, tradeStats } from '@/engine/stats';
 import { BalanceChart } from './BalanceChart';
+import { PineEditor } from '@/components/layout/PineEditor';
 import { cn, fmtPrice, fmtQty, fmtTime, fmtUsd, pnlClass } from '@/lib/format';
 import { useTimeZone } from '@/store/useDisplayStore';
 import { usePricePrecision, useTradingStore } from '@/store/useTradingStore';
 import type { ClosedTrade, Position } from '@/types';
 
-type Tab = 'positions' | 'orders' | 'history' | 'journal';
+type Tab = 'positions' | 'orders' | 'history' | 'journal' | 'pine';
 
 export function BottomPanel() {
   const [tab, setTab] = useState<Tab>('positions');
@@ -22,6 +23,7 @@ export function BottomPanel() {
     ['orders', 'Orders', book.pendingOrders.length],
     ['history', 'History', book.closedTrades.length],
     ['journal', 'Journal', events.length],
+    ['pine', 'Pine', 0],
   ];
 
   return (
@@ -87,6 +89,7 @@ export function BottomPanel() {
             ))}
           </ul>
         )}
+        {tab === 'pine' && <PineEditor />}
       </div>
     </div>
   );

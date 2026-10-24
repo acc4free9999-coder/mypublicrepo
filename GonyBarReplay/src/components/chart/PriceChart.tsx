@@ -25,6 +25,7 @@ import { hitTestAll } from '@/drawings/geometry';
 import { attachDrawingInteractions, type DrawingLayer } from '@/drawings/interactions';
 import { TimeMapper } from '@/drawings/timeMapper';
 import { useDrawingStore } from '@/store/useDrawingStore';
+import { usePineStore } from '@/store/usePineStore';
 import { useChartData } from '@/hooks/useChartData';
 import { cn, fmtPrice } from '@/lib/format';
 import { sessionAt, type SessionRange } from '@/lib/sessions';
@@ -90,6 +91,8 @@ export function PriceChart() {
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const emaRef = useRef<ISeriesApi<'Line'> | null>(null);
   const rsiRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const pineSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
+  const pineSyncRef = useRef<{ current: SyncMarker | null }[]>([]);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const mapperRef = useRef(new TimeMapper());
   const primitiveRef = useRef<DrawingsPrimitive | null>(null);
@@ -111,7 +114,8 @@ export function PriceChart() {
   const indicators = useTradingStore((s) => s.indicators);
   const orderHistory = useTradingStore((s) => s.book.orderHistory);
   const closedTrades = useTradingStore((s) => s.book.closedTrades);
-  const { candles, drawingTimes, emaData, rsiData } = useChartData();
+  const { candles, drawingTimes, emaData, rsiData, pinePlots } = useChartData();
+  const activePineSource = usePineStore((s) => s.activeSource);
   const pp = usePricePrecision();
   const timeZone = useDisplayStore((s) => s.timeZone);
   const sessionColors = useDisplayStore((s) => s.sessionColors);
@@ -322,6 +326,8 @@ export function PriceChart() {
       chart.remove();
       chartRef.current = null;
       rsiRef.current = null;
+      pineSeriesRef.current = [];
+      pineSyncRef.current = [];
       rsiPrimitiveRef.current = null;
       setRsiPaneEl(null);
       for (const r of Object.values(sync.current)) r.current = null;
@@ -380,6 +386,31 @@ export function PriceChart() {
     };
   }, [rsiEnabled]);
 
+  // Keep one chart line per script plot; these remain on the price pane.
+  const pinePlotKey = pinePlots.map(({ title, color }) => `${title}|${color}`).join('\u001f');
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    while (pineSeriesRef.current.length > pinePlots.length) {
+      const series = pineSeriesRef.current.pop();
+      if (series) chart.removeSeries(series);
+      pineSyncRef.current.pop();
+    }
+    while (pineSeriesRef.current.length < pinePlots.length) {
+      const plot = pinePlots[pineSeriesRef.current.length];
+      pineSeriesRef.current.push(chart.addSeries(LineSeries, {
+        color: plot.color,
+        lineWidth: plot.lineWidth,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        lastValueVisible: true,
+      }));
+      pineSyncRef.current.push({ current: null });
+    }
+    pinePlots.forEach((plot, index) => pineSeriesRef.current[index]?.applyOptions({ color: plot.color, lineWidth: plot.lineWidth }));
+    pineSyncRef.current.forEach((marker) => { marker.current = null; });
+  }, [activePineSource, pinePlotKey, pinePlots.length]);
+
   // ───────────── data sync (runs every replay tick) ─────────────
   useEffect(() => {
     const chart = chartRef.current;
@@ -400,6 +431,11 @@ export function PriceChart() {
     syncSeries(volumeRef.current!, indicators.volume.enabled ? candles : [], mapVolume, `${ds}|${indicators.volume.enabled}`, sync.current.volume);
     syncSeries(emaRef.current!, emaData, mapLine, `${ds}|${indicators.ema.enabled}|${indicators.ema.period}`, sync.current.ema);
     if (rsiRef.current) syncSeries(rsiRef.current, rsiData, mapLine, `${ds}|${indicators.rsi.period}`, sync.current.rsi);
+    pinePlots.forEach((plot, index) => {
+      const series = pineSeriesRef.current[index];
+      const marker = pineSyncRef.current[index];
+      if (series && marker) syncSeries(series, plot.points, mapLine, `${ds}|pine|${activePineSource}|${index}`, marker);
+    });
 
     // Leaving a replay jumps back to the latest bars, even when the chart only appended them.
     const stopped = isReplayActive(prevStatus.current) && status === 'off';
@@ -419,7 +455,7 @@ export function PriceChart() {
         );
       }
     }
-  }, [candles, drawingTimes, emaData, rsiData, symbol, timeframe, indicators, dataKey, status, colorSessions, sessionColors, timeZone]);
+  }, [candles, drawingTimes, emaData, rsiData, pinePlots, activePineSource, symbol, timeframe, indicators, dataKey, status, colorSessions, sessionColors, timeZone]);
 
   // ───────────── display time zone ─────────────
   useEffect(() => {
@@ -505,6 +541,7 @@ export function PriceChart() {
         </div>
         <div className="flex gap-3">
           {indicators.ema.enabled && <span style={{ color: EMA_COLOR }}>EMA {indicators.ema.period} {fmtPrice(emaData[emaData.length - 1]?.value, pp)}</span>}
+          {pinePlots.map((plot, index) => <span key={`${index}-${plot.title}`} style={{ color: plot.color }}>{plot.title} {fmtPrice(plot.points[plot.points.length - 1]?.value, pp)}</span>)}
         </div>
       </div>
       {rsiPaneEl &&
