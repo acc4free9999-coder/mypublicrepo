@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../MultitimeframeBiasTrend.pine", import.meta.url), "utf8");
-const module = source.slice(source.indexOf("// Dealing range adaptation:"), source.indexOf("alertcondition(alertFlip"));
+const module = source.slice(source.indexOf("// Dealing range adaptation:"), source.indexOf("// BPR adaptation"));
 
 test("full dealing range is isolated and adds no plots to the RSI pane", () => {
   for (const group of ["DR | Range", "DR | FVG / IFVG", "DR | Order blocks",
@@ -37,4 +37,17 @@ test("empty history and faded zone ownership are guarded and bounded", () => {
   assert.match(module, /drx_killRegion\(r, paint\)\s+if not drx_keepDead\s+bag\.remove\(i\)/);
   assert.match(module, /if drx_highs\.size\(\) >= 2/);
   assert.match(module, /if drx_lows\.size\(\) >= 2/);
+});
+
+test("IFVG detection works with FVG display off and owns independent retention", () => {
+  assert.match(module, /if drx_fvgOn or drx_ifvgOn/);
+  assert.match(module, /if drx_fvgOn\s+bx := box\.new/);
+  assert.match(module, /drx_ifvgDR = input\.bool\(false/);
+  for (const side of ["Bull", "Bear"]) {
+    assert.match(module, new RegExp(`drx_pushRegion\\(drx_ifvg${side}, drx_Region\\.new\\(bx, r\\.hi, r\\.lo, bar_index`));
+    assert.match(module, new RegExp(`drx_sweepGroup\\(drx_ifvg${side},`));
+  }
+  const inversion = module.slice(module.indexOf("    if drx_ifvgOn"), module.indexOf("    drx_pruneOutsideDR(drx_obBull"));
+  assert.doesNotMatch(inversion, /\bbreak\b/);
+  assert.doesNotMatch(inversion, /drx_pushRegion\(drx_fvg/);
 });

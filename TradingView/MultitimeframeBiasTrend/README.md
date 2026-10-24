@@ -552,10 +552,61 @@ refreshed on the last bar. This module adds no plots or alert conditions.
 
 The older **Fair value gaps and order blocks** module is unchanged. Disable its
 FVG/OB switches if you want only the dealing-range versions; their detection
-rules differ. The full DR module can retain up to six capped arrays of zones,
+rules differ. The full DR module can retain up to eight capped arrays of zones,
 plus its range box and three lines. All modules still share TradingView's
 500-box/line/label limits, so objects can be evicted under heavy use. No trading
 signals or guaranteed outcomes are implied.
+
+### IFVG visibility
+
+IFVG detection no longer requires the **FVG** display checkbox. Original gaps
+are tracked without boxes when FVG is off and IFVG is on. IFVGs have
+separate bullish/bearish retention arrays, so new original gaps do not evict
+them from the same quota. All breached eligible gaps are processed at the
+confirming close, rather than just one per side. Only an original FVG can invert.
+The separate **IFVG range filter** defaults off; its age/window origin is the
+inversion candle, while the drawing's left edge retains the original gap.
+
+Source-gap detection still respects **DR | FVG / IFVG → DR Filter**, its rolling
+window, minimum gap size (0.1 ATR), and source retention quota. Turn that filter
+off for broader IFVG coverage.
+A checked display option does not guarantee
+that qualifying historical gaps exist. All boxes share the main indicator's
+500-box limit, and competing modules may evict them.
+
+### BPR replacement from bpr.pine
+
+**BPR (adapted from bpr.pine)** replaces the prior DR BPR implementation with
+the supplied [BPR reference](./bpr.pine) by TakingProphets. It is independent of
+the DR master switch, FVG display, DR filters and zone quotas. All reference
+controls are available: show/hide, sensitivity (default 2), show mitigated,
+label size/visibility, midpoint visibility/color/style/width, and bullish/bearish
+colors. Midpoint width is bounded to 1–5.
+
+Gap detection uses ATR(20), a minimum gap strictly greater than
+`ATR × sensitivity × 0.08`, and the source's middle-candle body condition.
+Sensitivity zero disables that body condition. A new gap is matched only
+against the **latest** qualifying opposing gap (not an older alternative),
+including the source's additional arithmetic condition. A BPR requires a
+strictly positive intersection. No 50-bar separation or minimum overlap filter
+from the old implementation remains.
+
+Only the latest bullish and bearish BPR boxes are kept, each with an optional
+midpoint. New same-direction BPRs replace that side's previous box and line.
+Zones extend to the next bar boundary while intact. The bullish zone is
+mitigated when `min(open, close)` is strictly below its bottom; the bearish zone
+when `max(open, close)` is strictly above its top. Equality leaves it unchanged.
+Mitigated zones are deleted or stopped and faded to 95% transparency.
+
+Integration differences: all mutations confirm at candle close; cached gap
+prices/timestamps replace unbounded historical indexing; drawings use time
+coordinates and `force_overlay` on the price chart (RSI remains below).
+Mitigation is latched so faded zones do not resume extending or repeat alerts.
+Detection alerts require a valid positive overlap (the source sets its flag
+before checking that). The four detection/mitigation events use `alert()` to
+avoid increasing the plot budget: create an alert on **Any alert() function
+call**. These share that channel with any other modules using `alert()`.
+Objects still share the global drawing limits. This is context, not an entry.
 
 ## Sideways phase boxes
 

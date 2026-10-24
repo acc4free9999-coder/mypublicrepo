@@ -2172,8 +2172,22 @@ int    drx_fvgExt   = input.int(8, "Extend", minval=1, maxval=500,              
 color  drx_fvgUp    = input.color(color.new(#4DD0E1, 80),  "Bull",              inline="f2",       group=drx_GR_FVG, display=display.none)
 color  drx_fvgDn    = input.color(color.new(#F48FB1, 80),  "Bear",              inline="f2",       group=drx_GR_FVG, display=display.none)
 bool   drx_ifvgOn   = input.bool(true,  "IFVG",                                 inline="f3",       group=drx_GR_FVG, display=display.none)
+bool drx_ifvgDR = input.bool(false, "IFVG range filter", group=drx_GR_FVG, tooltip="Off: retain inverse gaps even when they leave the rolling dealing range. Source FVGs still use the FVG DR Filter.")
 color  drx_ifvgUp   = input.color(color.new(#00BCD4, 75),  "iBull",             inline="f3",       group=drx_GR_FVG, display=display.none)
 color  drx_ifvgDn   = input.color(color.new(#E91E63, 75),  "iBear",             inline="f3",       group=drx_GR_FVG, display=display.none)
+
+string G_BPR = "BPR (adapted from bpr.pine)"
+bool bprEnabled = input.bool(true, "Show BPR", group=G_BPR, tooltip="Independent of the dealing-range master switch and FVG filters. Uses the latest opposing qualifying gap, ATR(20) sensitivity and body-based invalidation.")
+bool bprShowMitigated = input.bool(true, "Show mitigated BPR", group=G_BPR)
+string bprLabelSize = input.string("Small", "Label size", options=["Tiny", "Small", "Normal", "Large"], group=G_BPR)
+int bprSensitivity = input.int(2, "Sensitivity", minval=0, maxval=25, group=G_BPR)
+bool bprShowLabels = input.bool(true, "Show labels", group=G_BPR)
+bool bprShowMidpoint = input.bool(true, "Show midpoint line", group=G_BPR)
+color bprMidColor = input.color(color.white, "Midpoint color", group=G_BPR)
+string bprMidStyle = input.string("Dashed", "Midpoint style", options=["Solid", "Dashed", "Dotted"], group=G_BPR)
+int bprMidWidth = input.int(1, "Midpoint width", minval=1, maxval=5, group=G_BPR)
+color bprBullColor = input.color(color.new(color.green, 70), "Bullish BPR", group=G_BPR)
+color bprBearColor = input.color(color.new(color.red, 70), "Bearish BPR", group=G_BPR)
 
 string drx_GR_OB  = "DR | Order blocks"
 int    drx_pivLen   = input.int(10, "Pivot",  minval=1, maxval=50,              inline="o1",       group=drx_GR_OB, tooltip="Pivot length used for OB/BB structure.", display=display.none)
@@ -2212,6 +2226,8 @@ var array<drx_Region> drx_bbBull  = array.new<drx_Region>()
 var array<drx_Region> drx_bbBear  = array.new<drx_Region>()
 var array<drx_Region> drx_fvgBull = array.new<drx_Region>()
 var array<drx_Region> drx_fvgBear = array.new<drx_Region>()
+var array<drx_Region> drx_ifvgBull = array.new<drx_Region>()
+var array<drx_Region> drx_ifvgBear = array.new<drx_Region>()
 
 var int  drx_bias       = 0
 var bool drx_wantBullOB = false
@@ -2235,7 +2251,7 @@ drx_pushRegion(array<drx_Region> bag, drx_Region r) =>
 
 drx_killRegion(drx_Region r, color paint) =>
     r.alive := false
-    if drx_keepDead
+    if drx_keepDead and not na(r.shape)
         box.set_bgcolor(r.shape, color.new(paint, drx_deadOp))
         box.set_border_color(r.shape, color.new(paint, drx_deadOp))
     else
@@ -2253,7 +2269,7 @@ drx_sweepGroup(array<drx_Region> bag, color paint, int ext, bool useAge, int max
                     drx_killRegion(r, paint)
                     if not drx_keepDead
                         bag.remove(i)
-                if not drop
+                if not drop and not na(r.shape)
                     box.set_right(r.shape, bar_index + ext)
 
 drx_pruneOutsideDR(array<drx_Region> bag, float dHi, float dLo, int leftEdge, bool filterOn) =>
@@ -2500,7 +2516,8 @@ if drx_enabled and barstate.isconfirmed
                                     placedBull := true
                         break
 
-    if drx_fvgOn
+    // Keep source gaps for IFVG detection even when their boxes are hidden.
+    if drx_fvgOn or drx_ifvgOn
 
         float upBase = high[2]
         float upTop  = low
@@ -2510,7 +2527,9 @@ if drx_enabled and barstate.isconfirmed
             bool  thickOk = drx_atrOk and thick >= drx_atrVal * 0.1
             bool  win     = drx_drOk and (not drx_fvgDR or drx_inRange(upTop, upBase, drx_drHi, drx_drLo)) and drx_inWindow(bar_index - 1, drx_leftX)
             if thickOk and win
-                box bx = box.new(bar_index - 1, upTop, bar_index + drx_fvgExt, upBase, bgcolor=drx_fvgUp, border_width=1, border_color=drx_fvgUp, text=drx_showLbl ? "FVG+" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                box bx = na
+                if drx_fvgOn
+                    bx := box.new(bar_index - 1, upTop, bar_index + drx_fvgExt, upBase, bgcolor=drx_fvgUp, border_width=1, border_color=drx_fvgUp, text=drx_showLbl ? "FVG+" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
                 drx_pushRegion(drx_fvgBull, drx_Region.new(bx, upTop, upBase, bar_index - 1, 1, true, "FVG"))
 
         float dnBase = low[2]
@@ -2521,7 +2540,9 @@ if drx_enabled and barstate.isconfirmed
             bool  thickOk = drx_atrOk and thick >= drx_atrVal * 0.1
             bool  win     = drx_drOk and (not drx_fvgDR or drx_inRange(dnBase, dnBot, drx_drHi, drx_drLo)) and drx_inWindow(bar_index - 1, drx_leftX)
             if thickOk and win
-                box bx = box.new(bar_index - 1, dnBase, bar_index + drx_fvgExt, dnBot, bgcolor=drx_fvgDn, border_width=1, border_color=drx_fvgDn, text=drx_showLbl ? "FVG-" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
+                box bx = na
+                if drx_fvgOn
+                    bx := box.new(bar_index - 1, dnBase, bar_index + drx_fvgExt, dnBot, bgcolor=drx_fvgDn, border_width=1, border_color=drx_fvgDn, text=drx_showLbl ? "FVG-" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
                 drx_pushRegion(drx_fvgBear, drx_Region.new(bx, dnBase, dnBot, bar_index - 1, -1, true, "FVG"))
 
     if drx_ifvgOn
@@ -2530,25 +2551,23 @@ if drx_enabled and barstate.isconfirmed
             for i = drx_fvgBull.size() - 1 to 0
                 drx_Region r = drx_fvgBull.get(i)
                 if r.alive and r.kind == "FVG" and close < r.lo
-                    bool win = drx_drOk and (not drx_fvgDR or drx_inRange(r.hi, r.lo, drx_drHi, drx_drLo)) and drx_inWindow(r.born, drx_leftX)
+                    bool win = not drx_ifvgDR or (drx_drOk and drx_inRange(r.hi, r.lo, drx_drHi, drx_drLo) and drx_inWindow(r.born, drx_leftX))
                     if win
                         box bx = box.new(r.born, r.hi, bar_index + drx_fvgExt, r.lo, bgcolor=drx_ifvgDn, border_width=1, border_color=drx_ifvgDn, text=drx_showLbl ? "IFVG-" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
-                        drx_pushRegion(drx_fvgBear, drx_Region.new(bx, r.hi, r.lo, r.born, -1, true, "IFVG"))
+                        drx_pushRegion(drx_ifvgBear, drx_Region.new(bx, r.hi, r.lo, bar_index, -1, true, "IFVG"))
                     box.delete(r.shape)
                     drx_fvgBull.remove(i)
-                    break
 
         if drx_fvgBear.size() > 0
             for i = drx_fvgBear.size() - 1 to 0
                 drx_Region r = drx_fvgBear.get(i)
                 if r.alive and r.kind == "FVG" and close > r.hi
-                    bool win = drx_drOk and (not drx_fvgDR or drx_inRange(r.hi, r.lo, drx_drHi, drx_drLo)) and drx_inWindow(r.born, drx_leftX)
+                    bool win = not drx_ifvgDR or (drx_drOk and drx_inRange(r.hi, r.lo, drx_drHi, drx_drLo) and drx_inWindow(r.born, drx_leftX))
                     if win
                         box bx = box.new(r.born, r.hi, bar_index + drx_fvgExt, r.lo, bgcolor=drx_ifvgUp, border_width=1, border_color=drx_ifvgUp, text=drx_showLbl ? "IFVG+" : "", text_size=size.tiny, text_color=drx_txtCol, text_halign=text.align_right, force_overlay = true)
-                        drx_pushRegion(drx_fvgBull, drx_Region.new(bx, r.hi, r.lo, r.born, 1, true, "IFVG"))
+                        drx_pushRegion(drx_ifvgBull, drx_Region.new(bx, r.hi, r.lo, bar_index, 1, true, "IFVG"))
                     box.delete(r.shape)
                     drx_fvgBear.remove(i)
-                    break
 
     drx_pruneOutsideDR(drx_obBull,  drx_drHi, drx_drLo, drx_leftX, drx_obDR)
     drx_pruneOutsideDR(drx_obBear,  drx_drHi, drx_drLo, drx_leftX, drx_obDR)
@@ -2556,6 +2575,8 @@ if drx_enabled and barstate.isconfirmed
     drx_pruneOutsideDR(drx_bbBear,  drx_drHi, drx_drLo, drx_leftX, drx_bbDR)
     drx_pruneOutsideDR(drx_fvgBull, drx_drHi, drx_drLo, drx_leftX, drx_fvgDR)
     drx_pruneOutsideDR(drx_fvgBear, drx_drHi, drx_drLo, drx_leftX, drx_fvgDR)
+    drx_pruneOutsideDR(drx_ifvgBull, drx_drHi, drx_drLo, drx_leftX, drx_ifvgDR)
+    drx_pruneOutsideDR(drx_ifvgBear, drx_drHi, drx_drLo, drx_leftX, drx_ifvgDR)
 
     drx_sweepGroup(drx_obBull,  drx_obUp,  drx_obExt,  false, 0)
     drx_sweepGroup(drx_obBear,  drx_obDn,  drx_obExt,  false, 0)
@@ -2563,7 +2584,100 @@ if drx_enabled and barstate.isconfirmed
     drx_sweepGroup(drx_bbBear,  drx_bbDn,  drx_bbExt,  true,  drx_bbAge)
     drx_sweepGroup(drx_fvgBull, drx_fvgUp, drx_fvgExt, false, 0)
     drx_sweepGroup(drx_fvgBear, drx_fvgDn, drx_fvgExt, false, 0)
+    drx_sweepGroup(drx_ifvgBull, drx_ifvgUp, drx_fvgExt, false, 0)
+    drx_sweepGroup(drx_ifvgBear, drx_ifvgDn, drx_fvgExt, false, 0)
 
+
+// BPR adaptation from bpr.pine (TakingProphets): retain gap prices instead of
+// indexing arbitrarily old bars, and latch mitigation so faded zones stay stopped.
+type BprGap
+    float hi
+    float lo
+    float candleHigh
+    float priorLow
+    int leftTime
+
+type BprZone
+    box shape
+    line midline
+    bool active = true
+
+f_bprZone(BprZone previous, BprGap opposite, float hi, float lo, bool bullish, int rightTime) =>
+    if not na(previous)
+        previous.shape.delete()
+        previous.midline.delete()
+    color paint = bullish ? bprBullColor : bprBearColor
+    string font = bprLabelSize == "Tiny" ? size.tiny : bprLabelSize == "Small" ? size.small : bprLabelSize == "Large" ? size.large : size.normal
+    box shape = box.new(opposite.leftTime, hi, rightTime, lo, xloc=xloc.bar_time, border_color=paint, bgcolor=paint, text=bprShowLabels ? "BPR" : "", text_size=font, text_color=color.white, text_halign=text.align_right, text_valign=text.align_bottom, force_overlay = true)
+    line midline = na
+    if bprShowMidpoint
+        float mid = math.avg(hi, lo)
+        string style = bprMidStyle == "Dashed" ? line.style_dashed : bprMidStyle == "Dotted" ? line.style_dotted : line.style_solid
+        midline := line.new(opposite.leftTime, mid, rightTime, mid, xloc=xloc.bar_time, color=bprMidColor, width=bprMidWidth, style=style, force_overlay = true)
+    BprZone.new(shape, midline)
+
+f_bprUpdate(BprZone zone, bool bullish, int rightTime) =>
+    bool mitigated = false
+    if not na(zone) and zone.active
+        float boundary = bullish ? zone.shape.get_bottom() : zone.shape.get_top()
+        float bodyEdge = bullish ? math.min(open, close) : math.max(open, close)
+        bool intact = bullish ? bodyEdge > boundary : bodyEdge < boundary
+        bool broken = bullish ? bodyEdge < boundary : bodyEdge > boundary
+        if intact
+            zone.shape.set_right(rightTime)
+            if not na(zone.midline)
+                zone.midline.set_x2(rightTime)
+        else if broken
+            mitigated := true
+            zone.active := false
+            if bprShowMitigated
+                color paint = bullish ? bprBullColor : bprBearColor
+                zone.shape.set_right(time)
+                zone.shape.set_bgcolor(color.new(paint, 95))
+                zone.shape.set_border_color(color.new(paint, 95))
+                if not na(zone.midline)
+                    zone.midline.set_x2(time)
+            else
+                zone.shape.delete()
+                zone.midline.delete()
+    mitigated
+
+float bprAtr = ta.atr(20)
+float bprBody = math.abs(open - close)
+bool bprBase = bprSensitivity == 0 or bprBody[1] > (bprBody + bprBody[2]) * 0.3
+float bprMinimum = bprAtr * bprSensitivity * 0.08
+bool bprNewBearGap = bprBase and low[2] > high and low[2] - high > bprMinimum
+bool bprNewBullGap = bprBase and low > high[2] and low - high[2] > bprMinimum
+var BprGap bprLastBull = na
+var BprGap bprLastBear = na
+var BprZone bprBullZone = na
+var BprZone bprBearZone = na
+if bprEnabled and barstate.isconfirmed
+    int bprRightTime = na(time_close) ? time : time_close
+    if bprNewBullGap
+        bprLastBull := BprGap.new(low, high[2], high, low[2], time[1])
+        if not na(bprLastBear)
+            float hi = math.min(bprLastBear.hi, low)
+            float lo = math.max(bprLastBear.lo, high[2])
+            bool sourceCondition = bprLastBear.candleHigh + bprLastBear.priorLow + high[2] + low > math.max(bprLastBear.priorLow, low) - math.min(bprLastBear.candleHigh, high[2])
+            if sourceCondition and hi > lo
+                bprBullZone := f_bprZone(bprBullZone, bprLastBear, hi, lo, true, bprRightTime)
+                alert("Bullish BPR detected", alert.freq_once_per_bar_close)
+    if bprNewBearGap
+        bprLastBear := BprGap.new(low[2], high, high, low[2], time[1])
+        if not na(bprLastBull)
+            float hi = math.min(bprLastBull.hi, low[2])
+            float lo = math.max(bprLastBull.lo, high)
+            bool sourceCondition = bprLastBull.candleHigh + bprLastBull.priorLow + high[2] + low > math.max(bprLastBull.priorLow, low) - math.min(bprLastBull.candleHigh, high[2])
+            if sourceCondition and hi > lo
+                bprBearZone := f_bprZone(bprBearZone, bprLastBull, hi, lo, false, bprRightTime)
+                alert("Bearish BPR detected", alert.freq_once_per_bar_close)
+    bool bprBullMitigated = f_bprUpdate(bprBullZone, true, bprRightTime)
+    bool bprBearMitigated = f_bprUpdate(bprBearZone, false, bprRightTime)
+    if bprBullMitigated
+        alert("Bullish BPR mitigated", alert.freq_once_per_bar_close)
+    if bprBearMitigated
+        alert("Bearish BPR mitigated", alert.freq_once_per_bar_close)
 
 alertcondition(alertFlip and flipBull, "Overall turns bullish", "{{ticker}}: overall bias reversed bullish at chart close. Directional context, not an entry.")
 alertcondition(alertFlip and flipBear, "Overall turns bearish", "{{ticker}}: overall bias reversed bearish at chart close. Directional context, not an entry.")
