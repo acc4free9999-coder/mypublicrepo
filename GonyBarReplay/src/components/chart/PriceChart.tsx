@@ -26,6 +26,8 @@ import { attachDrawingInteractions, type DrawingLayer } from '@/drawings/interac
 import { TimeMapper } from '@/drawings/timeMapper';
 import { useDrawingStore } from '@/store/useDrawingStore';
 import { usePineStore } from '@/store/usePineStore';
+import { PineDrawingsPrimitive } from '@/pine/PineDrawingsPrimitive';
+import type { PineChartDrawing } from '@/pine/PineDrawingsPrimitive';
 import { useChartData } from '@/hooks/useChartData';
 import { cn, fmtPrice } from '@/lib/format';
 import { sessionAt, type SessionRange } from '@/lib/sessions';
@@ -93,6 +95,8 @@ export function PriceChart() {
   const rsiRef = useRef<ISeriesApi<'Line'> | null>(null);
   const pineSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
   const pineSyncRef = useRef<{ current: SyncMarker | null }[]>([]);
+  const pineDrawingsRef = useRef<PineChartDrawing[]>([]);
+  const pineDrawingsPrimitiveRef = useRef<PineDrawingsPrimitive | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const mapperRef = useRef(new TimeMapper());
   const primitiveRef = useRef<DrawingsPrimitive | null>(null);
@@ -114,7 +118,7 @@ export function PriceChart() {
   const indicators = useTradingStore((s) => s.indicators);
   const orderHistory = useTradingStore((s) => s.book.orderHistory);
   const closedTrades = useTradingStore((s) => s.book.closedTrades);
-  const { candles, drawingTimes, emaData, rsiData, pinePlots } = useChartData();
+  const { candles, drawingTimes, emaData, rsiData, pinePlots, pineDrawings } = useChartData();
   const activePineSource = usePineStore((s) => s.activeSource);
   const pp = usePricePrecision();
   const timeZone = useDisplayStore((s) => s.timeZone);
@@ -173,6 +177,9 @@ export function PriceChart() {
       wickUpColor: UP,
       wickDownColor: DOWN,
     });
+    const pineDrawingsPrimitive = new PineDrawingsPrimitive(() => pineDrawingsRef.current);
+    candle.attachPrimitive(pineDrawingsPrimitive);
+    pineDrawingsPrimitiveRef.current = pineDrawingsPrimitive;
     // A saved manual mode has no saved price range; fit once before restoring it.
     candle.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 }, autoScale: true });
     const volume = chart.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
@@ -328,6 +335,8 @@ export function PriceChart() {
       rsiRef.current = null;
       pineSeriesRef.current = [];
       pineSyncRef.current = [];
+      pineDrawingsRef.current = [];
+      pineDrawingsPrimitiveRef.current = null;
       rsiPrimitiveRef.current = null;
       setRsiPaneEl(null);
       for (const r of Object.values(sync.current)) r.current = null;
@@ -436,6 +445,8 @@ export function PriceChart() {
       const marker = pineSyncRef.current[index];
       if (series && marker) syncSeries(series, plot.points, mapLine, `${ds}|pine|${activePineSource}|${index}`, marker);
     });
+    pineDrawingsRef.current = pineDrawings;
+    pineDrawingsPrimitiveRef.current?.requestUpdate();
 
     // Leaving a replay jumps back to the latest bars, even when the chart only appended them.
     const stopped = isReplayActive(prevStatus.current) && status === 'off';
@@ -455,7 +466,7 @@ export function PriceChart() {
         );
       }
     }
-  }, [candles, drawingTimes, emaData, rsiData, pinePlots, activePineSource, symbol, timeframe, indicators, dataKey, status, colorSessions, sessionColors, timeZone]);
+  }, [candles, drawingTimes, emaData, rsiData, pinePlots, pineDrawings, activePineSource, symbol, timeframe, indicators, dataKey, status, colorSessions, sessionColors, timeZone]);
 
   // ───────────── display time zone ─────────────
   useEffect(() => {
