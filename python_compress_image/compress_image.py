@@ -9,6 +9,17 @@ from tkinterdnd2 import TkinterDnD, DND_FILES
 import json
 
 
+if sys.platform == "darwin" and tk.TkVersion < 8.6:
+    sys.exit(
+        "This app requires Tk 8.6 or newer on macOS. Apple's Tk 8.5 can "
+        "render labels, image folder fields, and sliders as blank.\n"
+        "Install a supported runtime with:\n"
+        "  brew install python@3.13 python-tk@3.13\n"
+        "Then recreate the virtual environment using python3.13 as described "
+        "in readme.md."
+    )
+
+
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 CONFIG_FILE = "config.json"
 
