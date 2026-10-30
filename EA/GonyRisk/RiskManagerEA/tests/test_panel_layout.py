@@ -95,7 +95,7 @@ int main() {
  assert(rowColors.back() == clrPaleGreen);
  std::vector<string> source = {
   "Daily used: 2/3 | Remaining: 1 | Entry: Blocked: position open",
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "", " "
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "     SL 20.0 / TP 30.0 pips", "", " "
  };
  for(int width : {80, 240, 568, 900}) {
   std::vector<string> wrapped;
@@ -104,6 +104,7 @@ int main() {
   for(auto s : source) original += withoutSpaces(s);
   for(auto s : wrapped) {
    assert(EstimateTextWidth(s, 11) <= width);
+    assert(s.empty() || s.front() != ' ');
    actual += withoutSpaces(s);
   }
   assert(original == actual);
@@ -153,9 +154,13 @@ int main() {
             self.assertIn(f'g_prefix + "{button}"', events)
             self.assertIn(f'ObjectDelete(0, g_prefix + "{button}")', extract(source, "RemovePanel"))
         self.assertIn("chartWidth - x", extract(source, "CreatePanel"))
+        self.assertNotIn("MAX_MINUS", source)
+        self.assertNotIn("MAX_PLUS", source)
+        self.assertIn("Open %d/%d", extract(source, "GetPanelInfoLines"))
         self.assertNotIn("GetPanelInfoLines", extract(source, "RemovePanel"))
         self.assertIn("colors[start + i], fontSize", extract(source, "CreatePanel"))
         self.assertIn("OBJPROP_COLOR, colors[start + i]", extract(source, "UpdatePanelInfo"))
+        self.assertIn("OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER", extract(source, "CreateLabel"))
 
 
 if __name__ == "__main__":

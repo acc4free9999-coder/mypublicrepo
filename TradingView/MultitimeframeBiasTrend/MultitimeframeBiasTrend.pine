@@ -11,6 +11,8 @@ max_bars_back(volume, 5000)
 string G_PANELS = "Panels"
 bool showDashboard = input.bool(true, "Show market bias panel", group = G_PANELS)
 bool showPullbackChecklist = input.bool(true, "Show pullback checklist panel", group = G_PANELS)
+string checklistDisplay = input.string("Bottom right panel", "Pullback checklist display", options = ["Bottom right panel", "Near latest price"], group = G_PANELS)
+string checklistTextSize = input.string("Small", "Pullback checklist text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = G_PANELS)
 
 string G_DATA = "Data and indicators"
 string G_SIDE = "Sideways phase (chart timeframe)"
@@ -76,7 +78,7 @@ float wt5 = input.float(0.5, "Weight", minval = 0.1, step = 0.5, inline = "5", g
 
 string G_VIEW = "Dashboard"
 string locationInput = input.string("Top Right", "Position", options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group = G_VIEW, tooltip = "Bottom Right is reserved for the pullback reference checklist. Selecting it places this dashboard at Top Right instead.")
-string textSize = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large"], group = G_VIEW)
+string textSize = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = G_VIEW)
 int transparency = input.int(10, "Background transparency (0 = opaque)", minval = 0, maxval = 90, group = G_VIEW)
 color bgColor = input.color(color.rgb(20, 25, 33), "Terminal background", group = G_VIEW)
 color textColor = input.color(color.white, "Text", group = G_VIEW)
@@ -469,7 +471,7 @@ f_summaryText(string title, Summary s) =>
     title + ": " + (s.valid == 0 ? "N/A" : f_biasText(s.bias) + " [" + f_signed(s.score) + "]") + "  (" + str.tostring(s.valid) + "/" + str.tostring(s.enabled) + ")"
 
 f_cell(table panel, int column, int row, string value, color background, color foreground, string tip = "") =>
-    string font = textSize == "Tiny" ? size.tiny : textSize == "Normal" ? size.normal : textSize == "Large" ? size.large : size.small
+    string font = textSize == "Tiny" ? size.tiny : textSize == "Normal" ? size.normal : textSize == "Large" ? size.large : textSize == "Huge" ? size.huge : size.small
     table.cell(panel, column, row, value, text_color = foreground, bgcolor = color.new(background, transparency), text_size = font, tooltip = tip)
 
 f_trimLabels(array<label> pool, int limit) =>
@@ -2751,14 +2753,16 @@ if barstate.islast
 
 // Reference only: no setup is evaluated and no points are awarded automatically.
 f_checklistCell(table checklist, int column, int row, string value, color background, color foreground, string tip = "") =>
-    table.cell(checklist, column, row, value, bgcolor = background, text_color = foreground, text_size = size.tiny, text_halign = text.align_left, tooltip = tip)
+    string font = checklistTextSize == "Tiny" ? size.tiny : checklistTextSize == "Normal" ? size.normal : checklistTextSize == "Large" ? size.large : checklistTextSize == "Huge" ? size.huge : size.small
+    table.cell(checklist, column, row, value, bgcolor = background, text_color = foreground, text_size = font, text_halign = text.align_left, tooltip = tip)
 
-var table pullbackChecklist = table.new(position.bottom_right, 3, 22, bgcolor = showPullbackChecklist ? color.rgb(20, 25, 33) : na, frame_color = color.gray, frame_width = showPullbackChecklist ? 1 : 0, force_overlay = true)
+var table pullbackChecklist = table.new(position.bottom_right, 3, 22, bgcolor = showPullbackChecklist and checklistDisplay == "Bottom right panel" ? color.rgb(20, 25, 33) : na, frame_color = color.gray, frame_width = showPullbackChecklist and checklistDisplay == "Bottom right panel" ? 1 : 0, force_overlay = true)
+var label pullbackChecklistLabel = na
 if barstate.isfirst
     table.merge_cells(pullbackChecklist, 0, 0, 2, 0)
     for row = 16 to 21
         table.merge_cells(pullbackChecklist, 0, row, 2, row)
-if barstate.islast and showPullbackChecklist
+if barstate.islast and showPullbackChecklist and checklistDisplay == "Bottom right panel"
     color checklistBg = color.rgb(20, 25, 33)
     color checklistHeader = color.rgb(42, 49, 60)
     f_checklistCell(pullbackChecklist, 0, 0, "PULLBACK CHECKLIST | REFERENCE / 100", checklistHeader, color.white)
@@ -2812,3 +2816,38 @@ if barstate.islast and showPullbackChecklist
     f_checklistCell(pullbackChecklist, 0, 19, "85-100 A+ | 70-84 A | 50-69 B | <50 Invalid", checklistHeader, color.white)
     f_checklistCell(pullbackChecklist, 0, 20, "Rubric minimum: 70 | Hover each check for full criteria", checklistBg, color.aqua)
     f_checklistCell(pullbackChecklist, 0, 21, "REFERENCE ONLY | No live score, entry or risk-sizing signal", checklistBg, color.silver)
+
+if barstate.islast
+    if not showPullbackChecklist or checklistDisplay != "Bottom right panel"
+        table.clear(pullbackChecklist, 0, 0, 2, 21)
+    if showPullbackChecklist and checklistDisplay == "Near latest price"
+        string checklistLabelText = "PULLBACK CHECKLIST | REFERENCE / 100"
+        checklistLabelText += "\nHTF: H4 + Daily structure aligned [15/0]"
+        checklistLabelText += "\nLiquidity draw / RR >= 2 [10/5/0]"
+        checklistLabelText += "\nPrior clean swing touches [5/2/0]"
+        checklistLabelText += "\nTrendline slope 30-45 degrees [5/0]"
+        checklistLabelText += "\nSwing spacing 10-20+ candles [5/0]"
+        checklistLabelText += "\nCountertrend bodies / volume fade [10/0]"
+        checklistLabelText += "\nContact rejection / reversal candle [5/0]"
+        checklistLabelText += "\nHorizontal S/R role reversal [8/0]"
+        checklistLabelText += "\nFib 61.8-78.6% / 50% [6/3/0]"
+        checklistLabelText += "\nEMA20 / SMA50 / VWAP confluence [6/0]"
+        checklistLabelText += "\nLiquidity sweep + reclaim [10/0]"
+        checklistLabelText += "\nUnmitigated FVG at contact [8/0]"
+        checklistLabelText += "\nBreaker / mitigation block [7/0]"
+        checklistLabelText += "\nTriangle break + retest bonus [+5]"
+        checklistLabelText += "\nHARD FAIL: no HTF alignment / line breakdown"
+        checklistLabelText += "\nHARD FAIL: RR < 1:2 / high-impact news +/-15m"
+        checklistLabelText += "\nREFERENCE ONLY | Total capped at 100; minimum 70"
+        string checklistFont = checklistTextSize == "Tiny" ? size.tiny : checklistTextSize == "Normal" ? size.normal : checklistTextSize == "Large" ? size.large : checklistTextSize == "Huge" ? size.huge : size.small
+        if na(pullbackChecklistLabel)
+            pullbackChecklistLabel := label.new(bar_index + 2, close, checklistLabelText, xloc = xloc.bar_index, yloc = yloc.price, color = color.rgb(20, 25, 33), style = label.style_label_left, textcolor = color.white, size = checklistFont, textalign = text.align_left, force_overlay = true)
+        else
+            label.set_xy(pullbackChecklistLabel, bar_index + 2, close)
+            label.set_text(pullbackChecklistLabel, checklistLabelText)
+            label.set_textcolor(pullbackChecklistLabel, color.white)
+            label.set_color(pullbackChecklistLabel, color.rgb(20, 25, 33))
+            label.set_size(pullbackChecklistLabel, checklistFont)
+    else if not na(pullbackChecklistLabel)
+        label.delete(pullbackChecklistLabel)
+        pullbackChecklistLabel := na

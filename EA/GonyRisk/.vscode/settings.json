@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^python3 -m unittest test_daily_trade_limit\\.DailyTradeLimitTests\\.test_maximum_open_trades_closes_newest_excess_position -v$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

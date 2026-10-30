@@ -12,7 +12,7 @@ EA = Path(__file__).resolve().parents[1] / "RiskManagerEA.mq5"
 
 
 def function(source, name):
-    start = re.search(r"\b(?:bool|void|string)\s+" + re.escape(name) + r"\(", source).start()
+    start = re.search(r"\b(?:bool|void|string|int)\s+" + re.escape(name) + r"\(", source).start()
     opening = source.index("{", start)
     depth = 1
     end = opening + 1
@@ -23,6 +23,199 @@ def function(source, name):
 
 
 class DailyTradeLimitTests(unittest.TestCase):
+    def test_cooldown_countdown_is_shown_separately_and_updates(self):
+        source = EA.read_text()
+        panel = function(source, "GetPanelInfoLines")
+        self.assertIn('lines[n++] = "Cooldown: " + GetCooldownText(symbol);', panel)
+
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        countdown = function(source, "GetCooldownText")
+        harness = r"""
+#include <cassert>
+#include <cstdio>
+#include <string>
+using std::string;
+using datetime = long;
+int InpCooldownMinutes = 5;
+datetime now = 1200, latestClose = 1140;
+datetime TimeCurrent() { return now; }
+datetime GetLastCloseTime(const string &) { return latestClose; }
+string StringFormat(const char *format, int minutes, int seconds) {
+ char buffer[32];
+ std::snprintf(buffer, sizeof(buffer), format, minutes, seconds);
+ return buffer;
+}
+"""
+        cases = r"""
+int main() {
+ assert(GetCooldownText("XAUUSDm") == "04:00");
+ now += 10;
+ assert(GetCooldownText("XAUUSDm") == "03:50");
+ now = 1200;
+ latestClose = 500;
+ assert(GetCooldownText("XAUUSDm") == "Ready");
+ InpCooldownMinutes = 0;
+ assert(GetCooldownText("XAUUSDm") == "Off");
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "cooldown_countdown.cpp"
+            binary = Path(directory) / "cooldown_countdown"
+            cpp.write_text(harness + countdown + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_configurable_maximum_open_trades(self):
+        source = EA.read_text()
+        self.assertIn("InpMaxOpenTrades = 1", source)
+        self.assertNotIn("InpOneTradeOnly", source)
+        self.assertIn("IsOpenTradeLimitReached(openTrades)", function(source, "OpenTrade"))
+        panel = function(source, "GetPanelInfoLines")
+        self.assertIn("IsOpenTradeLimitReached(open)", panel)
+        self.assertIn("Open %d/%d", panel)
+        self.assertIn("if(InpMaxOpenTrades < 1)", function(source, "OnInit"))
+
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        limit_check = function(source, "IsOpenTradeLimitReached")
+        harness = r"""
+#include <cassert>
+int InpMaxOpenTrades = 1;
+"""
+        cases = r"""
+int main() {
+ assert(!IsOpenTradeLimitReached(0));
+ assert(IsOpenTradeLimitReached(1));
+ InpMaxOpenTrades = 3;
+ assert(!IsOpenTradeLimitReached(0));
+ assert(!IsOpenTradeLimitReached(2));
+ assert(IsOpenTradeLimitReached(3));
+ assert(IsOpenTradeLimitReached(4));
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "open_trade_limit.cpp"
+            binary = Path(directory) / "open_trade_limit"
+            cpp.write_text(harness + limit_check + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_maximum_open_trades_closes_newest_excess_position(self):
+        source = EA.read_text()
+        self.assertEqual(source.count("void EnforceMaxOpenTrades("), 1)
+        self.assertEqual(source.count("EnforceMaxOpenTrades(RM_SYMBOL);"), 3)
+        self.assertNotIn("void EnforceMaxOpenTrades", function(source, "OnChartEvent"))
+        for name in ("OnTradeTransaction", "OnInit", "OnTimer", "OnTick"):
+            self.assertIn("EnforceMaxOpenTrades", function(source, name))
+
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        count_positions = function(source, "CountOpenTradesOnSymbol")
+        enforcement = function(source, "EnforceMaxOpenTrades")
+        harness = r"""
+#include <cassert>
+#include <string>
+#include <vector>
+using std::string;
+using ulong = unsigned long;
+enum { POSITION_SYMBOL, POSITION_TIME };
+struct Position { ulong ticket; string symbol; long time; bool open; };
+std::vector<Position> positions;
+std::vector<ulong> closedTickets;
+int selected = -1;
+int InpMaxOpenTrades = 2;
+int PositionsTotal() {
+ int count = 0;
+ for(const auto &position : positions) if(position.open) count++;
+ return count;
+}
+ulong PositionGetTicket(int index) {
+ for(const auto &position : positions)
+  if(position.open && index-- == 0) return position.ticket;
+ return 0;
+}
+bool PositionSelectByTicket(ulong ticket) {
+ for(int i = 0; i < int(positions.size()); i++)
+  if(positions[i].open && positions[i].ticket == ticket) { selected = i; return true; }
+ return false;
+}
+string PositionGetString(int) { return positions[selected].symbol; }
+long PositionGetInteger(int) { return positions[selected].time; }
+bool IsManagedSymbol(string symbol) { return symbol == "XAUUSDm"; }
+void PrepareTrade(string) {}
+int GetLastError() { return 0; }
+template<class... T> void Print(T...) {}
+struct Trade {
+ bool PositionClose(ulong ticket) {
+  for(auto &position : positions)
+   if(position.open && position.ticket == ticket) {
+    position.open = false;
+    closedTickets.push_back(ticket);
+    return true;
+   }
+  return false;
+ }
+} trade;
+"""
+        cases = r"""
+int main() {
+ positions = {{1,"XAUUSDm",10,true}, {2,"XAUUSDm",20,true},
+              {3,"XAUUSDm",30,true}, {4,"XAUUSDm",40,true},
+              {5,"EURUSDm",50,true}};
+ EnforceMaxOpenTrades("XAUUSDm");
+ assert(CountOpenTradesOnSymbol("XAUUSDm") == 2);
+ assert(PositionsTotal() == 3);
+ assert(closedTickets.size() == 2);
+ assert(closedTickets[0] == 4 && closedTickets[1] == 3);
+ assert(IsManagedSymbol(positions[4].symbol) == false);
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "max_open_trades.cpp"
+            binary = Path(directory) / "max_open_trades"
+            cpp.write_text(harness + count_positions + enforcement + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_only_exact_xauusd_symbol_is_managed(self):
+        source = EA.read_text()
+        self.assertNotRegex(source, r"\bInpSym[2-4]")
+        for removed_symbol in ("EURUSDm", "AUDUSDm", "GBPUSDm"):
+            self.assertNotIn(removed_symbol, source)
+
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        find_slot = function(source, "FindSlot")
+        harness = r"""
+#include <cassert>
+#include <string>
+using std::string;
+#define RM_SYMBOL "XAUUSDm"
+struct SymbolSettings { bool enabled; };
+SymbolSettings g_slots[1];
+"""
+        cases = r"""
+int main() {
+ g_slots[0].enabled = true;
+ assert(FindSlot("XAUUSDm") == 0);
+ assert(FindSlot("XAUUSDm.pro") == -1);
+ assert(FindSlot("EURUSDm") == -1);
+ g_slots[0].enabled = false;
+ assert(FindSlot("XAUUSDm") == -1);
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "managed_symbol.cpp"
+            binary = Path(directory) / "managed_symbol"
+            cpp.write_text(harness + find_slot + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_counter_and_external_entry_enforcement(self):
         compiler = shutil.which("clang++") or shutil.which("g++")
         if compiler is None:
@@ -270,7 +463,8 @@ int main() {
         panel = function(EA.read_text(), "GetPanelInfoLines")
         self.assertIn("GetTodayOpenedTradeCount(symbol, tradesToday)", panel)
         self.assertIn("GetDailyTradeText(tradesToday, historyReady)", panel)
-        self.assertIn("ArrayResize(lines, 4 + RM_SLOT_COUNT * 3)", panel)
+        self.assertIn("ArrayResize(lines, 4 + RM_SLOT_COUNT * 4)", panel)
+        self.assertIn('lines[n++] = "Cooldown: " + GetCooldownText(symbol);', panel)
         self.assertIn('details[i] = " ";', panel)
         self.assertIn("ArrayResize(details, RM_SLOT_COUNT * 2)", panel)
         self.assertLess(
