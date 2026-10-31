@@ -106,7 +106,7 @@ int main() {
     def test_maximum_open_trades_closes_newest_excess_position(self):
         source = EA.read_text()
         self.assertEqual(source.count("void EnforceMaxOpenTrades("), 1)
-        self.assertEqual(source.count("EnforceMaxOpenTrades(RM_SYMBOL);"), 3)
+        self.assertEqual(source.count("EnforceMaxOpenTrades(GetTradeSymbol());"), 3)
         self.assertNotIn("void EnforceMaxOpenTrades", function(source, "OnChartEvent"))
         for name in ("OnTradeTransaction", "OnInit", "OnTimer", "OnTick"):
             self.assertIn("EnforceMaxOpenTrades", function(source, name))
@@ -181,38 +181,46 @@ int main() {
             subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 
-    def test_only_exact_xauusd_symbol_is_managed(self):
+    def test_selected_exact_symbol_is_managed(self):
         source = EA.read_text()
         self.assertNotRegex(source, r"\bInpSym[2-4]")
-        for removed_symbol in ("EURUSDm", "AUDUSDm", "GBPUSDm"):
-            self.assertNotIn(removed_symbol, source)
+        self.assertIn("TRADE_SYMBOL_XAUUSDm", source)
+        self.assertIn("TRADE_SYMBOL_BTCUSDm", source)
 
         compiler = shutil.which("clang++") or shutil.which("g++")
         if compiler is None:
             self.skipTest("A C++ compiler is required for the terminal API harness")
+        get_symbol = function(source, "GetTradeSymbol")
         find_slot = function(source, "FindSlot")
         harness = r"""
 #include <cassert>
 #include <string>
 using std::string;
-#define RM_SYMBOL "XAUUSDm"
+enum ENUM_TRADE_SYMBOL { TRADE_SYMBOL_XAUUSDm, TRADE_SYMBOL_BTCUSDm };
+ENUM_TRADE_SYMBOL InpTradeSymbol = TRADE_SYMBOL_XAUUSDm;
 struct SymbolSettings { bool enabled; };
 SymbolSettings g_slots[1];
 """
         cases = r"""
 int main() {
  g_slots[0].enabled = true;
+ assert(GetTradeSymbol() == "XAUUSDm");
  assert(FindSlot("XAUUSDm") == 0);
  assert(FindSlot("XAUUSDm.pro") == -1);
- assert(FindSlot("EURUSDm") == -1);
- g_slots[0].enabled = false;
+ assert(FindSlot("BTCUSDm") == -1);
+ InpTradeSymbol = TRADE_SYMBOL_BTCUSDm;
+ assert(GetTradeSymbol() == "BTCUSDm");
+ assert(FindSlot("BTCUSDm") == 0);
+ assert(FindSlot("BTCUSDm.pro") == -1);
  assert(FindSlot("XAUUSDm") == -1);
+ g_slots[0].enabled = false;
+ assert(FindSlot("BTCUSDm") == -1);
 }
 """
         with tempfile.TemporaryDirectory() as directory:
             cpp = Path(directory) / "managed_symbol.cpp"
             binary = Path(directory) / "managed_symbol"
-            cpp.write_text(harness + find_slot + cases)
+            cpp.write_text(harness + get_symbol + find_slot + cases)
             subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 

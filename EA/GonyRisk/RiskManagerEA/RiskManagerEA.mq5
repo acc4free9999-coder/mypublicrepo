@@ -3,7 +3,7 @@
 //|  Risk-management EA: fixed lot size, auto SL (percent/pips),     |
 //|  auto TP at fixed Risk:Reward, on-chart Buy/Sell panel, and      |
 //|  auto-correction of any manually opened position on the          |
-//|  XAUUSDm only, with configurable lot/SL/R:R/one-trade settings.   |
+//|  One selected symbol, with configurable lot/SL/R:R settings.     |
 //|  Attach to ONE chart only.                                       |
 //+------------------------------------------------------------------+
 #property copyright "Risk Manager EA"
@@ -19,14 +19,21 @@ enum ENUM_SL_MODE
    SL_MODE_PERCENT_INITIAL = 2    // Percent of a fixed initial balance you input
   };
 
+enum ENUM_TRADE_SYMBOL
+  {
+   TRADE_SYMBOL_XAUUSDm = 0,
+   TRADE_SYMBOL_BTCUSDm = 1
+  };
+
 //--- Inputs
-input group "=== XAUUSDm Settings ==="
+input group "=== Symbol Settings ==="
+input ENUM_TRADE_SYMBOL InpTradeSymbol = TRADE_SYMBOL_XAUUSDm; // Symbol to manage
 input double          InpFixedLot      = 0.01;      // Fixed lot size
 input ENUM_SL_MODE    InpSLMode        = SL_MODE_PERCENT_INITIAL; // Stop Loss mode
 input double          InpSLPercent     = 10.0;       // SL risk % (of equity or initial balance, per SL mode)
 input double          InpSLPips        = 20;        // SL distance in pips (used if mode = Pips)
 input double          InpRiskReward    = 10.0;       // Risk:Reward for TP (e.g. 3 = 1:3)
-input int             InpMaxOpenTrades = 1;          // Maximum concurrent XAUUSDm positions (minimum 1)
+input int             InpMaxOpenTrades = 1;          // Maximum concurrent positions (minimum 1)
 
 input group "=== Account Settings ==="
 input double          InpInitialBalance  = 100.0;   // Initial balance (used by SL mode = % of Initial Balance)
@@ -34,10 +41,10 @@ input double          InpInitialBalance  = 100.0;   // Initial balance (used by 
 input group "=== Trade / Behavior Settings ==="
 input ulong           InpMagicNumber     = 20240918; // Magic number for trades opened by the panel
 input ulong           InpSlippage        = 20;        // Max slippage (points)
-input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on any XAUUSDm position
-input int             InpCooldownMinutes = 0;          // XAUUSDm cooldown after close, in minutes (0 = disabled)
+input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP on any position for the selected symbol
+input int             InpCooldownMinutes = 0;          // Cooldown after close, in minutes (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
-input int             InpMaxTradesPerDay = 5;          // XAUUSDm filled entry orders per server day; excess entries are closed (0 = unlimited)
+input int             InpMaxTradesPerDay = 5;          // Filled entry orders per server day; excess entries are closed (0 = unlimited)
 
 input group "=== Trading Hours ==="
 input bool            InpUseTradingHours = false;      // Restrict new entries to a time-of-day window (server time)
@@ -70,7 +77,6 @@ string        g_cooldownForcedCloseSymbol = "";
 //+------------------------------------------------------------------+
 //| Per-symbol settings                                               |
 //+------------------------------------------------------------------+
-#define RM_SYMBOL "XAUUSDm"
 #define RM_SLOT_COUNT 1
 
 struct SymbolSettings
@@ -86,6 +92,11 @@ struct SymbolSettings
   };
 
 SymbolSettings g_slots[RM_SLOT_COUNT];
+
+string GetTradeSymbol()
+  {
+   return (InpTradeSymbol == TRADE_SYMBOL_BTCUSDm) ? "BTCUSDm" : "XAUUSDm";
+  }
 
 void LoadSlot(const int i, const string name, const bool enabled, const double lot,
               const ENUM_SL_MODE mode, const double pct, const double pips,
@@ -105,23 +116,24 @@ void LoadSlot(const int i, const string name, const bool enabled, const double l
 
 bool InitSymbolSlots()
   {
-    LoadSlot(0, RM_SYMBOL, true, InpFixedLot, InpSLMode, InpSLPercent, InpSLPips, InpRiskReward);
-  if(!SymbolSelect(RM_SYMBOL, true))
+  string symbol = GetTradeSymbol();
+  LoadSlot(0, symbol, true, InpFixedLot, InpSLMode, InpSLPercent, InpSLPips, InpRiskReward);
+  if(!SymbolSelect(symbol, true))
     {
-    Print("RiskManagerEA: required symbol '", RM_SYMBOL, "' is unavailable");
+    Print("RiskManagerEA: required symbol '", symbol, "' is unavailable");
     return false;
      }
-  g_slots[0].symbol = RM_SYMBOL;
-  Print("RiskManagerEA: managing only exact symbol '", RM_SYMBOL, "'");
+  g_slots[0].symbol = symbol;
+  Print("RiskManagerEA: managing only exact symbol '", symbol, "'");
   return true;
   }
 
 //+------------------------------------------------------------------+
-//| Return the only managed slot for the exact XAUUSDm symbol.       |
+//| Return the only managed slot for the selected exact symbol.      |
 //+------------------------------------------------------------------+
 int FindSlot(const string symbol)
   {
-  return (g_slots[0].enabled && symbol == RM_SYMBOL) ? 0 : -1;
+  return (g_slots[0].enabled && symbol == GetTradeSymbol()) ? 0 : -1;
   }
 
 bool IsManagedSymbol(const string symbol)
@@ -1591,7 +1603,7 @@ bool IsWithinTradingHours()
 //+------------------------------------------------------------------+
 void OpenTrade(bool isBuy)
   {
-  string symbol = RM_SYMBOL;
+    string symbol = GetTradeSymbol();
 
    if(!IsManagedSymbol(symbol))
      {
@@ -1760,14 +1772,14 @@ int OnInit()
 
    trade.SetExpertMagicNumber((int)InpMagicNumber);
    trade.SetDeviationInPoints((int)InpSlippage);
-  trade.SetTypeFillingBySymbol(RM_SYMBOL);
+  trade.SetTypeFillingBySymbol(GetTradeSymbol());
 
    CreatePanel();
    EventSetTimer(MathMax(1, InpTimerSeconds));
 
    // Process any pre-existing positions and pending orders once at startup
    EnforceDailyLimitOnOpenPositions();
-  EnforceMaxOpenTrades(RM_SYMBOL);
+  EnforceMaxOpenTrades(GetTradeSymbol());
    ManagePositions();
    ManagePendingOrders();
 
@@ -1789,7 +1801,7 @@ void OnDeinit(const int reason)
 void OnTimer()
   {
    EnforceDailyLimitOnOpenPositions();
-  EnforceMaxOpenTrades(RM_SYMBOL);
+  EnforceMaxOpenTrades(GetTradeSymbol());
    ManagePositions();
    ManagePendingOrders();
    UpdatePanelInfo();
@@ -1801,7 +1813,7 @@ void OnTimer()
 void OnTick()
   {
    EnforceDailyLimitOnOpenPositions();
-  EnforceMaxOpenTrades(RM_SYMBOL);
+  EnforceMaxOpenTrades(GetTradeSymbol());
    ManagePositions();
    ManagePendingOrders();
    UpdatePanelInfo();
