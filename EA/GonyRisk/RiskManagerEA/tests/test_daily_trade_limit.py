@@ -23,6 +23,37 @@ def function(source, name):
 
 
 class DailyTradeLimitTests(unittest.TestCase):
+    def test_user_entered_lot_size_is_preserved_in_dynamic_mode(self):
+        source = EA.read_text()
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        harness = r"""
+#include <cassert>
+#include <cmath>
+#include <string>
+using std::string;
+bool InpUseFixedLot = true;
+const int SYMBOL_VOLUME_STEP = 0;
+double SymbolInfoDouble(const string &, int) { return 0.01; }
+double MathAbs(double value) { return std::abs(value); }
+"""
+        cases = r"""
+int main() {
+ assert(IsLotDifferent("XAUUSDm", 0.10, 0.01));
+ assert(!IsLotDifferent("XAUUSDm", 0.01, 0.01));
+ InpUseFixedLot = false;
+ assert(!IsLotDifferent("XAUUSDm", 0.10, 0.01));
+ assert(!IsLotDifferent("BTCUSDm", 0.25, 0.01));
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "dynamic_lot.cpp"
+            binary = Path(directory) / "dynamic_lot"
+            cpp.write_text(harness + function(source, "IsLotDifferent") + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_cooldown_countdown_is_shown_separately_and_updates(self):
         source = EA.read_text()
         panel = function(source, "GetPanelInfoLines")

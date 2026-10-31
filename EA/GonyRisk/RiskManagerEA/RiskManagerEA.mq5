@@ -28,7 +28,8 @@ enum ENUM_TRADE_SYMBOL
 //--- Inputs
 input group "=== Symbol Settings ==="
 input ENUM_TRADE_SYMBOL InpTradeSymbol = TRADE_SYMBOL_XAUUSDm; // Symbol to manage
-input double          InpFixedLot      = 0.01;      // Fixed lot size
+input bool            InpUseFixedLot   = true;      // Force fixed lot; false keeps user-entered trade volumes
+input double          InpFixedLot      = 0.01;      // Fixed lot / panel Buy-Sell lot size
 input ENUM_SL_MODE    InpSLMode        = SL_MODE_PERCENT_INITIAL; // Stop Loss mode
 input double          InpSLPercent     = 10.0;       // SL risk % (of equity or initial balance, per SL mode)
 input double          InpSLPips        = 20;        // SL distance in pips (used if mode = Pips)
@@ -379,6 +380,8 @@ bool ApplySLTP(ulong ticket, int retries = 5)
 //+------------------------------------------------------------------+
 bool IsLotDifferent(const string symbol, const double volume, const double fixedLot)
   {
+  if(!InpUseFixedLot)
+    return false;
    double step = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
    if(step <= 0.0)
       step = 0.01;
