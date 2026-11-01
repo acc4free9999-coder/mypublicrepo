@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../MultitimeframeBiasTrend.pine", import.meta.url), "utf8");
 const module = source.slice(source.indexOf("// Dealing range adaptation:"), source.indexOf("// BPR adaptation"));
 
-test("full dealing range is isolated and adds no plots to the RSI pane", () => {
+test("full dealing range is isolated and adds no plots", () => {
   for (const group of ["DR | Range", "DR | FVG / IFVG", "DR | Order blocks",
     "DR | Breaker blocks", "DR | Style / retention"]) {
     assert.ok(module.includes(`"${group}"`), group);

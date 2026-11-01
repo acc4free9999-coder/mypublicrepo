@@ -1,5 +1,5 @@
 //@version=6
-indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = false, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, dynamic_requests = true)
+indicator("MTF Bias, Structure & Strength", "MTF Bias", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, dynamic_requests = true)
 
 max_bars_back(time, 5000)
 max_bars_back(high, 5000)
@@ -28,10 +28,6 @@ float sideChopMin = input.float(61.8, "Choppiness minimum", minval = 0, maxval =
 int sideKeep = input.int(10, "Maximum boxes kept", minval = 1, maxval = 40, group = G_SIDE)
 color sideColor = input.color(color.new(color.aqua, 88), "Box fill", group = G_SIDE)
 
-string G_RD = "RSI momentum divergence"
-bool rdEnabled = input.bool(true, "Show RSI divergence", group = G_RD, tooltip = "RSI of 10-bar momentum, using the RSI length below. The oscillator is in this indicator's lower pane; price drawings and dashboards stay on the main chart. Regular bullish/bearish divergence confirms five bars after an RSI pivot, at candle close.")
-bool rdShowZones = input.bool(true, "Show divergence zones", group = G_RD)
-int rdKeep = input.int(10, "Zones per side / recent signals", minval = 1, maxval = 20, group = G_RD)
 bool confirmed = input.bool(true, "Confirmed candles (recommended)", group = G_DATA, tooltip = "HTF/equal: previous closed candle. LTF: latest available closed intrabar. Off: live security values can repaint.")
 int fastLen = input.int(20, "Fast EMA", minval = 2, maxval = 1000, group = G_DATA)
 int midLen = input.int(50, "Middle EMA", minval = 2, maxval = 1000, group = G_DATA)
@@ -2067,79 +2063,6 @@ if sideEnabled and barstate.isconfirmed
             sideBoxes.push(sideBox)
             while sideBoxes.size() > sideKeep
                 sideBoxes.shift().delete()
-
-// RSI is applied to momentum, not directly to close (as in rsi_divergence.pine).
-color rdBullColor = #33c570
-color rdBearColor = #ae4ce6
-type RdZone
-    line primary
-    line glow
-    bool active = true
-
-f_rdZones(array<RdZone> zones, bool signal, bool bullish, float level) =>
-    if signal
-        zones.push(RdZone.new(
-             line.new(bar_index - 5, level, bar_index, level, color = bullish ? rdBullColor : rdBearColor, force_overlay = true),
-             line.new(bar_index - 5, level, bar_index, level, color = color.new(bullish ? rdBullColor : rdBearColor, 70), width = 6, force_overlay = true)))
-    while zones.size() > rdKeep
-        RdZone expired = zones.shift()
-        expired.primary.delete()
-        expired.glow.delete()
-    if zones.size() > 0
-        for i = zones.size() - 1 to 0
-            RdZone zone = zones.get(i)
-            if zone.active
-                bool intact = bullish ? high > zone.primary.get_y1() : low < zone.primary.get_y1()
-                zone.primary.set_x2(intact ? bar_index + 15 : bar_index)
-                if intact
-                    zone.glow.set_x2(bar_index + 15)
-                else
-                    zone.active := false
-                    zone.primary.set_style(line.style_dashed)
-                    zone.glow.delete()
-    true
-
-float rdRsi = ta.rsi(ta.mom(close, 10), rsiLen)
-bool rdLow = not na(ta.pivotlow(rdRsi, 5, 5))
-bool rdHigh = not na(ta.pivothigh(rdRsi, 5, 5))
-float rdPrevLowRsi = ta.valuewhen(rdLow, rdRsi[5], 1)
-float rdPrevHighRsi = ta.valuewhen(rdHigh, rdRsi[5], 1)
-float rdPrevLow = ta.valuewhen(rdLow, low[5], 1)
-float rdPrevHigh = ta.valuewhen(rdHigh, high[5], 1)
-int rdPrevLowBar = ta.valuewhen(rdLow, bar_index - 5, 1)
-int rdPrevHighBar = ta.valuewhen(rdHigh, bar_index - 5, 1)
-int rdLowGap = ta.barssince(rdLow[1])
-int rdHighGap = ta.barssince(rdHigh[1])
-bool rdBull = rdEnabled and barstate.isconfirmed and rdLow and rdLowGap >= 5 and rdLowGap <= 50 and rdRsi[5] > rdPrevLowRsi and low[5] < rdPrevLow
-bool rdBear = rdEnabled and barstate.isconfirmed and rdHigh and rdHighGap >= 5 and rdHighGap <= 50 and rdRsi[5] < rdPrevHighRsi and high[5] > rdPrevHigh
-rdRsiPlot = plot(rdRsi, "RSI of momentum", color = color.from_gradient(rdRsi, 30, 70, rdBullColor, rdBearColor), linewidth = 1)
-rdMidPlot = plot(50, "RSI midline", color = color.gray)
-hline(70, "RSI upper band", color = color.gray, linestyle = hline.style_dashed)
-hline(30, "RSI lower band", color = color.gray, linestyle = hline.style_dashed)
-fill(rdRsiPlot, rdMidPlot, 70, 30, rdBearColor, na, title = "RSI bearish gradient")
-fill(rdRsiPlot, rdMidPlot, 70, 30, na, rdBullColor, title = "RSI bullish gradient")
-plotshape(rdBull ? rdRsi[5] : na, "Bullish RSI divergence", shape.labelup, location.absolute, rdBullColor, offset = -5, text = "Bull", textcolor = color.white)
-plotshape(rdBear ? rdRsi[5] : na, "Bearish RSI divergence", shape.labeldown, location.absolute, rdBearColor, offset = -5, text = "Bear", textcolor = color.white)
-var array<RdZone> rdBullZones = array.new<RdZone>()
-var array<RdZone> rdBearZones = array.new<RdZone>()
-var array<line> rdPriceLines = array.new<line>()
-var array<line> rdOscLines = array.new<line>()
-var array<label> rdPriceLabels = array.new<label>()
-if rdBull or rdBear
-    bool bullish = rdBull
-    float price = bullish ? low[5] : high[5]
-    color shade = bullish ? rdBullColor : rdBearColor
-    rdOscLines.push(line.new(bullish ? rdPrevLowBar : rdPrevHighBar, bullish ? rdPrevLowRsi : rdPrevHighRsi, bar_index - 5, rdRsi[5], color = shade, width = 2))
-    rdPriceLines.push(line.new(bullish ? rdPrevLowBar : rdPrevHighBar, bullish ? rdPrevLow : rdPrevHigh, bar_index - 5, price, color = shade, width = 2, force_overlay = true))
-    rdPriceLabels.push(label.new(bar_index - 5, price, bullish ? "RSIM Bull" : "RSIM Bear", style = bullish ? label.style_label_up : label.style_label_down, color = shade, textcolor = color.white, size = size.small, force_overlay = true, tooltip = "Regular RSI-of-momentum divergence. Confirmed five bars after this pivot; context, not an entry."))
-    while rdPriceLines.size() > rdKeep * 2
-        rdPriceLines.shift().delete()
-    while rdOscLines.size() > rdKeep * 2
-        rdOscLines.shift().delete()
-    f_trimLabels(rdPriceLabels, rdKeep * 2)
-if rdEnabled and rdShowZones and barstate.isconfirmed
-    f_rdZones(rdBullZones, rdBull, true, low[5])
-    f_rdZones(rdBearZones, rdBear, false, high[5])
 
 // Dealing range adaptation: isolated state; all price drawings stay on the chart.
 type drx_Pivot

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../MultitimeframeBiasTrend.pine", import.meta.url), "utf8");
-const module = source.slice(source.indexOf("// Sideways boundaries"), source.indexOf("// RSI is applied"));
+const module = source.slice(source.indexOf("// Sideways boundaries"), source.indexOf("// Dealing range adaptation"));
 
 test("sideways selector includes five detectors and both combination modes", () => {
   for (const method of ["ADX", "Bollinger Band Width", "ATR-normalized range",
