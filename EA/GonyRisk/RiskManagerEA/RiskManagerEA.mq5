@@ -19,15 +19,8 @@ enum ENUM_SL_MODE
    SL_MODE_PERCENT_INITIAL = 2    // Percent of a fixed initial balance you input
   };
 
-enum ENUM_TRADE_SYMBOL
-  {
-   TRADE_SYMBOL_XAUUSDm = 0,
-   TRADE_SYMBOL_BTCUSDm = 1
-  };
-
 //--- Inputs
-input group "=== Symbol Settings ==="
-input ENUM_TRADE_SYMBOL InpTradeSymbol = TRADE_SYMBOL_XAUUSDm; // Symbol to manage
+input group "=== XAUUSDm Settings ==="
 input bool            InpUseFixedLot   = true;      // Force fixed lot; false keeps user-entered trade volumes
 input double          InpFixedLot      = 0.01;      // Fixed lot / panel Buy-Sell lot size
 input ENUM_SL_MODE    InpSLMode        = SL_MODE_PERCENT_INITIAL; // Stop Loss mode
@@ -96,7 +89,7 @@ SymbolSettings g_slots[RM_SLOT_COUNT];
 
 string GetTradeSymbol()
   {
-   return (InpTradeSymbol == TRADE_SYMBOL_BTCUSDm) ? "BTCUSDm" : "XAUUSDm";
+  return "XAUUSDm";
   }
 
 void LoadSlot(const int i, const string name, const bool enabled, const double lot,

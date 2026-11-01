@@ -44,7 +44,7 @@ int main() {
  assert(!IsLotDifferent("XAUUSDm", 0.01, 0.01));
  InpUseFixedLot = false;
  assert(!IsLotDifferent("XAUUSDm", 0.10, 0.01));
- assert(!IsLotDifferent("BTCUSDm", 0.25, 0.01));
+ assert(!IsLotDifferent("XAUUSDm", 0.25, 0.01));
 }
 """
         with tempfile.TemporaryDirectory() as directory:
@@ -212,11 +212,11 @@ int main() {
             subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 
-    def test_selected_exact_symbol_is_managed(self):
+    def test_exact_xauusd_symbol_is_managed(self):
         source = EA.read_text()
         self.assertNotRegex(source, r"\bInpSym[2-4]")
-        self.assertIn("TRADE_SYMBOL_XAUUSDm", source)
-        self.assertIn("TRADE_SYMBOL_BTCUSDm", source)
+        self.assertNotIn("TRADE_SYMBOL_BTCUSDm", source)
+        self.assertNotIn("InpTradeSymbol", source)
 
         compiler = shutil.which("clang++") or shutil.which("g++")
         if compiler is None:
@@ -227,8 +227,6 @@ int main() {
 #include <cassert>
 #include <string>
 using std::string;
-enum ENUM_TRADE_SYMBOL { TRADE_SYMBOL_XAUUSDm, TRADE_SYMBOL_BTCUSDm };
-ENUM_TRADE_SYMBOL InpTradeSymbol = TRADE_SYMBOL_XAUUSDm;
 struct SymbolSettings { bool enabled; };
 SymbolSettings g_slots[1];
 """
@@ -239,13 +237,8 @@ int main() {
  assert(FindSlot("XAUUSDm") == 0);
  assert(FindSlot("XAUUSDm.pro") == -1);
  assert(FindSlot("BTCUSDm") == -1);
- InpTradeSymbol = TRADE_SYMBOL_BTCUSDm;
- assert(GetTradeSymbol() == "BTCUSDm");
- assert(FindSlot("BTCUSDm") == 0);
- assert(FindSlot("BTCUSDm.pro") == -1);
- assert(FindSlot("XAUUSDm") == -1);
  g_slots[0].enabled = false;
- assert(FindSlot("BTCUSDm") == -1);
+ assert(FindSlot("XAUUSDm") == -1);
 }
 """
         with tempfile.TemporaryDirectory() as directory:
