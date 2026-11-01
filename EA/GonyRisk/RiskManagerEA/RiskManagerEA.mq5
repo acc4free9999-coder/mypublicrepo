@@ -39,6 +39,7 @@ input bool            InpManageAllPositions = true;   // Auto-correct lot/SL/TP 
 input int             InpCooldownMinutes = 0;          // Cooldown after close, in minutes (0 = disabled)
 input int             InpTimerSeconds    = 1;         // Monitoring interval (seconds)
 input int             InpMaxTradesPerDay = 5;          // Filled entry orders per server day; excess entries are closed (0 = unlimited)
+input string          InpBlacklistedSymbols = "BTCUSDm,ETHUSDm"; // Comma-separated symbol prefixes to block account-wide
 
 input group "=== Trading Hours ==="
 input bool            InpUseTradingHours = false;      // Restrict new entries to a time-of-day window (server time)
@@ -90,6 +91,66 @@ SymbolSettings g_slots[RM_SLOT_COUNT];
 string GetTradeSymbol()
   {
   return "XAUUSDm";
+  }
+
+bool IsBlacklistedSymbol(const string symbol)
+  {
+  string blockedSymbols[];
+  int count = StringSplit(InpBlacklistedSymbols, ',', blockedSymbols);
+  string normalizedSymbol = symbol;
+  StringToUpper(normalizedSymbol);
+
+  for(int i = 0; i < count; i++)
+    {
+    StringTrimLeft(blockedSymbols[i]);
+    StringTrimRight(blockedSymbols[i]);
+    if(blockedSymbols[i] == "")
+      continue;
+
+    StringToUpper(blockedSymbols[i]);
+    if(StringFind(normalizedSymbol, blockedSymbols[i]) == 0)
+      return true;
+    }
+  return false;
+  }
+
+void EnforceBlacklistedTrades()
+  {
+  for(int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+    ulong ticket = PositionGetTicket(i);
+    if(ticket == 0 || !PositionSelectByTicket(ticket))
+      continue;
+
+    string symbol = PositionGetString(POSITION_SYMBOL);
+    if(!IsBlacklistedSymbol(symbol))
+      continue;
+
+    PrepareTrade(symbol);
+    if(!trade.PositionClose(ticket))
+      Print("RiskManagerEA: failed to close blacklisted position ", ticket,
+          " on ", symbol, " err=", GetLastError());
+    else
+      Print("RiskManagerEA: closed blacklisted position ", ticket, " on ", symbol);
+    }
+
+  for(int i = OrdersTotal() - 1; i >= 0; i--)
+    {
+    ulong ticket = OrderGetTicket(i);
+    if(ticket == 0 || !OrderSelect(ticket))
+      continue;
+
+    string symbol = OrderGetString(ORDER_SYMBOL);
+    if(!IsBlacklistedSymbol(symbol))
+      continue;
+
+    PrepareTrade(symbol);
+    if(!trade.OrderDelete(ticket))
+      Print("RiskManagerEA: failed to delete blacklisted pending order ", ticket,
+          " on ", symbol, " err=", GetLastError());
+    else
+      Print("RiskManagerEA: deleted blacklisted pending order ", ticket, " on ", symbol);
+    }
   }
 
 void LoadSlot(const int i, const string name, const bool enabled, const double lot,
@@ -812,7 +873,9 @@ void GetPanelInfoLines(string &lines[], color &colors[])
       int tradesToday = 0;
       bool historyReady = GetTodayOpenedTradeCount(symbol, tradesToday);
       string entryStatus = "Ready";
-      if(InpMaxTradesPerDay > 0 && !historyReady)
+      if(IsBlacklistedSymbol(symbol))
+        entryStatus = "Blocked: blacklisted symbol";
+      else if(InpMaxTradesPerDay > 0 && !historyReady)
          entryStatus = "Blocked: history unavailable";
       else if(InpMaxTradesPerDay > 0 && tradesToday >= InpMaxTradesPerDay)
          entryStatus = "Blocked: daily limit";
@@ -831,8 +894,9 @@ void GetPanelInfoLines(string &lines[], color &colors[])
       else
          slText = StringFormat("SL %.1f pips", g_slots[i].slPips);
 
-      colors[n] = GetPanelStatusColor(historyReady, tradesToday, open,
-                                     IsCooldownActiveForSymbol(symbol), IsWithinTradingHours());
+      colors[n] = IsBlacklistedSymbol(symbol) ? clrTomato
+          : GetPanelStatusColor(historyReady, tradesToday, open,
+                    IsCooldownActiveForSymbol(symbol), IsWithinTradingHours());
       lines[n++] = StringFormat("[%d] %s | %s | Entry: %s | Open %d/%d",
                                 i + 1, symbol, GetDailyTradeText(tradesToday, historyReady),
                                 entryStatus, open, InpMaxOpenTrades);
@@ -1601,6 +1665,12 @@ void OpenTrade(bool isBuy)
   {
     string symbol = GetTradeSymbol();
 
+   if(IsBlacklistedSymbol(symbol))
+     {
+      Print("RiskManagerEA: blocked new trade because ", symbol, " is blacklisted");
+      return;
+     }
+
    if(!IsManagedSymbol(symbol))
      {
       Print("RiskManagerEA: blocked new ", (isBuy ? "BUY" : "SELL"),
@@ -1690,6 +1760,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
    if(entry == DEAL_ENTRY_IN || entry == DEAL_ENTRY_INOUT)
      {
+    if(IsBlacklistedSymbol(symbol))
+       EnforceBlacklistedTrades();
       EnforceDailyTradeLimit(symbol, entryOrder, entryPosition);
       EnforceMaxOpenTrades(symbol);
       // The history query replaces the selected deals list.
@@ -1770,6 +1842,8 @@ int OnInit()
    trade.SetDeviationInPoints((int)InpSlippage);
   trade.SetTypeFillingBySymbol(GetTradeSymbol());
 
+  EnforceBlacklistedTrades();
+
    CreatePanel();
    EventSetTimer(MathMax(1, InpTimerSeconds));
 
@@ -1796,6 +1870,7 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTimer()
   {
+  EnforceBlacklistedTrades();
    EnforceDailyLimitOnOpenPositions();
   EnforceMaxOpenTrades(GetTradeSymbol());
    ManagePositions();
@@ -1808,6 +1883,7 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void OnTick()
   {
+  EnforceBlacklistedTrades();
    EnforceDailyLimitOnOpenPositions();
   EnforceMaxOpenTrades(GetTradeSymbol());
    ManagePositions();

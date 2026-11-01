@@ -23,6 +23,171 @@ def function(source, name):
 
 
 class DailyTradeLimitTests(unittest.TestCase):
+    def test_blacklist_matches_case_insensitive_prefixes(self):
+        source = EA.read_text()
+        for name in ("OnInit", "OnTradeTransaction", "OnTimer", "OnTick"):
+            self.assertIn("EnforceBlacklistedTrades", function(source, name))
+        self.assertIn("IsBlacklistedSymbol(symbol)", function(source, "OpenTrade"))
+
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        blacklist = function(source, "IsBlacklistedSymbol").replace(
+            "string blockedSymbols[];", "std::vector<string> blockedSymbols;"
+        )
+        harness = r"""
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <string>
+#include <vector>
+using std::string;
+using ushort = unsigned short;
+string InpBlacklistedSymbols = "BTCUSDm, ETHUSD";
+int StringSplit(const string &source, ushort delimiter, std::vector<string> &parts) {
+ size_t start = 0;
+ size_t end;
+ while((end = source.find(char(delimiter), start)) != string::npos) {
+  parts.push_back(source.substr(start, end - start));
+  start = end + 1;
+ }
+ parts.push_back(source.substr(start));
+ return int(parts.size());
+}
+void StringTrimLeft(string &value) {
+ size_t start = value.find_first_not_of(" \t\r\n");
+ value = start == string::npos ? "" : value.substr(start);
+}
+void StringTrimRight(string &value) {
+ size_t end = value.find_last_not_of(" \t\r\n");
+ value = end == string::npos ? "" : value.substr(0, end + 1);
+}
+bool StringToUpper(string &value) {
+ std::transform(value.begin(), value.end(), value.begin(),
+                [](unsigned char ch) { return char(std::toupper(ch)); });
+ return true;
+}
+int StringFind(const string &value, const string &prefix) {
+ return value.find(prefix) == 0 ? 0 : -1;
+}
+"""
+        cases = r"""
+int main() {
+ assert(IsBlacklistedSymbol("BTCUSDm"));
+ assert(IsBlacklistedSymbol("BTCUSDm.a"));
+ assert(IsBlacklistedSymbol("ethusd.r"));
+ assert(!IsBlacklistedSymbol("XAUUSDm"));
+ assert(!IsBlacklistedSymbol("USDETH"));
+ InpBlacklistedSymbols = "";
+ assert(!IsBlacklistedSymbol("BTCUSDm"));
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "symbol_blacklist.cpp"
+            binary = Path(directory) / "symbol_blacklist"
+            cpp.write_text(harness + blacklist + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_blacklisted_positions_and_pending_orders_are_removed(self):
+        source = EA.read_text()
+        enforcement = function(source, "EnforceBlacklistedTrades")
+        harness = r"""
+#include <cassert>
+#include <string>
+#include <vector>
+using std::string;
+using ulong = unsigned long;
+enum { POSITION_SYMBOL, ORDER_SYMBOL };
+struct Position { ulong ticket; string symbol; bool open; };
+struct PendingOrder { ulong ticket; string symbol; bool active; };
+std::vector<Position> positions;
+std::vector<PendingOrder> orders;
+int selectedPosition = -1, selectedOrder = -1;
+int PositionsTotal() {
+ int count = 0;
+ for(const auto &position : positions) if(position.open) count++;
+ return count;
+}
+ulong PositionGetTicket(int index) {
+ for(const auto &position : positions)
+  if(position.open && index-- == 0) return position.ticket;
+ return 0;
+}
+bool PositionSelectByTicket(ulong ticket) {
+ for(int i = 0; i < int(positions.size()); i++)
+  if(positions[i].open && positions[i].ticket == ticket) {
+   selectedPosition = i;
+   return true;
+  }
+ return false;
+}
+string PositionGetString(int) { return positions[selectedPosition].symbol; }
+int OrdersTotal() {
+ int count = 0;
+ for(const auto &order : orders) if(order.active) count++;
+ return count;
+}
+ulong OrderGetTicket(int index) {
+ for(const auto &order : orders)
+  if(order.active && index-- == 0) return order.ticket;
+ return 0;
+}
+bool OrderSelect(ulong ticket) {
+ for(int i = 0; i < int(orders.size()); i++)
+  if(orders[i].active && orders[i].ticket == ticket) {
+   selectedOrder = i;
+   return true;
+  }
+ return false;
+}
+string OrderGetString(int) { return orders[selectedOrder].symbol; }
+bool IsBlacklistedSymbol(string symbol) {
+ return symbol.find("BTCUSDm") == 0 || symbol.find("ETHUSD") == 0;
+}
+void PrepareTrade(string) {}
+int GetLastError() { return 0; }
+template<class... T> void Print(T...) {}
+struct Trade {
+ bool PositionClose(ulong ticket) {
+  for(auto &position : positions)
+   if(position.open && position.ticket == ticket) {
+    position.open = false;
+    return true;
+   }
+  return false;
+ }
+ bool OrderDelete(ulong ticket) {
+  for(auto &order : orders)
+   if(order.active && order.ticket == ticket) {
+    order.active = false;
+    return true;
+   }
+  return false;
+ }
+} trade;
+"""
+        cases = r"""
+int main() {
+ positions = {{1,"BTCUSDm",true}, {2,"ETHUSD.pro",true}, {3,"XAUUSDm",true}};
+ orders = {{11,"BTCUSDm.r",true}, {12,"ETHUSDm",true}, {13,"EURUSDm",true}};
+ EnforceBlacklistedTrades();
+ assert(PositionsTotal() == 1);
+ assert(positions[2].open);
+ assert(OrdersTotal() == 1);
+ assert(orders[2].active);
+}
+"""
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "blacklisted_trades.cpp"
+            binary = Path(directory) / "blacklisted_trades"
+            cpp.write_text(harness + enforcement + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_user_entered_lot_size_is_preserved_in_dynamic_mode(self):
         source = EA.read_text()
         compiler = shutil.which("clang++") or shutil.which("g++")
