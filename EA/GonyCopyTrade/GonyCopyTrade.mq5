@@ -89,6 +89,7 @@ input int           MaxOpenAttempts     = 5;                       // Give up op
 input group "=== Copy behaviour ==="
 input bool          CopyPendingLimits   = true;                    // Copy Buy Limit / Sell Limit orders
 input bool          CopyPendingStops    = false;                   // Copy Buy Stop / Sell Stop orders
+input bool          InvertMasterSignals = false;                   // Open the opposite side for copied trades
 input bool          CopyExistingOnStart = false;                   // Copy master trades that already exist when the EA starts
 input bool          SyncPendingPrice    = true;                    // Follow master pending-order price modifications
 input bool          CopyPartialCloses   = true;                    // Mirror master partial closes proportionally
@@ -175,6 +176,23 @@ bool IsChildRole() { return EARole != ROLE_MASTER_PUBLISHER; }
 bool IsBuyType(const ENUM_ORDER_TYPE t)
   {
    return (t == ORDER_TYPE_BUY || t == ORDER_TYPE_BUY_LIMIT || t == ORDER_TYPE_BUY_STOP);
+  }
+
+ENUM_ORDER_TYPE CopyOrderType(const ENUM_ORDER_TYPE masterType)
+  {
+   if(!InvertMasterSignals)
+      return masterType;
+
+   switch(masterType)
+     {
+      case ORDER_TYPE_BUY:        return ORDER_TYPE_SELL;
+      case ORDER_TYPE_SELL:       return ORDER_TYPE_BUY;
+      case ORDER_TYPE_BUY_LIMIT:  return ORDER_TYPE_SELL_STOP;
+      case ORDER_TYPE_SELL_LIMIT: return ORDER_TYPE_BUY_STOP;
+      case ORDER_TYPE_BUY_STOP:   return ORDER_TYPE_SELL_LIMIT;
+      case ORDER_TYPE_SELL_STOP:  return ORDER_TYPE_BUY_LIMIT;
+     }
+   return masterType;
   }
 
 bool IsPendingTypeCopyable(const ENUM_ORDER_TYPE t)
@@ -1004,12 +1022,12 @@ void OpenChildCopy(const MasterItem &m, int li)
    ZeroMemory(req);
    req.symbol    = sym;
    req.volume    = vol;
-   req.type      = m.type;
+    req.type      = CopyOrderType(m.type);
    req.magic     = ChildMagicNumber;
    req.deviation = (ulong)MathMax(0, MaxSlippage);
    req.comment   = GCT_TAG + IntegerToString((long)m.key);
-   req.sl        = NormalizePrice(sym, m.sl);
-   req.tp        = NormalizePrice(sym, m.tp);
+    req.sl        = NormalizePrice(sym, InvertMasterSignals ? m.tp : m.sl);
+    req.tp        = NormalizePrice(sym, InvertMasterSignals ? m.sl : m.tp);
 
    if(m.isPosition)
      {
@@ -1021,7 +1039,7 @@ void OpenChildCopy(const MasterItem &m, int li)
          return;
         }
       req.action = TRADE_ACTION_DEAL;
-      req.price  = IsBuyType(m.type) ? tick.ask : tick.bid;
+      req.price  = IsBuyType(req.type) ? tick.ask : tick.bid;
 
       if(MaxEntryDeviation > 0 && m.price > 0.0)
         {
@@ -1044,7 +1062,7 @@ void OpenChildCopy(const MasterItem &m, int li)
       req.type_time = GetPendingTypeTime(sym);
      }
 
-   string ctx = StringFormat("OPEN %s %.2f %s for master #%I64u", EnumToString(m.type), vol, sym, m.key);
+    string ctx = StringFormat("OPEN %s %.2f %s for master #%I64u", EnumToString(req.type), vol, sym, m.key);
    bool ok = SendTradeRequest(req, res, ctx);
 
    //--- broker rejected the stops (e.g. stops level on child) -> open without, SL/TP sync retries later
@@ -1186,8 +1204,8 @@ void ProcessLinkedMaster(const int li, const MasterItem &m, const ChildItem &kid
 
    //--- SL / TP (and pending price) synchronisation
    double point   = SymbolInfoDouble(c.symbol, SYMBOL_POINT);
-   double wantSL  = NormalizePrice(c.symbol, m.sl);
-   double wantTP  = NormalizePrice(c.symbol, m.tp);
+    double wantSL  = NormalizePrice(c.symbol, InvertMasterSignals ? m.tp : m.sl);
+    double wantTP  = NormalizePrice(c.symbol, InvertMasterSignals ? m.sl : m.tp);
    bool   stopsDiff = PriceDiffers(wantSL, c.sl, point) || PriceDiffers(wantTP, c.tp, point);
 
    double wantPrice = c.price;
