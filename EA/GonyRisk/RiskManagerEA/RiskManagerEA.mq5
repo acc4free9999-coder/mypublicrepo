@@ -42,9 +42,9 @@ input int             InpMaxTradesPerDay = 5;          // Filled entry orders pe
 input string          InpBlacklistedSymbols = "BTCUSDm,ETHUSDm"; // Comma-separated symbol prefixes to block account-wide
 
 input group "=== Trading Hours ==="
-input bool            InpUseTradingHours = false;      // Restrict new entries to a time-of-day window (server time)
-input string          InpTradingStartTime= "08:00";    // Start of allowed trading window (HH:MM, server time)
-input string          InpTradingEndTime  = "20:00";    // End of allowed trading window (HH:MM, server time); if before start, window wraps past midnight
+input bool            InpUseTradingHours = true;       // Restrict entries to GMT+7 trading hours
+input string          InpTradingStartTime= "06:00";   // Start of allowed GMT+7 trading window (HH:MM)
+input string          InpTradingEndTime  = "18:15";   // End of allowed GMT+7 trading window (HH:MM)
 
 input group "=== Panel Settings ==="
 input bool            InpShowPanel       = true;      // Show on-chart info panel
@@ -911,13 +911,13 @@ void GetPanelInfoLines(string &lines[], color &colors[])
    if(InpUseTradingHours)
      {
       colors[n] = IsWithinTradingHours() ? clrPaleGreen : clrOrange;
-      lines[n++] = StringFormat("Trading Hours: %s (%s - %s)",
+      lines[n++] = StringFormat("Trading Hours GMT+7: %s (%s - %s)",
                                 IsWithinTradingHours() ? "Open" : "Closed",
                                 InpTradingStartTime, InpTradingEndTime);
      }
    else
       lines[n++] = "Trading Hours: Off (24h)";
-   lines[n++] = "Server: " + TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS) +
+  lines[n++] = "GMT+7: " + TimeToString((datetime)(TimeGMT() + 7 * 60 * 60), TIME_DATE | TIME_SECONDS) +
                 " | Daily reset: 00:00 server time";
    for(int i = 0; i < ArraySize(details); i++)
      {
@@ -1628,7 +1628,7 @@ bool ParseTimeOfDay(const string text, int &minutesOfDay)
   }
 
 //+------------------------------------------------------------------+
-//| Trading hours: is the current server time inside the allowed     |
+//| Trading hours: is the current GMT+7 time inside the allowed       |
 //| window? Supports overnight windows where end < start (e.g.       |
 //| 22:00 -> 06:00 wraps past midnight).                              |
 //+------------------------------------------------------------------+
@@ -1640,22 +1640,45 @@ bool IsWithinTradingHours()
    int startMin, endMin;
    if(!ParseTimeOfDay(InpTradingStartTime, startMin) || !ParseTimeOfDay(InpTradingEndTime, endMin))
      {
-      Print("RiskManagerEA: invalid trading hours input, expected HH:MM - allowing trade");
-      return true;
+      Print("RiskManagerEA: invalid trading hours input, expected HH:MM - blocking trade");
+      return false;
      }
 
    MqlDateTime now;
-   TimeToStruct(TimeCurrent(), now);
+    TimeToStruct(TimeGMT() + 7 * 60 * 60, now);
    int nowMin = now.hour * 60 + now.min;
 
    if(startMin == endMin)
-      return true; // zero-width window means "always allowed"
+    return false;
 
    if(startMin < endMin)
       return (nowMin >= startMin && nowMin < endMin);
 
    // Overnight window wraps past midnight
    return (nowMin >= startMin || nowMin < endMin);
+  }
+
+void EnforceTradingHoursForEntry(const string symbol, const ulong positionId)
+  {
+  if(!InpUseTradingHours || IsWithinTradingHours() || !IsManagedSymbol(symbol))
+    return;
+
+  for(int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+    ulong ticket = PositionGetTicket(i);
+    if(ticket == 0 || !PositionSelectByTicket(ticket) ||
+      PositionGetString(POSITION_SYMBOL) != symbol ||
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER) != positionId)
+      continue;
+
+    PrepareTrade(symbol);
+    if(!trade.PositionClose(ticket))
+      Print("RiskManagerEA: failed to close entry outside GMT+7 trading hours, ticket=",
+          ticket, " err=", GetLastError());
+    else
+      Print("RiskManagerEA: closed entry outside GMT+7 trading hours, ticket=", ticket);
+    return;
+    }
   }
 
 //+------------------------------------------------------------------+
@@ -1763,6 +1786,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
     if(IsBlacklistedSymbol(symbol))
        EnforceBlacklistedTrades();
       EnforceDailyTradeLimit(symbol, entryOrder, entryPosition);
+      EnforceTradingHoursForEntry(symbol, entryPosition);
       EnforceMaxOpenTrades(symbol);
       // The history query replaces the selected deals list.
       if(!HistoryDealSelect(trans.deal))

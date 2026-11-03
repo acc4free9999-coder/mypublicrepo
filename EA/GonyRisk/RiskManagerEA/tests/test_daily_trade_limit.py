@@ -23,6 +23,148 @@ def function(source, name):
 
 
 class DailyTradeLimitTests(unittest.TestCase):
+    def test_out_of_hours_fill_is_closed_without_touching_existing_positions(self):
+        source = EA.read_text()
+        transaction = function(source, "OnTradeTransaction")
+        self.assertIn("EnforceTradingHoursForEntry(symbol, entryPosition)", transaction)
+        self.assertIn("!IsWithinTradingHours()", function(source, "OpenTrade"))
+
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        enforcement = function(source, "EnforceTradingHoursForEntry")
+        harness = r"""
+#include <cassert>
+#include <string>
+#include <vector>
+using std::string;
+using ulong = unsigned long;
+enum { POSITION_SYMBOL, POSITION_IDENTIFIER };
+struct Position { ulong ticket; string symbol; ulong id; bool open; };
+std::vector<Position> positions;
+int selected = -1;
+bool InpUseTradingHours = true, tradingHoursOpen = false;
+int PositionsTotal() {
+ int count = 0;
+ for(const auto &position : positions) if(position.open) count++;
+ return count;
+}
+ulong PositionGetTicket(int index) {
+ for(const auto &position : positions)
+  if(position.open && index-- == 0) return position.ticket;
+ return 0;
+}
+bool PositionSelectByTicket(ulong ticket) {
+ for(int i = 0; i < int(positions.size()); i++)
+  if(positions[i].open && positions[i].ticket == ticket) { selected = i; return true; }
+ return false;
+}
+string PositionGetString(int) { return positions[selected].symbol; }
+long PositionGetInteger(int) { return long(positions[selected].id); }
+bool IsWithinTradingHours() { return tradingHoursOpen; }
+bool IsManagedSymbol(string symbol) { return symbol == "XAUUSDm"; }
+void PrepareTrade(string) {}
+int GetLastError() { return 0; }
+template<class... T> void Print(T...) {}
+struct Trade {
+ bool PositionClose(ulong ticket) {
+  for(auto &position : positions)
+   if(position.open && position.ticket == ticket) { position.open = false; return true; }
+  return false;
+ }
+} trade;
+"""
+        cases = r"""
+int main() {
+ positions = {{1,"XAUUSDm",100,true}, {2,"XAUUSDm",200,true},
+              {3,"BTCUSDm",300,true}};
+ EnforceTradingHoursForEntry("XAUUSDm", 200);
+ assert(positions[0].open);
+ assert(!positions[1].open);
+ assert(positions[2].open);
+ positions[1].open = true;
+ tradingHoursOpen = true;
+ EnforceTradingHoursForEntry("XAUUSDm", 200);
+ assert(positions[1].open);
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "trading_hours_entry.cpp"
+            binary = Path(directory) / "trading_hours_entry"
+            cpp.write_text(harness + enforcement + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_trading_hours_use_gmt_plus_7_boundaries(self):
+        source = EA.read_text()
+        self.assertIn('InpUseTradingHours = true', source)
+        self.assertIn('InpTradingStartTime= "06:00"', source)
+        self.assertIn('InpTradingEndTime  = "18:15"', source)
+        panel = function(source, "GetPanelInfoLines")
+        self.assertIn('Trading Hours GMT+7:', panel)
+        self.assertIn('"GMT+7: " + TimeToString((datetime)(TimeGMT() + 7 * 60 * 60)', panel)
+
+        compiler = shutil.which("clang++") or shutil.which("g++")
+        if compiler is None:
+            self.skipTest("A C++ compiler is required for the terminal API harness")
+        parse_time = function(source, "ParseTimeOfDay").replace(
+            "string parts[];", "std::vector<string> parts;"
+        )
+        within_hours = function(source, "IsWithinTradingHours")
+        harness = r"""
+#include <cassert>
+#include <string>
+#include <vector>
+using std::string;
+using datetime = long;
+using ushort = unsigned short;
+struct MqlDateTime { int hour, min, sec; };
+bool InpUseTradingHours = true;
+string InpTradingStartTime = "06:00", InpTradingEndTime = "18:15";
+datetime utcNow = 0;
+datetime TimeGMT() { return utcNow; }
+bool TimeToStruct(datetime value, MqlDateTime &parts) {
+ long seconds = value % 86400;
+ if(seconds < 0) seconds += 86400;
+ parts.hour = int(seconds / 3600);
+ parts.min = int(seconds % 3600 / 60);
+ parts.sec = int(seconds % 60);
+ return true;
+}
+int StringSplit(const string &value, ushort delimiter, std::vector<string> &parts) {
+ size_t start = 0, end;
+ while((end = value.find(char(delimiter), start)) != string::npos) {
+  parts.push_back(value.substr(start, end - start));
+  start = end + 1;
+ }
+ parts.push_back(value.substr(start));
+ return int(parts.size());
+}
+long StringToInteger(const string &value) { return std::stol(value); }
+template<class... T> void Print(T...) {}
+"""
+        harness = harness.replace("#include <string>", "#include <string>\n#include <cstdlib>")
+        cases = r"""
+int main() {
+ utcNow = 22 * 3600 + 59 * 60;
+ assert(!IsWithinTradingHours()); // GMT+7 05:59
+ utcNow = 23 * 3600;
+ assert(IsWithinTradingHours()); // GMT+7 06:00
+ utcNow = 11 * 3600 + 14 * 60;
+ assert(IsWithinTradingHours()); // GMT+7 18:14
+ utcNow = 11 * 3600 + 15 * 60;
+ assert(!IsWithinTradingHours()); // GMT+7 18:15
+ InpTradingStartTime = "bad";
+ assert(!IsWithinTradingHours());
+}
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            cpp = Path(directory) / "gmt_plus_7_hours.cpp"
+            binary = Path(directory) / "gmt_plus_7_hours"
+            cpp.write_text(harness + parse_time + within_hours + cases)
+            subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_blacklist_matches_case_insensitive_prefixes(self):
         source = EA.read_text()
         for name in ("OnInit", "OnTradeTransaction", "OnTimer", "OnTick"):
