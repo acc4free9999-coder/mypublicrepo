@@ -1,6 +1,6 @@
 name: FocusGuard
 options:
-  bundleIdPrefix: com.focusguard
+  bundleIdPrefix: com.gonyfocusguard
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true
@@ -58,7 +58,7 @@ targets:
           - group.com.focusguard.shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.focusguard.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.gonyfocusguard.app
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
@@ -87,7 +87,7 @@ targets:
           - group.com.focusguard.shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.focusguard.app.monitor
+        PRODUCT_BUNDLE_IDENTIFIER: com.gonyfocusguard.app.monitor
 
   FocusGuardShieldConfiguration:
     type: app-extension
@@ -114,7 +114,7 @@ targets:
           - group.com.focusguard.shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.focusguard.app.shield-configuration
+        PRODUCT_BUNDLE_IDENTIFIER: com.gonyfocusguard.app.shield-configuration
 
   FocusGuardShieldAction:
     type: app-extension
@@ -141,7 +141,7 @@ targets:
           - group.com.focusguard.shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.focusguard.app.shield-action
+        PRODUCT_BUNDLE_IDENTIFIER: com.gonyfocusguard.app.shield-action
 
   FocusGuardReport:
     type: extensionkit-extension
@@ -163,7 +163,7 @@ targets:
         com.apple.developer.family-controls: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.focusguard.app.report
+        PRODUCT_BUNDLE_IDENTIFIER: com.gonyfocusguard.app.report
 
   FocusGuardTests:
     type: bundle.unit-test
@@ -175,7 +175,7 @@ targets:
       - package: FocusGuardKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.focusguard.app.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.gonyfocusguard.app.tests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:

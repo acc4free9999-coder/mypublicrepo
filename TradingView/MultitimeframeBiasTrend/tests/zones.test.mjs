@@ -24,7 +24,7 @@ test("demand and supply zones require base plus displacement beyond base", () =>
 });
 
 test("source: confirmed-only creation, mitigation first, bounded boxes, no requests", () => {
-  const block = source.slice(source.indexOf("var array<box> sdBoxes"), source.indexOf("// Optional overlays use chart OHLC"));
+  const block = source.slice(source.indexOf("var array<box> sdBoxes"), source.indexOf("// Liquidity sweeps:"));
   assert.match(block, /if sdEnabled and barstate\.isconfirmed/);
   assert.ok(block.indexOf("bool broken") < block.indexOf("int newDir"));
   assert.match(block, /box\.delete\(array\.shift\(sdBoxes\)\)/);

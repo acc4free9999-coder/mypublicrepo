@@ -8,9 +8,9 @@ const module = source.slice(source.indexOf("// Dealing range adaptation:"), sour
 test("full dealing range is isolated and adds no plots", () => {
   for (const group of ["DR | Range", "DR | FVG / IFVG", "DR | Order blocks",
     "DR | Breaker blocks", "DR | Style / retention"]) {
-    assert.ok(module.includes(`"${group}"`), group);
+    assert.ok(source.includes(`"${group}"`), group);
   }
-  assert.match(module, /drx_enabled = input\.bool\(true/);
+  assert.match(source, /drx_enabled = input\.bool\(true/);
   assert.doesNotMatch(module, /\b(?:plot|plotshape|alertcondition|indicator)\s*\(/);
   for (const line of module.split("\n").filter(line => /\b(?:box|line)\.new\(/.test(line))) {
     assert.ok(line.includes("force_overlay = true"), line);
@@ -42,7 +42,7 @@ test("empty history and faded zone ownership are guarded and bounded", () => {
 test("IFVG detection works with FVG display off and owns independent retention", () => {
   assert.match(module, /if drx_fvgOn or drx_ifvgOn/);
   assert.match(module, /if drx_fvgOn\s+bx := box\.new/);
-  assert.match(module, /drx_ifvgDR = input\.bool\(false/);
+  assert.match(source, /drx_ifvgDR = input\.bool\(false/);
   for (const side of ["Bull", "Bear"]) {
     assert.match(module, new RegExp(`drx_pushRegion\\(drx_ifvg${side}, drx_Region\\.new\\(bx, r\\.hi, r\\.lo, bar_index`));
     assert.match(module, new RegExp(`drx_sweepGroup\\(drx_ifvg${side},`));

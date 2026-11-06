@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppGroup {
-    static let identifier = "group.com.focusguard.shared"
+    static let identifier = "group.com.gonyfocusguard.shared"
 
     /// Falls back to Application Support when the App Group entitlement is missing
     /// (e.g. unsigned simulator builds) so the app still runs.

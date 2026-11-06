@@ -5,19 +5,16 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../MultitimeframeBiasTrend.pine", import.meta.url), "utf8");
 const checklist = source.slice(source.indexOf("// Reference only:"));
 
-test("reference checklist is fixed at bottom right with top-level visibility switches", () => {
-  assert.match(checklist, /table\.new\(position\.bottom_right, 3, 22/);
+test("reference checklist is fixed at top right with its own visibility switch", () => {
+  assert.match(checklist, /table\.new\(position\.top_right, 3, 22/);
   assert.match(checklist, /if barstate\.islast/);
   assert.doesNotMatch(checklist, /input\.|plot(?:shape)?\(|alertcondition\(/);
   assert.match(checklist, /REFERENCE ONLY \| No live score/);
   assert.match(checklist, /if barstate\.islast and showPullbackChecklist/);
-  assert.match(checklist, /frame_width = showPullbackChecklist \? 1 : 0/);
+  assert.match(checklist, /frame_width = showPullbackChecklist and checklistDisplay == "Top right panel" \? 1 : 0/);
   const topInputs = source.slice(0, source.indexOf('string G_DATA'));
-  assert.match(topInputs, /showDashboard = input\.bool\(true, "Show market bias panel"/);
   assert.match(topInputs, /showPullbackChecklist = input\.bool\(true, "Show pullback checklist panel"/);
-  assert.equal([...source.matchAll(/bool showDashboard =/g)].length, 1);
-  const dashboardPosition = source.match(/^string panelPosition = (.*)$/m)[1];
-  assert.doesNotMatch(dashboardPosition, /position\.bottom_right/);
+  assert.doesNotMatch(source, /showDashboard|Show market bias panel|G_VIEW|panelPosition/);
 });
 
 test("all fourteen criteria fit their rows and retain the rubric points", () => {
