@@ -33,6 +33,39 @@ export function initialState(): AppState {
     ] }],
   };
 }
+export function parseJournal(raw: string): AppState {
+  let value: unknown;
+  try { value = JSON.parse(raw); }
+  catch { throw new Error('This file is not valid JSON. Choose an Edgebook export or the journal template.'); }
+  const parsed = stateSchema.safeParse(value);
+  if (!parsed.success) throw new Error('Invalid journal format. Choose an Edgebook export or use the downloadable JSON template.');
+  const journal = parsed.data;
+  const ids = new Set<string>();
+  const entities = [
+    ...journal.sections.flatMap(section => [section, ...section.items]),
+    ...journal.questionSections.flatMap(section => [section, ...section.questions.flatMap(question => [question, ...question.options])]),
+  ];
+  for (const entity of entities) {
+    if (!entity.id.trim() || ids.has(entity.id)) throw new Error('Every section, item, question, and option must have a unique, non-empty ID.');
+    ids.add(entity.id);
+  }
+  const validDate = (date: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+    const actual = new Date(`${date}T12:00:00Z`);
+    return Number.isFinite(actual.getTime()) && actual.toISOString().slice(0, 10) === date;
+  };
+  for (const date of Object.keys(journal.daily)) {
+    if (!validDate(date)) throw new Error('Daily answers must use valid dates in YYYY-MM-DD format.');
+  }
+  for (const [month, records] of Object.entries(journal.months)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('Trading months must use YYYY-MM format.');
+    for (const [date, record] of Object.entries(records)) {
+      if (!validDate(date) || date.slice(0, 7) !== month) throw new Error('Every trading date must be valid and belong to its containing month.');
+      if (record.trades.some(trade => trade.trim() !== '' && !Number.isFinite(Number(trade)))) throw new Error('Trade results must be numeric strings, such as "2", "-1", or "0". Use "" for an empty trade.');
+    }
+  }
+  return journal;
+}
 function load() {
   let rawBackup: string | null = null;
   try {
@@ -55,6 +88,13 @@ export function useJournal() {
     catch { setSaveError('Could not save your changes. Storage may be full or blocked. Export a backup in Settings.'); }
   }, [state, readError]);
   const resetState = () => { setReadError(''); setState(emptyState()); };
+  const importJournal = (journal: AppState) => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(journal)); }
+    catch { throw new Error('Import could not be saved. Storage may be full or blocked. Your current journal has not been replaced.'); }
+    setReadError('');
+    setSaveError('');
+    setState(journal);
+  };
   const exportData = () => readError && loaded.rawBackup !== null ? loaded.rawBackup : JSON.stringify(state, null, 2);
-  return { state, setState, saveError, resetState, exportData };
+  return { state, setState, saveError, resetState, exportData, importJournal };
 }
