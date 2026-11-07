@@ -11,6 +11,7 @@ string G_PANELS = "Panels"
 bool showPullbackChecklist = input.bool(true, "Show pullback checklist panel", group = G_PANELS)
 string checklistDisplay = input.string("Top right panel", "Pullback checklist display", options = ["Top right panel", "Near latest price"], group = G_PANELS)
 string checklistTextSize = input.string("Small", "Pullback checklist text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = G_PANELS)
+int checklistTopOffset = input.int(4, "Checklist top offset (% of pane)", minval = 0, maxval = 20, group = G_PANELS, tooltip = "Pine tables cannot use pixel offsets; this adds vertical space above the top-right panel.")
 string G_DATA = "Shared ATR"
 int atrLen = input.int(14, "ATR length", minval = 2, maxval = 100, group = G_DATA)
 string G_STYLE = "Chart module style (shared)"
@@ -1650,19 +1651,21 @@ f_checklistCell(table checklist, int column, int row, string value, color backgr
     string font = checklistTextSize == "Tiny" ? size.tiny : checklistTextSize == "Normal" ? size.normal : checklistTextSize == "Large" ? size.large : checklistTextSize == "Huge" ? size.huge : size.small
     table.cell(checklist, column, row, value, bgcolor = background, text_color = foreground, text_size = font, text_halign = text.align_left, tooltip = tip)
 
-var table pullbackChecklist = table.new(position.top_right, 3, 22, bgcolor = showPullbackChecklist and checklistDisplay == "Top right panel" ? color.rgb(20, 25, 33) : na, frame_color = color.gray, frame_width = showPullbackChecklist and checklistDisplay == "Top right panel" ? 1 : 0, force_overlay = true)
+var table pullbackChecklist = table.new(position.top_right, 3, 23, bgcolor = showPullbackChecklist and checklistDisplay == "Top right panel" ? color.rgb(20, 25, 33) : na, frame_color = color.gray, frame_width = showPullbackChecklist and checklistDisplay == "Top right panel" ? 1 : 0, force_overlay = true)
 var label pullbackChecklistLabel = na
 if barstate.isfirst
     table.merge_cells(pullbackChecklist, 0, 0, 2, 0)
-    for row = 16 to 21
+    table.cell(pullbackChecklist, 0, 0, "", height = checklistTopOffset, bgcolor = na)
+    table.merge_cells(pullbackChecklist, 0, 1, 2, 1)
+    for row = 17 to 22
         table.merge_cells(pullbackChecklist, 0, row, 2, row)
 if barstate.islast and showPullbackChecklist and checklistDisplay == "Top right panel"
     color checklistBg = color.rgb(20, 25, 33)
     color checklistHeader = color.rgb(42, 49, 60)
-    f_checklistCell(pullbackChecklist, 0, 0, "PULLBACK CHECKLIST | REFERENCE / 100", checklistHeader, color.white)
-    f_checklistCell(pullbackChecklist, 0, 1, "Category / cap", checklistHeader, color.silver)
-    f_checklistCell(pullbackChecklist, 1, 1, "Manual check (not evaluated)", checklistHeader, color.silver)
-    f_checklistCell(pullbackChecklist, 2, 1, "Points", checklistHeader, color.silver)
+    f_checklistCell(pullbackChecklist, 0, 1, "PULLBACK CHECKLIST | REFERENCE / 100", checklistHeader, color.white)
+    f_checklistCell(pullbackChecklist, 0, 2, "Category / cap", checklistHeader, color.silver)
+    f_checklistCell(pullbackChecklist, 1, 2, "Manual check (not evaluated)", checklistHeader, color.silver)
+    f_checklistCell(pullbackChecklist, 2, 2, "Points", checklistHeader, color.silver)
     array<string> checklistGroups = array.from(
          "HTF / 25", "", "Geometry / 15", "", "", "Pullback / 15", "",
          "Confluence / 20", "", "", "ICT / SMC / 25", "", "", "Bonus")
@@ -1701,19 +1704,19 @@ if barstate.islast and showPullbackChecklist and checklistDisplay == "Top right 
          "7: an active breaker, mitigation or HTF rejection block overlaps the contact.",
          "5 bonus: descending triangle support breakdown and apex retest, or breakout above the descending line and support retest. Cap the final score at 100.")
     for i = 0 to 13
-        f_checklistCell(pullbackChecklist, 0, i + 2, checklistGroups.get(i), checklistBg, color.silver)
-        f_checklistCell(pullbackChecklist, 1, i + 2, checklistRules.get(i), checklistBg, color.white, checklistTips.get(i))
-        f_checklistCell(pullbackChecklist, 2, i + 2, checklistPoints.get(i), checklistBg, color.aqua, checklistTips.get(i))
-    f_checklistCell(pullbackChecklist, 0, 16, "HARD FAIL -> 0: HTF alignment = 0 / aggressive line breakdown", color.rgb(75, 25, 30), color.white)
-    f_checklistCell(pullbackChecklist, 0, 17, "HARD FAIL -> 0: RR < 1:2 / high-impact news +/-15 min", color.rgb(75, 25, 30), color.white, "Check the economic calendar manually. News proximity is not evaluated by this panel.")
-    f_checklistCell(pullbackChecklist, 0, 18, "Total = min(100, category points + bonus); hard fail overrides", checklistBg, color.silver)
-    f_checklistCell(pullbackChecklist, 0, 19, "85-100 A+ | 70-84 A | 50-69 B | <50 Invalid", checklistHeader, color.white)
-    f_checklistCell(pullbackChecklist, 0, 20, "Rubric minimum: 70 | Hover each check for full criteria", checklistBg, color.aqua)
-    f_checklistCell(pullbackChecklist, 0, 21, "REFERENCE ONLY | No live score, entry or risk-sizing signal", checklistBg, color.silver)
+        f_checklistCell(pullbackChecklist, 0, i + 3, checklistGroups.get(i), checklistBg, color.silver)
+        f_checklistCell(pullbackChecklist, 1, i + 3, checklistRules.get(i), checklistBg, color.white, checklistTips.get(i))
+        f_checklistCell(pullbackChecklist, 2, i + 3, checklistPoints.get(i), checklistBg, color.aqua, checklistTips.get(i))
+    f_checklistCell(pullbackChecklist, 0, 17, "HARD FAIL -> 0: HTF alignment = 0 / aggressive line breakdown", color.rgb(75, 25, 30), color.white)
+    f_checklistCell(pullbackChecklist, 0, 18, "HARD FAIL -> 0: RR < 1:2 / high-impact news +/-15 min", color.rgb(75, 25, 30), color.white, "Check the economic calendar manually. News proximity is not evaluated by this panel.")
+    f_checklistCell(pullbackChecklist, 0, 19, "Total = min(100, category points + bonus); hard fail overrides", checklistBg, color.silver)
+    f_checklistCell(pullbackChecklist, 0, 20, "85-100 A+ | 70-84 A | 50-69 B | <50 Invalid", checklistHeader, color.white)
+    f_checklistCell(pullbackChecklist, 0, 21, "Rubric minimum: 70 | Hover each check for full criteria", checklistBg, color.aqua)
+    f_checklistCell(pullbackChecklist, 0, 22, "REFERENCE ONLY | No live score, entry or risk-sizing signal", checklistBg, color.silver)
 
 if barstate.islast
     if not showPullbackChecklist or checklistDisplay != "Top right panel"
-        table.clear(pullbackChecklist, 0, 0, 2, 21)
+        table.clear(pullbackChecklist, 0, 0, 2, 22)
     if showPullbackChecklist and checklistDisplay == "Near latest price"
         string checklistLabelText = "PULLBACK CHECKLIST | REFERENCE / 100"
         checklistLabelText += "\nHTF: H4 + Daily structure aligned [15/0]"

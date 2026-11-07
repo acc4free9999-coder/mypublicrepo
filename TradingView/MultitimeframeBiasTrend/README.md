@@ -14,7 +14,7 @@ Paste the complete [indicator](./MultitimeframeBiasTrend.pine) into TradingView'
 
 ## Pullback Checklist
 
-The top-right checklist is a manual reference to the [quality trendline pullback rubric](./quality_trendline_pullback_scoring_system.md). It does not evaluate chart conditions, calculate a live score, recommend entries, or size risk. Use the **Panels** inputs to hide it or display it near the latest price.
+The top-right checklist is a manual reference to the [quality trendline pullback rubric](./quality_trendline_pullback_scoring_system.md). It does not evaluate chart conditions, calculate a live score, recommend entries, or size risk. Set **Checklist top offset** to adjust its pane-relative spacing; Pine table offsets cannot be specified in pixels. Use the **Panels** inputs to hide it or display it near the latest price.
 
 ## Alerts
 

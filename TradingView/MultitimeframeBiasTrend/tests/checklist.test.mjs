@@ -5,8 +5,10 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../MultitimeframeBiasTrend.pine", import.meta.url), "utf8");
 const checklist = source.slice(source.indexOf("// Reference only:"));
 
-test("reference checklist is fixed at top right with its own visibility switch", () => {
-  assert.match(checklist, /table\.new\(position\.top_right, 3, 22/);
+test("reference checklist is fixed at top right with adjustable top spacing", () => {
+  assert.match(checklist, /table\.new\(position\.top_right, 3, 23/);
+  assert.match(checklist, /table\.cell\(pullbackChecklist, 0, 0, "", height = checklistTopOffset/);
+  assert.match(checklist, /for row = 17 to 22/);
   assert.match(checklist, /if barstate\.islast/);
   assert.doesNotMatch(checklist, /input\.|plot(?:shape)?\(|alertcondition\(/);
   assert.match(checklist, /REFERENCE ONLY \| No live score/);
@@ -31,7 +33,7 @@ test("all fourteen criteria fit their rows and retain the rubric points", () => 
     "10 / 0", "8 / 0", "7 / 0", "+5",
   ]);
   assert.match(checklist, /for i = 0 to 13/);
-  assert.match(checklist, /for row = 16 to 21/);
+  assert.match(checklist, /for row = 17 to 22/);
 });
 
 test("hard failures, score cap, grades and manual news verification are visible", () => {
