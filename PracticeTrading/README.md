@@ -33,6 +33,14 @@ In Settings, choose **Import journal** and select an Edgebook JSON export (up to
 
 Choose **Download template** for an editable JSON example. The template includes checklist sections, written and checklist questions, example answers, and sample trades on January 5, 2026. Replace or remove the sample records before importing. Keep entity IDs unique, dates in `YYYY-MM-DD` format, and month keys in `YYYY-MM` format. Trade values are strings such as `"2"`, `"-1"`, or `"0"`; use `""` for an empty trade. Daily records must belong to their containing month. Empty `daily` and `months` objects are valid for a template without trading history.
 
+## Trade Simulator
+
+The Trade Simulator page generates 1 to 1,000 independent random trades. Set a target win probability and minimum/maximum winning RR and loss size. Loss sizes are entered as positive magnitudes and recorded as negative R. Winning and losing sizes are sampled uniformly inside the configured ranges; the observed win rate can differ from the probability.
+
+Enable **Customize individual trade ranges** to override any trade with signed minimum/maximum RR. A custom trade samples uniformly from those bounds instead of using the win/loss probability model. Equal bounds give a fixed result, including a zero-R breakeven. Individual controls and the result ledger are paginated in batches of 25 trades.
+
+Each run shows cumulative equity, drawdown, net RR, observed win rate, and average RR. Drawdown is measured from the running high-water mark, including the initial 0R starting point. Settings changes do not alter an existing chart until another run; the old run is labeled accordingly. Simulations are temporary and never change localStorage, real journal records, or exports. Random outcomes are exploratory, not predictions.
+
 ## Storage
 
 Data is automatically saved to the `edgebook-journal-v1` localStorage key. There is no backend, authentication, synchronization, or market-data service. Clearing browser data removes the journal; export important records regularly. To move a journal to another browser or from localhost to the deployed site, export it in the source browser and import the file on the destination site.

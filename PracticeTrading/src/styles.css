@@ -222,6 +222,57 @@ td input:not([type=checkbox]):hover { background: var(--surface-soft); border-co
 .import-dialog-error { margin-top: 16px; }
 .import-actions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
 .paste-json-editor { min-height: 240px; max-height: 45dvh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.7; tab-size: 2; overflow-wrap: anywhere; }
+.simulation-controls { padding-block: 6px 24px; border-bottom: 1px solid var(--border); }
+.simulation-parameter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 18px; }
+.simulation-parameter-group { min-width: 0; }
+.simulation-parameter-group + .simulation-parameter-group { border-left: 1px solid var(--border); padding-left: 28px; }
+.simulation-parameter-group h3 { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12px; font-weight: 600; margin-top: 16px; }
+.simulation-parameter-group .field-label { margin-top: 16px; }
+.simulation-range-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.simulation-range-note { display: block; font-size: 10px; margin-top: 13px; }
+.probability-control { display: flex; align-items: center; gap: 15px; }
+.probability-control input[type=number] { max-width: 86px; }
+input.probability-slider { appearance: auto; accent-color: var(--primary); padding: 0; border: none; background: transparent; height: 22px; box-shadow: none; }
+.simulation-controls-footer { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-top: 24px; }
+.simulation-controls-footer .check-label { font-size: 11px; }
+.simulation-actions { display: flex; gap: 8px; }
+.simulation-error { margin-top: 18px; margin-bottom: 0; }
+.simulation-metrics { margin-top: 24px; }
+.simulation-chart-tabs { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--border); background: var(--surface-soft); border-radius: 5px; }
+.simulation-chart-tabs button { display: flex; align-items: center; gap: 6px; min-height: 29px; padding: 6px 9px; background: transparent; border: 0; border-radius: 3px; color: var(--muted); font-size: 10px; }
+.simulation-chart-tabs button.selected { background: var(--primary-soft); color: var(--primary-ink); }
+.simulation-chart { height: 320px; width: 100%; min-width: 0; margin-top: 20px; overflow: hidden; }
+.simulation-empty { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; color: #9f85bd; background: repeating-linear-gradient(0deg, transparent 0, transparent 62px, #e7e2ee70 63px, transparent 64px); }
+.simulation-empty span { font-family: 'Manrope', sans-serif; font-size: 13px; color: var(--muted); }
+.simulation-chart-footer { display: flex; justify-content: space-between; gap: 15px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 9px; color: var(--muted); }
+.simulation-ledger { margin-top: 24px; padding: 0; overflow: hidden; }
+.simulation-ledger .section-title { padding: 22px; }
+.simulation-ledger td input:disabled { opacity: .5; }
+.simulation-pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; }
+.simulation-pagination > div { display: flex; align-items: center; gap: 9px; }
+
+@media (max-width: 1000px) {
+	.simulation-parameter-grid { gap: 16px; }
+	.simulation-parameter-group + .simulation-parameter-group { padding-left: 16px; }
+	.simulation-range-fields { grid-template-columns: 1fr; gap: 0; }
+}
+@media (max-width: 760px) {
+	.simulation-parameter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+	.simulation-parameter-group:first-child { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
+	.simulation-parameter-group:first-child > label { grid-row: 1; }
+	.simulation-parameter-group:first-child > input, .simulation-parameter-group:first-child > .probability-control { grid-row: 2; }
+	.simulation-parameter-group + .simulation-parameter-group { border-left: 0; padding-left: 0; }
+	.probability-control { gap: 8px; }
+	.probability-control input[type=number] { max-width: 65px; }
+	.simulation-controls-footer { flex-wrap: wrap; gap: 15px; }
+	.simulation-actions { width: 100%; justify-content: flex-end; }
+	.simulation-chart-tabs button { padding: 6px; font-size: 9px; }
+	.simulation-chart-tabs button svg { width: 12px; }
+	.simulation-chart { height: 260px; }
+	.simulation-chart-footer { font-size: 8px; gap: 8px; line-height: 1.7; }
+	.simulation-pagination { padding-inline: 14px; font-size: 9px; }
+	.simulation-pagination > div { gap: 4px; }
+}
 
 @media (min-width: 1500px) { main { padding: 45px 48px 25px; }.topbar { padding-inline: 48px; }.page-heading { margin-bottom: 40px; }.dashboard-main-grid { grid-template-columns: minmax(0, 1.7fr) minmax(340px, 1fr); }.check-row { min-height: 43px; }.compact-checklist .check-row { min-height: 36px; }.metric { min-height: 146px; }.metric-value { font-size: 33px; }.panel { padding: 25px; }.calendar-day { height: 39px; }.recent-row { padding-block: 19px; } }
 @media (max-width: 1180px) { .sidebar { width: 205px; padding-inline: 12px; }.main-shell { margin-left: 205px; width: calc(100% - 205px); }.brand { font-size: 24px; }.nav-item { font-size: 11px; gap: 9px; }main { padding-inline: 25px; }.topbar { padding-inline: 25px; }.topbar-right { gap: 12px; }.metrics-grid { gap: 10px; }.metric { padding: 15px; }.metric-value { font-size: 26px; }.dashboard-main-grid { grid-template-columns: minmax(0, 1.3fr) minmax(260px, 1fr); gap: 15px; }.panel { padding: 17px; }.dashboard-bottom-grid { gap: 15px; }.section-title { gap: 9px; }.section-title h2 { font-size: 12px; }.section-title p { font-size: 9px; }.today-checklist .subtle-tag { padding: 4px; }h1 { font-size: 25px; }.profile strong { font-size: 10px; }.chart-footer .text-link { font-size: 9px; }.chart-empty-label { font-size: 9px; }.compact-checklist .check-label { font-size: 9px; }.calendar-legend { gap: 10px; font-size: 7px; } }

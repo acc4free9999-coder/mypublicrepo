@@ -1,0 +1,76 @@
+{
+  "sections": [
+    {
+      "id": "1",
+      "name": "Todo",
+      "items": [
+        { "id": "11", "name": "Practice random trades" },
+        { "id": "12", "name": "Practice big losses and lose streak" },
+        { "id": "13", "name": "Read all psychology and discipline rules" },
+        { "id": "14", "name": "Define market structure and bias today" }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "Psychology - Acceptance loose",
+      "items": [
+        { "id": "21", "name": "Will be fake breakout TL" },
+        { "id": "22", "name": "Will be real breakout TL" },
+        { "id": "23", "name": "Will be missed TL" },
+        { "id": "24", "name": "Will be Break even" }
+      ]
+    },
+    {
+      "id": "3",
+      "name": "Psychology - Clear all emotional inside and outside",
+      "items": [
+        { "id": "31", "name": "What is in my mind? -> Clear" },
+        { "id": "32", "name": "What is outside impact me? -> Clear"},
+        { "id": "33", "name": "Always keep calm down"},
+        { "id": "34", "name": "Always keep positive"},
+        { "id": "35", "name": "Always keep smile"}
+      ]
+    },
+    {
+      "id": "4",
+      "name": "Plan",
+      "items": [
+        { "id": "41", "name": "Timeframe : 15M" },
+        { "id": "42", "name": "Avoid strong volume and impact news"},
+        { "id": "43", "name": "When price run so long with Bias, no more liquidity, close trading view"}
+      ]
+    },
+    {
+      "id": "5",
+      "name": "Risk",
+      "items": [
+        { "id": "51", "name": "Min R:R >=2" },
+        { "id": "52", "name": "Set Break event"}
+      ]
+    }
+  ],
+  "questionSections": [
+    {
+      "id": "add1",
+      "name": "If...what should I do?",
+      "questions": [
+        {
+          "id": "add12",
+          "name": "If I lose steak, what should I do?",
+          "type": "text",
+          "options": []
+        },
+        {
+          "id": "add13",
+          "name": "If I so emotional feel hurry up, angry, frustrated, tired, stressed, anxious, what should I do?",
+          "type": "text",
+          "options": []
+        }
+      ]
+    }
+  ],
+  "daily": {
+  },
+  "months": {
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "sections": [
+    {
+      "id": "pre-trading",
+      "name": "Pre-trading checklist",
+      "items": [
+        { "id": "check-news", "name": "Check high-impact news" },
+        { "id": "calculate-risk", "name": "Calculate risk before entering" }
+      ]
+    }
+  ],
+  "questionSections": [
+    {
+      "id": "daily-plan",
+      "name": "Daily game plan",
+      "questions": [
+        {
+          "id": "market-bias",
+          "name": "What is today's market bias?",
+          "type": "text",
+          "options": []
+        },
+        {
+          "id": "market-condition",
+          "name": "What is the current market condition?",
+          "type": "checklist",
+          "options": [
+            { "id": "uptrend", "name": "Strong Uptrend" },
+            { "id": "downtrend", "name": "Strong Downtrend" },
+            { "id": "range", "name": "Sideway" },
+            { "id": "transition", "name": "Transition" }
+          ]
+        }
+      ]
+    }
+  ],
+  "daily": {
+    "2026-01-05": {
+      "checked": ["check-news", "calculate-risk"],
+      "answers": {
+        "market-bias": "Example answer: bullish above support. Replace with your own answer.",
+        "market-condition": ["uptrend"]
+      }
+    }
+  },
+  "months": {
+    "2026-01": {
+      "2026-01-05": {
+        "trades": ["2", "-1", "0", ""],
+        "notes": "EXAMPLE ONLY: +2R win, -1R loss, 0R breakeven, and one empty field. Daily total: +1R. Replace or remove this sample day."
+      }
+    }
+  }
+}
