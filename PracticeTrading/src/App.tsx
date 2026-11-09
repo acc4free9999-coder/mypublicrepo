@@ -44,6 +44,7 @@ export default function App() {
   const [editChecklist, setEditChecklist] = useState(false);
   const [editQuestions, setEditQuestions] = useState(false);
   const [confirmStage, setConfirmStage] = useState(0);
+  const [recordsConfirmStage, setRecordsConfirmStage] = useState(0);
   const [entryDay, setEntryDay] = useState<string | null>(null);
   const [entry, setEntry] = useState<DayRecord>({ trades: ['', '', ''], notes: '' });
   const [builder, setBuilder] = useState<{ kind: 'section' | 'item' | 'qsection' | 'question'; sectionId?: string; itemId?: string } | null>(null);
@@ -184,7 +185,10 @@ export default function App() {
           {importError && <p role="alert" className="error-banner">{importError}</p>}
           {importSuccess && <p role="status" className="import-success"><Check size={16} />{importSuccess}</p>}
         </section>
-        <section className="settings-section danger-zone"><div className="setting-heading"><Trash2 size={22} /><div><h2>Clear journal data</h2><p>A fresh start, when you really mean it.</p></div></div><div className="setting-row"><div><h3>Permanently delete all data</h3><p>Remove every checklist, question, answer, and trade across all months. You will be asked to confirm twice.</p></div><Button variant="destructive" onClick={() => setConfirmStage(1)}><Trash2 size={16} />Clear All Data</Button></div></section>
+        <section className="settings-section danger-zone"><div className="setting-heading"><Trash2 size={22} /><div><h2>Clear journal data</h2><p>A fresh start, when you really mean it.</p></div></div>
+          <div className="setting-row"><div><h3>Clear answers and trades</h3><p>Remove every daily checklist answer and trading result, including notes, across all dates and months. Keep your checklist sections, questions, and templates. You will be asked to confirm twice.</p></div><Button variant="destructive" disabled={saveError.startsWith('Saved data could not be read')} onClick={() => setRecordsConfirmStage(1)}><Trash2 size={16} />Clear Answers &amp; Trades</Button></div>
+          <div className="setting-row"><div><h3>Permanently delete all data</h3><p>Remove every checklist, question, answer, and trade across all months. You will be asked to confirm twice.</p></div><Button variant="destructive" onClick={() => setConfirmStage(1)}><Trash2 size={16} />Clear All Data</Button></div>
+        </section>
         <div className="settings-brand"><Activity size={20} /><strong>edgebook.</strong><span>Stay patient. Protect your capital.</span></div>
       </div>}
     </main></div>
@@ -226,6 +230,7 @@ export default function App() {
         }}><Upload size={16} />Replace and import</Button></div>
       </>}
     </Dialog>
+    <ConfirmDialog stage={recordsConfirmStage} action="records" onCancel={() => setRecordsConfirmStage(0)} onContinue={() => { if (recordsConfirmStage === 1) setRecordsConfirmStage(2); else { setState(previous => ({ ...previous, daily: {}, months: {} })); setRecordsConfirmStage(0); } }} />
     <ConfirmDialog stage={confirmStage} onCancel={() => setConfirmStage(0)} onContinue={() => { if (confirmStage === 1) setConfirmStage(2); else { resetState(); setConfirmStage(0); } }} />
   </div>;
 }
