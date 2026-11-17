@@ -41,6 +41,14 @@ Enable **Customize individual trade ranges** to override any trade with signed m
 
 Each run shows cumulative equity, drawdown, net RR, observed win rate, and average RR. Drawdown is measured from the running high-water mark, including the initial 0R starting point. Settings changes do not alter an existing chart until another run; the old run is labeled accordingly. Simulations are temporary and never change localStorage, real journal records, or exports. Random outcomes are exploratory, not predictions.
 
+## Mind Gym
+
+Mind Gym starts with an editable patience practice. Add up to 30 scenarios or edit an existing one to change its name, description, round count, setup chance, win probability, breakeven chance, and minimum/maximum win and loss sizes. RR values are simulated and do not change journal trades.
+
+Reveal candles at your own pace, wait for a setup or pass on a no-setup round, and acknowledge a loss before the session continues. Early entries use a clearly labeled simulated `-1R` process penalty. Patience, discipline, and loss acceptance are scored independently from simulated P&L.
+
+Scenario definitions and selection are saved in `edgebook-mind-gym-scenarios-v1`. Completing a session records an hourly practice check-in in `edgebook-mind-gym-v1`, separate from the trading journal. Multiple sessions can be played any time, but only one completed session per local clock hour counts toward the daily hourly-rep count. Check-ins are stored only in this browser, with no background notifications. Outcomes and charts are synthetic and are not market forecasts.
+
 ## Storage
 
 Data is automatically saved to the `edgebook-journal-v1` localStorage key. There is no backend, authentication, synchronization, or market-data service. Clearing browser data removes the journal; export important records regularly. To move a journal to another browser or from localhost to the deployed site, export it in the source browser and import the file on the destination site.
