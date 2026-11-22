@@ -12,6 +12,9 @@ int main()
     assert(AutoConfirmation(true, 101, 105, 99, 104, 100, 1, 0));
     assert(!AutoConfirmation(true, 104, 105, 99, 101, 100, 1, 0));
     assert(!AutoConfirmation(true, 101, 105, 98, 104, 100, 1, 0));
+    assert(!AutoConfirmation(true, 101, 105, 99.75, 104, 100, 0.15, 0));
+    assert(AutoConfirmation(true, 101, 105, 99.75, 104, 100, 0.30, 0));
+    assert(AutoConfirmation(false, 99, 100.25, 95, 96, 100, 0.30, 0));
     assert(AutoConfirmation(false, 99, 101, 95, 96, 100, 1, 0));
     assert(!AutoConfirmation(false, 96, 101, 95, 99, 100, 1, 0));
     assert(!AutoConfirmation(false, 99, 102, 95, 96, 100, 1, 0));

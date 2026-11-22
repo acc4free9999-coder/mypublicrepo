@@ -1,7 +1,7 @@
 // Recent trendline research and opt-in automated trading EA.
 #ifndef GTLR_RULES_TEST
 #property strict
-#property version "6.01"
+#property version "6.03"
 #property description "Recent trendline research and opt-in trading"
 #endif
 
@@ -184,52 +184,7 @@ int RecentChoose(const RecentCandidate &candidates[], const int count,
     return chosenCount;
 }
 
-enum VirtualReject
-{
-    VIRTUAL_ACCEPTED = 0,
-    VIRTUAL_INVALID_DATA,
-    VIRTUAL_INVALID_STOP,
-    VIRTUAL_INVALID_TARGET,
-    VIRTUAL_LOW_REWARD,
-    VIRTUAL_VOLUME_TOO_SMALL
-};
-
-struct VirtualSpec
-{
-    double tickSize;
-    double tickValueLoss;
-    double tickValueProfit;
-    double volumeMin;
-    double volumeMax;
-    double volumeStep;
-    double spread;
-    double slippage;
-    double commissionPerLot;
-    double riskPercent;
-};
-
-struct VirtualTrade
-{
-    bool bullish;
-    bool open;
-    long entryTime;
-    long lastBarTime;
-    double entry;
-    double stop;
-    double target;
-    double equity;
-    double volume;
-    double risk;
-    double rewardRisk;
-    double mfe;
-    double mae;
-    double exitPrice;
-    double grossProfit;
-    double netProfit;
-    int outcome;
-};
-
-bool VirtualFinite(const double value)
+bool AutoFinite(const double value)
 {
 #ifdef GTLR_RULES_TEST
     return std::isfinite(value);
@@ -238,150 +193,13 @@ bool VirtualFinite(const double value)
 #endif
 }
 
-double VirtualFloor(const double value)
+double AutoFloor(const double value)
 {
 #ifdef GTLR_RULES_TEST
     return std::floor(value);
 #else
     return MathFloor(value);
 #endif
-}
-
-int VirtualPrepare(const bool bullish, const long entryTime, const double bidOpen,
-                   const double stop, const double target, const double equity,
-                   const VirtualSpec &spec, VirtualTrade &trade)
-{
-    if(entryTime <= 0 || !VirtualFinite(bidOpen) || bidOpen <= 0 ||
-       !VirtualFinite(equity) || equity <= 0 ||
-       !VirtualFinite(spec.tickSize) || spec.tickSize <= 0 ||
-       !VirtualFinite(spec.tickValueLoss) || spec.tickValueLoss <= 0 ||
-       !VirtualFinite(spec.tickValueProfit) || spec.tickValueProfit <= 0 ||
-       !VirtualFinite(spec.volumeMin) || spec.volumeMin <= 0 ||
-       !VirtualFinite(spec.volumeMax) || spec.volumeMax < spec.volumeMin ||
-       !VirtualFinite(spec.volumeStep) || spec.volumeStep <= 0 ||
-       !VirtualFinite(spec.spread) || spec.spread < 0 ||
-       !VirtualFinite(spec.slippage) || spec.slippage < 0 ||
-       !VirtualFinite(spec.commissionPerLot) || spec.commissionPerLot < 0 ||
-       !VirtualFinite(spec.riskPercent) || spec.riskPercent <= 0 || spec.riskPercent > 100)
-        return VIRTUAL_INVALID_DATA;
-    double entry = bullish ? bidOpen + spec.spread + spec.slippage : bidOpen - spec.slippage;
-    if(!VirtualFinite(entry) || entry <= 0 || !VirtualFinite(stop) || stop <= 0 ||
-       (bullish ? stop >= entry || stop <= spec.slippage : stop <= entry))
-        return VIRTUAL_INVALID_STOP;
-    if(!VirtualFinite(target) || target <= 0 ||
-       (bullish ? target <= entry || target <= spec.slippage : target >= entry))
-        return VIRTUAL_INVALID_TARGET;
-    double riskDistance = bullish ? entry - stop : stop - entry;
-    double rewardDistance = bullish ? target - entry : entry - target;
-    double ratio = rewardDistance / riskDistance;
-    if(!VirtualFinite(ratio))
-        return VIRTUAL_INVALID_DATA;
-    trade.rewardRisk = ratio;
-    if(ratio + 1e-10 < 3.0)
-        return VIRTUAL_LOW_REWARD;
-    double riskPerLot = (riskDistance + spec.slippage) / spec.tickSize * spec.tickValueLoss +
-                        spec.commissionPerLot;
-    double budget = equity * (spec.riskPercent / 100.0);
-    if(!VirtualFinite(riskPerLot) || riskPerLot <= 0 || !VirtualFinite(budget) || budget <= 0)
-        return VIRTUAL_INVALID_DATA;
-    double rawVolume = budget / riskPerLot;
-    if(!VirtualFinite(rawVolume))
-        return VIRTUAL_INVALID_DATA;
-    if(rawVolume > spec.volumeMax)
-        rawVolume = spec.volumeMax;
-    double volume = VirtualFloor(rawVolume / spec.volumeStep) * spec.volumeStep;
-    if(!VirtualFinite(volume) || volume < spec.volumeMin || volume > spec.volumeMax)
-        return VIRTUAL_VOLUME_TOO_SMALL;
-    double estimatedRisk = volume * riskPerLot;
-    if(!VirtualFinite(estimatedRisk) || estimatedRisk > budget)
-        return VIRTUAL_INVALID_DATA;
-    trade.bullish = bullish;
-    trade.open = true;
-    trade.entryTime = entryTime;
-    trade.lastBarTime = 0;
-    trade.entry = entry;
-    trade.stop = stop;
-    trade.target = target;
-    trade.equity = equity;
-    trade.volume = volume;
-    trade.risk = estimatedRisk;
-    trade.rewardRisk = ratio;
-    trade.mfe = 0;
-    trade.mae = 0;
-    trade.exitPrice = 0;
-    trade.grossProfit = 0;
-    trade.netProfit = 0;
-    trade.outcome = 0;
-    return VIRTUAL_ACCEPTED;
-}
-
-void VirtualExcursion(VirtualTrade &trade, const double price)
-{
-    double move = trade.bullish ? price - trade.entry : trade.entry - price;
-    if(move > trade.mfe)
-        trade.mfe = move;
-    if(-move > trade.mae)
-        trade.mae = -move;
-}
-
-// Returns -1 for invalid or out-of-order bars, 0 while open, and 1 on exit.
-int VirtualProcessBar(VirtualTrade &trade, const VirtualSpec &spec, const long time,
-                      const double bidOpen, const double bidHigh, const double bidLow,
-                      const double bidClose)
-{
-    if(!trade.open || time < trade.entryTime || time <= trade.lastBarTime ||
-       !VirtualFinite(bidOpen) || !VirtualFinite(bidHigh) ||
-       !VirtualFinite(bidLow) || !VirtualFinite(bidClose) ||
-       bidLow <= 0 || bidHigh < bidLow || bidOpen < bidLow || bidOpen > bidHigh ||
-       bidClose < bidLow || bidClose > bidHigh)
-        return -1;
-    double open = bidOpen + (trade.bullish ? 0 : spec.spread);
-    double high = bidHigh + (trade.bullish ? 0 : spec.spread);
-    double low = bidLow + (trade.bullish ? 0 : spec.spread);
-    if(!VirtualFinite(open) || !VirtualFinite(high) || !VirtualFinite(low))
-        return -1;
-    bool stopHit = trade.bullish ? low <= trade.stop : high >= trade.stop;
-    bool targetHit = trade.bullish ? high >= trade.target : low <= trade.target;
-    trade.lastBarTime = time;
-    VirtualExcursion(trade, open);
-    if(!stopHit && !targetHit)
-    {
-        VirtualExcursion(trade, high);
-        VirtualExcursion(trade, low);
-        return 0;
-    }
-    double trigger;
-    if(stopHit && (trade.bullish ? open <= trade.stop : open >= trade.stop))
-    {
-        trade.outcome = -1;
-        trigger = open;
-    }
-    else if(targetHit && (trade.bullish ? open >= trade.target : open <= trade.target))
-    {
-        trade.outcome = 1;
-        trigger = trade.target;
-    }
-    else if(stopHit)
-    {
-        trade.outcome = -1;
-        trigger = trade.stop;
-    }
-    else
-    {
-        trade.outcome = 1;
-        trigger = trade.target;
-    }
-    VirtualExcursion(trade, trigger);
-    trade.exitPrice = trade.bullish ? trigger - spec.slippage : trigger + spec.slippage;
-    double move = trade.bullish ? trade.exitPrice - trade.entry : trade.entry - trade.exitPrice;
-    double tickValue = move >= 0 ? spec.tickValueProfit : spec.tickValueLoss;
-    trade.grossProfit = move / spec.tickSize * tickValue * trade.volume;
-    trade.netProfit = trade.grossProfit - spec.commissionPerLot * trade.volume;
-    if(!VirtualFinite(trade.exitPrice) || trade.exitPrice <= 0 ||
-       !VirtualFinite(trade.grossProfit) || !VirtualFinite(trade.netProfit))
-        return -1;
-    trade.open = false;
-    return 1;
 }
 
 int AutoBias(const double oldHigh, const double newHigh, const double oldLow, const double newLow)
@@ -411,7 +229,7 @@ bool AutoLevelIntact(const bool resistance, const double close, const double lev
 
 double AutoRewardRisk(const bool bullish, const double entry, const double stop, const double target)
 {
-    if(!VirtualFinite(entry) || !VirtualFinite(stop) || !VirtualFinite(target) ||
+    if(!AutoFinite(entry) || !AutoFinite(stop) || !AutoFinite(target) ||
        entry <= 0 || stop <= 0 || target <= 0 ||
        (bullish ? stop >= entry || target <= entry : stop <= entry || target >= entry))
         return -1;
@@ -422,37 +240,31 @@ double AutoRewardRisk(const bool bullish, const double entry, const double stop,
 
 bool AutoRewardAllowed(const double ratio)
 {
-    return VirtualFinite(ratio) && ratio + 1e-10 >= 3.0;
+    return AutoFinite(ratio) && ratio + 1e-10 >= 3.0;
 }
 
 double AutoVolume(const double equity, const double riskPercent, const double riskPerLot,
                   const double minimum, const double maximum, const double step)
 {
-    if(!VirtualFinite(equity) || equity <= 0 || !VirtualFinite(riskPercent) ||
-       riskPercent <= 0 || riskPercent > 0.5 || !VirtualFinite(riskPerLot) || riskPerLot <= 0 ||
-       !VirtualFinite(minimum) || minimum <= 0 || !VirtualFinite(maximum) || maximum < minimum ||
-       !VirtualFinite(step) || step <= 0)
+    if(!AutoFinite(equity) || equity <= 0 || !AutoFinite(riskPercent) ||
+       riskPercent <= 0 || riskPercent > 0.5 || !AutoFinite(riskPerLot) || riskPerLot <= 0 ||
+       !AutoFinite(minimum) || minimum <= 0 || !AutoFinite(maximum) || maximum < minimum ||
+       !AutoFinite(step) || step <= 0)
         return 0;
     double budget = equity * riskPercent / 100.0;
     double raw = budget / riskPerLot;
-    if(!VirtualFinite(budget) || !VirtualFinite(raw) || budget <= 0)
+    if(!AutoFinite(budget) || !AutoFinite(raw) || budget <= 0)
         return 0;
     if(raw > maximum)
         raw = maximum;
-    double volume = VirtualFloor(raw / step) * step;
-    if(!VirtualFinite(volume) || volume < minimum || volume > maximum ||
-       !VirtualFinite(volume * riskPerLot) || volume * riskPerLot > budget)
+    double volume = AutoFloor(raw / step) * step;
+    if(!AutoFinite(volume) || volume < minimum || volume > maximum ||
+       !AutoFinite(volume * riskPerLot) || volume * riskPerLot > budget)
         return 0;
     return volume;
 }
 
 #ifndef GTLR_RULES_TEST
-enum VirtualSide
-{
-    VIRTUAL_BUY,
-    VIRTUAL_SELL
-};
-
 input int    PivotLeftBars = 3;
 input int    PivotRightBars = 3;
 input double PivotMinDeviation = 0.0001; // Fraction of reference price
@@ -479,20 +291,11 @@ input double WeightReaction = 10.0;
 input double WeightAlignment = 5.0;
 input bool   DebugMode = false;
 input bool   WriteResearchCsv = true;
-input bool   EnableVirtualSimulation = false;
-input datetime VirtualSignalBarTime = D'2020.01.01 00:00';
-input VirtualSide VirtualDirection = VIRTUAL_BUY;
-input double VirtualStopPrice = 0.0;
-input double VirtualTargetPrice = 0.0;
-input double VirtualRiskPercent = 0.5;
-input double VirtualSpreadPoints = 0.0;
-input double VirtualSlippagePoints = 0.0;
-input double VirtualCommissionPerLot = 0.0;
 input bool   EnableAutoTrading = true;
 input bool   AllowRealAccount = true;
 input ulong  AutoMagic = 26061901;
 input double AutoRiskPercent = 0.5;
-input double AutoTouchToleranceATR = 0.15;
+input double AutoTouchToleranceATR = 0.30;
 input double AutoCloseBufferATR = 0.0;
 input double AutoStopBufferATR = 0.20;
 input double AutoLevelBreakToleranceATR = 0.0;
@@ -514,11 +317,6 @@ bool stopped = false;
 bool configLogged = false;
 string lastWait = "";
 const string PREFIX = "GTLR_REC_";
-VirtualTrade virtualTrade;
-VirtualSpec virtualSpec;
-bool virtualAttempted = false;
-int virtualCsvHandle = INVALID_HANDLE;
-string virtualCurrency = "";
 string autoLockName = "";
 string autoFenceName = "";
 string autoFenceFile = "";
@@ -555,14 +353,6 @@ bool ValidInputs()
                              WeightValidity + WeightReaction + WeightAlignment) &&
            WeightDistance + WeightRecency + WeightSignificance + WeightValidity +
                WeightReaction + WeightAlignment > 0 &&
-           (!EnableVirtualSimulation ||
-            (VirtualSignalBarTime > 0 &&
-             (VirtualDirection == VIRTUAL_BUY || VirtualDirection == VIRTUAL_SELL) &&
-             MathIsValidNumber(VirtualStopPrice) && MathIsValidNumber(VirtualTargetPrice) &&
-             MathIsValidNumber(VirtualRiskPercent) && VirtualRiskPercent > 0 && VirtualRiskPercent <= 100 &&
-             MathIsValidNumber(VirtualSpreadPoints) && VirtualSpreadPoints >= 0 &&
-             MathIsValidNumber(VirtualSlippagePoints) && VirtualSlippagePoints >= 0 &&
-             MathIsValidNumber(VirtualCommissionPerLot) && VirtualCommissionPerLot >= 0)) &&
            (!EnableAutoTrading ||
             (WriteResearchCsv && _Period == PERIOD_H1 && MaxTrendlinesToDisplay <= 3 &&
              AutoMagic > 0 && MathIsValidNumber(AutoRiskPercent) && AutoRiskPercent > 0 &&
@@ -642,179 +432,6 @@ bool FlushResearchLog()
     return true;
 }
 
-bool OpenVirtualJournal()
-{
-    if(!EnableVirtualSimulation)
-        return true;
-    string filename = "GTLR_Virtual_" + IntegerToString(ChartID()) + ".csv";
-    ResetLastError();
-    virtualCsvHandle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
-    if(virtualCsvHandle == INVALID_HANDLE)
-    {
-        PrintFormat("GTLR cannot open virtual journal %s: %d", filename, GetLastError());
-        return false;
-    }
-    if(FileSize(virtualCsvHandle) == 0 &&
-       FileWrite(virtualCsvHandle, "decision_time", "event", "symbol", "timeframe",
-                 "h4_bias", "trendline", "confirmation", "signal_bar", "entry_bar",
-                 "exit_bar", "direction", "entry", "stop", "target_manual_unverified",
-                 "theoretical_rr", "volume_lots", "account_equity", "estimated_stop_risk",
-                 "outcome", "mfe_price_lower_bound", "mae_price_lower_bound",
-                 "exit_price", "gross_profit", "net_profit", "currency", "risk_percent", "spread_price",
-                 "slippage_price_per_fill", "commission_per_lot_round_trip",
-                 "tick_size", "tick_value_loss", "tick_value_profit",
-                 "volume_min", "volume_max", "volume_step", "reason") == 0)
-    {
-        PrintFormat("GTLR cannot write virtual journal header: %d", GetLastError());
-        FileClose(virtualCsvHandle);
-        virtualCsvHandle = INVALID_HANDLE;
-        return false;
-    }
-    if(!FileSeek(virtualCsvHandle, 0, SEEK_END))
-    {
-        PrintFormat("GTLR cannot seek virtual journal: %d", GetLastError());
-        FileClose(virtualCsvHandle);
-        virtualCsvHandle = INVALID_HANDLE;
-        return false;
-    }
-    Print("GTLR virtual journal: ", filename, " in the terminal/tester MQL5/Files folder");
-    return true;
-}
-
-bool VirtualRecord(const datetime when, const string eventType, const string reason)
-{
-    string outcome = virtualTrade.open ? "open" :
-                     virtualTrade.outcome < 0 ? "stop" :
-                     virtualTrade.outcome > 0 ? "target" : "none";
-    PrintFormat("GTLR virtual %s: %s", eventType, reason);
-    ResetLastError();
-    if(FileWrite(virtualCsvHandle, TimeToString(when, TIME_DATE|TIME_SECONDS),
-                 eventType, _Symbol, EnumToString(_Period),
-                 "not_evaluated", "not_evaluated", "manual_unverified",
-                 TimeToString(VirtualSignalBarTime, TIME_DATE|TIME_SECONDS),
-                 virtualTrade.entryTime > 0 ? TimeToString((datetime)virtualTrade.entryTime, TIME_DATE|TIME_SECONDS) : "",
-                 virtualTrade.outcome != 0 ? TimeToString((datetime)virtualTrade.lastBarTime, TIME_DATE|TIME_SECONDS) : "",
-                 virtualTrade.bullish ? "buy" : "sell",
-                 virtualTrade.entry, virtualTrade.stop, virtualTrade.target, virtualTrade.rewardRisk,
-                 virtualTrade.volume, virtualTrade.equity, virtualTrade.risk, outcome,
-                 virtualTrade.mfe, virtualTrade.mae, virtualTrade.exitPrice,
-                 virtualTrade.grossProfit, virtualTrade.netProfit, virtualCurrency, VirtualRiskPercent,
-                 virtualSpec.spread, virtualSpec.slippage, virtualSpec.commissionPerLot,
-                 virtualSpec.tickSize, virtualSpec.tickValueLoss, virtualSpec.tickValueProfit,
-                 virtualSpec.volumeMin, virtualSpec.volumeMax, virtualSpec.volumeStep, reason) == 0)
-    {
-        PrintFormat("GTLR virtual journal write failed: %d", GetLastError());
-        return false;
-    }
-    ResetLastError();
-    FileFlush(virtualCsvHandle);
-    int error = GetLastError();
-    if(error != 0)
-    {
-        PrintFormat("GTLR virtual journal flush failed: %d", error);
-        return false;
-    }
-    return true;
-}
-
-string VirtualRejectReason(const int result)
-{
-    switch(result)
-    {
-        case VIRTUAL_INVALID_DATA: return "invalid equity, price or symbol specification";
-        case VIRTUAL_INVALID_STOP: return "missing or invalid stop";
-        case VIRTUAL_INVALID_TARGET: return "missing or invalid manual target";
-        case VIRTUAL_LOW_REWARD: return "theoretical price reward/risk below 3";
-        case VIRTUAL_VOLUME_TOO_SMALL: return "risk budget cannot fund minimum volume";
-    }
-    return "unknown rejection";
-}
-
-bool LoadVirtualSpec(string &reason)
-{
-    long chartMode = -1;
-    ResetLastError();
-    if(!SymbolInfoInteger(_Symbol, SYMBOL_CHART_MODE, chartMode))
-    {
-        reason = StringFormat("cannot read symbol chart mode: %d", GetLastError());
-        return false;
-    }
-    if(chartMode != SYMBOL_CHART_MODE_BID)
-    {
-        reason = "only bid-based chart bars are supported by the fixed-spread simulator";
-        return false;
-    }
-    ResetLastError();
-    if(!SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE, virtualSpec.tickSize) ||
-       !SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_LOSS, virtualSpec.tickValueLoss) ||
-       !SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT, virtualSpec.tickValueProfit) ||
-       !SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN, virtualSpec.volumeMin) ||
-       !SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX, virtualSpec.volumeMax) ||
-       !SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP, virtualSpec.volumeStep))
-    {
-        reason = StringFormat("cannot read symbol specifications: %d", GetLastError());
-        return false;
-    }
-    virtualSpec.spread = VirtualSpreadPoints * _Point;
-    virtualSpec.slippage = VirtualSlippagePoints * _Point;
-    virtualSpec.commissionPerLot = VirtualCommissionPerLot;
-    virtualSpec.riskPercent = VirtualRiskPercent;
-    virtualCurrency = AccountInfoString(ACCOUNT_CURRENCY);
-    if(virtualCurrency == "")
-    {
-        reason = StringFormat("cannot read account currency: %d", GetLastError());
-        return false;
-    }
-    return true;
-}
-
-bool ProcessVirtualBar(const MqlRates &bar, const MqlRates &nextBar, const bool timely)
-{
-    if(!EnableVirtualSimulation)
-        return true;
-    if(virtualTrade.open)
-    {
-        int result = VirtualProcessBar(virtualTrade, virtualSpec, (long)bar.time,
-                                       bar.open, bar.high, bar.low, bar.close);
-        if(result < 0)
-        {
-            Print("GTLR virtual simulation encountered invalid or out-of-order bar data.");
-            return false;
-        }
-        if(result > 0 && !VirtualRecord(nextBar.time, "exit",
-                                        virtualTrade.outcome < 0 ? "stop exit" : "target exit"))
-            return false;
-    }
-    if(virtualAttempted || bar.time < VirtualSignalBarTime)
-        return true;
-    virtualAttempted = true;
-    virtualTrade.bullish = VirtualDirection == VIRTUAL_BUY;
-    virtualTrade.stop = VirtualStopPrice;
-    virtualTrade.target = VirtualTargetPrice;
-    if(bar.time > VirtualSignalBarTime)
-        return VirtualRecord(nextBar.time, "rejected", "signal bar unavailable or before simulator start");
-    if(!timely || nextBar.tick_volume != 1)
-        return VirtualRecord(nextBar.time, "rejected", "signal was not observed at the next bar open");
-    virtualTrade.entryTime = (long)nextBar.time;
-    string reason = "";
-    if(!LoadVirtualSpec(reason))
-        return VirtualRecord(nextBar.time, "rejected", reason);
-    ResetLastError();
-    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-    int equityError = GetLastError();
-    if(equityError != 0 || !MathIsValidNumber(equity) || equity <= 0)
-        return VirtualRecord(nextBar.time, "rejected",
-                             StringFormat("invalid or unavailable account equity: error %d", equityError));
-    virtualTrade.equity = equity;
-    virtualTrade.entry = virtualTrade.bullish ? nextBar.open + virtualSpec.spread + virtualSpec.slippage :
-                                               nextBar.open - virtualSpec.slippage;
-    int result = VirtualPrepare(virtualTrade.bullish, (long)nextBar.time, nextBar.open,
-                                VirtualStopPrice, VirtualTargetPrice, equity, virtualSpec, virtualTrade);
-    if(result != VIRTUAL_ACCEPTED)
-        return VirtualRecord(nextBar.time, "rejected", VirtualRejectReason(result));
-    return VirtualRecord(nextBar.time, "entry", "manual setup; target is not verified as a key level");
-}
-
 bool AutoInitialize()
 {
     if(!EnableAutoTrading)
@@ -874,7 +491,7 @@ int OnInit()
         Print("GTLR invalid inputs; see the input ranges in README.md.");
         return INIT_PARAMETERS_INCORRECT;
     }
-    if(!OpenResearchLog() || !OpenVirtualJournal() || !AutoInitialize())
+    if(!OpenResearchLog() || !AutoInitialize())
         return INIT_FAILED;
     if(ObjectsDeleteAll(0, PREFIX) < 0)
     {
@@ -888,12 +505,6 @@ void OnDeinit(const int reason)
 {
     if(autoLockHeld && !GlobalVariableSetOnCondition(autoLockName, 0, autoLockOwner))
         PrintFormat("GTLR cannot release automatic-trading lock: %d", GetLastError());
-    if(virtualCsvHandle != INVALID_HANDLE)
-    {
-        if(virtualTrade.open && !VirtualRecord(TimeCurrent(), "open_at_detach", "no exit assumed"))
-            Print("GTLR could not journal the open virtual position.");
-        FileClose(virtualCsvHandle);
-    }
     if(ObjectsDeleteAll(0, PREFIX) < 0)
         PrintFormat("GTLR cannot remove research objects: %d", GetLastError());
     if(csvHandle != INVALID_HANDLE)
@@ -1844,7 +1455,6 @@ void OnTick()
     {
         ResetLastError();
         if(!ValidHistory(rates, asOf, history) || !ProcessClosedBar(rates, asOf) ||
-           !ProcessVirtualBar(rates[asOf], rates[asOf - 1], lastClosedTime != 0 && asOf == 1) ||
            !ProcessAutoBar(rates, asOf, lastClosedTime != 0 && asOf == 1))
         {
             PrintFormat("GTLR processing failed at %s: %d",
