@@ -1,512 +1,787 @@
-//+------------------------------------------------------------------+
-//| Gony Trendline Visual Research Engine - Phase 1: Swing Detection |
-//| Purpose: Identify and visualize swing highs and lows             |
-//| Version: 1.0.0                                                   |
-//| Status: Development - Research Mode Only                         |
-//+------------------------------------------------------------------+
-
+// Gony Trendline Visual Research Engine: Phase 3, research only.
+#ifndef GTLR_RULES_TEST
 #property strict
-#property version   "1.0.0"
-#property description "Visual Trendline Research Engine - Phase 1"
+#property version "3.00"
+#property description "Confirmed pivots and scored trendline candidates"
+#endif
 
-//+------------------------------------------------------------------+
-// CONFIGURATION SECTION
-//+------------------------------------------------------------------+
-
-// Pivot Detection Parameters
-input int    PivotLeftBars       = 3;      // Bars to left of potential pivot
-input int    PivotRightBars      = 3;      // Bars to right of potential pivot
-input double PivotMinDeviation   = 0.0001; // Min deviation from adjacent bars (%)
-input double HigherHighThreshold = 2.0;    // Multiple of minor deviation for major high
-input double LowerLowThreshold   = 2.0;    // Multiple of minor deviation for major low
-
-// Visual Display Parameters
-input bool   ShowMajorPivots      = true;  // Display major swing points
-input bool   ShowMinorPivots      = true;  // Display minor swing points
-input bool   ShowNoisePivots      = false; // Display potential noise
-input bool   ShowPivotLabels      = true;  // Label each pivot with index
-input bool   ShowPivotReason      = true;  // Show reason for classification
-input bool   ShowDebugInfo        = true;  // Display detection state on chart
-
-// Color Scheme (ARGB format)
-input color  ColorMajorHigh       = clrLimeGreen;  // Major swing high
-input color  ColorMajorLow        = clrRed;        // Major swing low
-input color  ColorMinorHigh       = clrLightGreen; // Minor swing high
-input color  ColorMinorLow        = clrLightCoral; // Minor swing low
-input color  ColorNoise           = clrGray;       // Noise pivot
-input color  ColorDebugText       = clrWhite;      // Debug display text
-
-// Size Parameters
-input int    PivotMarkerSize      = 5;    // Marker size (pixels)
-input int    LabelFontSize        = 8;    // Font size for labels
-input int    DebugFontSize        = 10;   // Font size for debug info
-
-//+------------------------------------------------------------------+
-// DATA STRUCTURES & ENUMS
-//+------------------------------------------------------------------+
-
-enum PivotType
+// Returns 0 for no extremum, 1 noise, 2 minor, 3 major.
+int PivotRule(const bool high, const double price, const double left,
+              const double right, const double minimum, const double multiplier,
+              double &deviation)
 {
-    PIVOT_NONE   = 0,  // Not a pivot
-    PIVOT_NOISE  = 1,  // Potential noise level
-    PIVOT_MINOR  = 2,  // Minor swing
-    PIVOT_MAJOR  = 3   // Major swing
+    if(high ? (price <= left || price <= right) : (price >= left || price >= right))
+        return 0;
+    double reference = high ? (left < right ? left : right) : (left > right ? left : right);
+    if(reference <= 0)
+        return 0;
+    deviation = high ? (price - reference) / reference : (reference - price) / reference;
+    if(deviation < minimum)
+        return 1;
+    return deviation >= minimum * multiplier ? 3 : 2;
+}
+
+// Returns 0 for spacing, 1 for slope, 2 for a candidate.
+int CandidateRule(const bool bullish, const double firstPrice, const double secondPrice,
+                  const long spacing, const int minimum, const int maximum)
+{
+    if(spacing < minimum || spacing > maximum)
+        return 0;
+    if(bullish ? secondPrice <= firstPrice : secondPrice >= firstPrice)
+        return 1;
+    return 2;
+}
+
+struct ScoreFactors
+{
+    double swing;
+    double trend;
+    double spacing;
+    double slope;
+    double interactions;
+    double integrity;
+    double context;
 };
 
-enum PivotDirection
+double ScoreRatio(const double value, const double target)
 {
-    DIR_NONE = 0,
-    DIR_HIGH = 1,
-    DIR_LOW  = 2
-};
+    if(value <= 0)
+        return 0;
+    return value >= target ? 1 : value / target;
+}
+
+double DirectionScore(const bool bullish, const double before, const double after)
+{
+    if(after == before)
+        return 0.5;
+    return (bullish ? after > before : after < before) ? 1.0 : 0.0;
+}
+
+// Bit 1 is a touch; bit 2 is a structural break.
+int InteractionFlags(const bool bullish, const double wick, const double line,
+                     const double touchTolerance, const double breakTolerance)
+{
+    double distance = wick - line;
+    int flags = distance >= -touchTolerance && distance <= touchTolerance ? 1 : 0;
+    if(bullish ? distance < -breakTolerance : distance > breakTolerance)
+        flags += 2;
+    return flags;
+}
+
+bool RankBefore(const double score, const int id, const double otherScore, const int otherId)
+{
+    return score > otherScore || (score == otherScore && id < otherId);
+}
+
+// Missing context is excluded from the denominator, never treated as zero.
+double WeightedScore(const ScoreFactors &values, const ScoreFactors &weights,
+                     const bool contextAvailable)
+{
+    double numerator = values.swing * weights.swing + values.trend * weights.trend +
+                       values.spacing * weights.spacing + values.slope * weights.slope +
+                       values.interactions * weights.interactions +
+                       values.integrity * weights.integrity;
+    double denominator = weights.swing + weights.trend + weights.spacing + weights.slope +
+                         weights.interactions + weights.integrity;
+    if(contextAvailable)
+    {
+        numerator += values.context * weights.context;
+        denominator += weights.context;
+    }
+    return denominator > 0 ? 100.0 * (numerator / denominator) : -1;
+}
+
+#ifndef GTLR_RULES_TEST
+
+input int    PivotLeftBars = 3;
+input int    PivotRightBars = 3;
+input double PivotMinDeviation = 0.0001; // Fraction of price, not percent
+input double HigherHighThreshold = 2.0;
+input double LowerLowThreshold = 2.0;
+input int    InitialHistoryBars = 500;    // Maximum initial pivot bars to inspect
+
+input bool   UseMajorAnchors = true;
+input bool   UseMinorAnchors = true;
+input bool   UseNoiseAnchors = false;
+input int    CandidateMinSpacingBars = 3;
+input int    CandidateMaxSpacingBars = 100;
+input int    CandidatePreviousAnchors = 5; // Most recent eligible anchors per direction
+input bool   ShowBullishCandidates = true;
+input bool   ShowBearishCandidates = true;
+input bool   ShowCandidateAnchors = true;
+input color  ColorBullishCandidate = clrDeepSkyBlue;
+input color  ColorBearishCandidate = clrOrangeRed;
+
+input bool   ShowCandidateScores = true;
+input double WeightSwing = 1.0;
+input double WeightTrend = 1.0;
+input double WeightSpacing = 1.0;
+input double WeightSlope = 1.0;
+input double WeightInteractions = 1.0;
+input double WeightIntegrity = 1.0;
+input double WeightTimeframeContext = 1.0;
+input int    ScoreTargetSpacingBars = 20;
+input double ScoreTargetSlopePointsPerBar = 10.0;
+input double ScoreTouchTolerancePoints = 20.0;
+input double ScoreBreakTolerancePoints = 30.0;
+input int    ScoreTargetTouches = 2;
+input int    ScoreBreaksForZero = 3;
+input int    ScoreContextBars = 10; // Earlier completed bars on chart timeframe
+
+input bool   ShowMajorPivots = true;
+input bool   ShowMinorPivots = true;
+input bool   ShowNoisePivots = true;
+input bool   ShowPivotLabels = true;
+input bool   ShowPivotReason = true;
+input bool   ShowDebugInfo = true;
+input color  ColorMajorHigh = clrLimeGreen;
+input color  ColorMajorLow = clrRed;
+input color  ColorMinorHigh = clrLightGreen;
+input color  ColorMinorLow = clrLightCoral;
+input color  ColorNoise = clrGray;
+input color  ColorDebugText = clrWhite;
+input int    PivotMarkerSize = 3;
+input int    LabelFontSize = 8;
+input int    DebugFontSize = 10;
+input bool   WriteResearchCsv = true;
+
+enum PivotType { PIVOT_NOISE = 1, PIVOT_MINOR = 2, PIVOT_MAJOR = 3 };
+enum PivotDirection { DIR_HIGH = 1, DIR_LOW = 2 };
 
 struct Pivot
 {
-    int            barIndex;        // Bar where pivot occurs
-    datetime       time;            // Time of pivot
-    double         price;           // Price of pivot
-    PivotDirection direction;       // HIGH or LOW
-    PivotType      type;            // Classification (NOISE, MINOR, MAJOR)
-    double         deviation;       // Price deviation from adjacent bars
-    string         reason;          // Why this was classified (for debugging)
-    int            pivotIndex;      // Sequential index of this pivot
+    datetime time;
+    double price;
+    PivotDirection direction;
+    PivotType type;
+    double deviation;
+    long sequence;
+    string reason;
 };
 
-//+------------------------------------------------------------------+
-// GLOBAL STATE
-//+------------------------------------------------------------------+
+struct Candidate
+{
+    int first;
+    int second;
+    bool bullish;
+    bool complete;
+    double score;
+    int rank;
+    string explanation;
+};
 
-Pivot         pivots[];                    // Array of detected pivots
-int           totalPivots = 0;             // Count of pivots found
-double        lastMajorHighPrice = 0;      // For deviation calculations
-double        lastMajorLowPrice  = DBL_MAX;// For deviation calculations
-int           lastDetectionBar   = 0;      // Last bar where detection ran
-string        debugMessage       = "";     // Current debug state
-double        currentDeviation   = 0;      // Last calculated deviation
+Pivot pivots[];
+Candidate candidates[];
+int rankedCandidates[];
+int rankedCount = 0;
+int totalPivots = 0;
+int candidateCount = 0;
+long barSequence = 0;
+datetime lastClosedTime = 0;
+int csvHandle = INVALID_HANDLE;
+bool failed = false;
+bool configLogged = false;
+string state = "Waiting for closed bars";
+const string PREFIX = "GTLR_P3_";
 
-//+------------------------------------------------------------------+
-// INITIALIZATION & CLEANUP
-//+------------------------------------------------------------------+
+bool LogDecision(const string eventType, const datetime decisionTime,
+                 const datetime firstTime, const double firstPrice,
+                 const datetime secondTime, const double secondPrice,
+                 const string direction, const string outcome, const string reason)
+{
+    PrintFormat("GTLR %s %s: %s (%s)", eventType, direction, outcome, reason);
+    if(!WriteResearchCsv)
+        return true;
+    ResetLastError();
+    if(FileWrite(csvHandle, TimeToString(decisionTime, TIME_DATE|TIME_MINUTES),
+                 eventType, _Symbol, EnumToString(_Period),
+                 TimeToString(firstTime, TIME_DATE|TIME_MINUTES),
+                 DoubleToString(firstPrice, _Digits),
+                 TimeToString(secondTime, TIME_DATE|TIME_MINUTES),
+                 DoubleToString(secondPrice, _Digits), direction, outcome, reason) == 0)
+    {
+        PrintFormat("GTLR CSV write failed: %d", GetLastError());
+        return false;
+    }
+    return true;
+}
+
+bool SetupLog()
+{
+    if(!WriteResearchCsv)
+        return true;
+    string filename = "GTLR_Phase3_" + IntegerToString(ChartID()) + ".csv";
+    ResetLastError();
+    csvHandle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+    if(csvHandle == INVALID_HANDLE)
+    {
+        PrintFormat("GTLR cannot open CSV %s: %d", filename, GetLastError());
+        return false;
+    }
+    if(FileSize(csvHandle) == 0 &&
+       FileWrite(csvHandle, "decision_time", "event", "symbol", "timeframe",
+                 "anchor1_time", "anchor1_price", "anchor2_time", "anchor2_price",
+                 "direction", "outcome", "reason") == 0)
+    {
+        PrintFormat("GTLR cannot write CSV header: %d", GetLastError());
+        FileClose(csvHandle);
+        csvHandle = INVALID_HANDLE;
+        return false;
+    }
+    if(!FileSeek(csvHandle, 0, SEEK_END))
+    {
+        PrintFormat("GTLR cannot seek CSV: %d", GetLastError());
+        FileClose(csvHandle);
+        csvHandle = INVALID_HANDLE;
+        return false;
+    }
+    Print("GTLR research CSV: ", filename, " (terminal/tester MQL5/Files)");
+    return true;
+}
 
 int OnInit()
 {
-    ArrayResize(pivots, 1000, 100);
-    totalPivots = 0;
-    lastDetectionBar = -1;
-    
-    Print("=" + StringFill("=", 60));
-    Print("Gony Trendline Visual Research Engine - Phase 1");
-    Print("Swing Detection Mode Initialized");
-    Print("Symbol: ", Symbol(), " | Timeframe: ", Period(), "min");
-    Print("LeftBars=", PivotLeftBars, " RightBars=", PivotRightBars);
-    Print("=" + StringFill("=", 60));
-    
+    if(PivotLeftBars < 1 || PivotRightBars < 1 || InitialHistoryBars < 1 ||
+       !MathIsValidNumber(PivotMinDeviation) || PivotMinDeviation <= 0 ||
+       !MathIsValidNumber(HigherHighThreshold) || HigherHighThreshold < 1 ||
+       !MathIsValidNumber(LowerLowThreshold) || LowerLowThreshold < 1 ||
+       CandidateMinSpacingBars < 1 || CandidateMaxSpacingBars < CandidateMinSpacingBars ||
+       CandidatePreviousAnchors < 1 || PivotMarkerSize < 1 || PivotMarkerSize > 5 ||
+       LabelFontSize < 1 || DebugFontSize < 1 ||
+       PivotLeftBars > 10000 || PivotRightBars > 10000 || InitialHistoryBars > 100000 ||
+       CandidateMaxSpacingBars > 100000 || ScoreContextBars < 1 || ScoreContextBars > 100000 ||
+       ScoreTargetSpacingBars < 1 || ScoreTargetTouches < 1 || ScoreBreaksForZero < 1 ||
+       !MathIsValidNumber(ScoreTargetSlopePointsPerBar) || ScoreTargetSlopePointsPerBar <= 0 ||
+       !MathIsValidNumber(ScoreTouchTolerancePoints) || ScoreTouchTolerancePoints < 0 ||
+       !MathIsValidNumber(ScoreBreakTolerancePoints) || ScoreBreakTolerancePoints < 0 ||
+       !MathIsValidNumber(WeightSwing) || WeightSwing < 0 ||
+       !MathIsValidNumber(WeightTrend) || WeightTrend < 0 ||
+       !MathIsValidNumber(WeightSpacing) || WeightSpacing < 0 ||
+       !MathIsValidNumber(WeightSlope) || WeightSlope < 0 ||
+       !MathIsValidNumber(WeightInteractions) || WeightInteractions < 0 ||
+       !MathIsValidNumber(WeightIntegrity) || WeightIntegrity < 0 ||
+       !MathIsValidNumber(WeightTimeframeContext) || WeightTimeframeContext < 0 ||
+       !MathIsValidNumber(WeightSwing + WeightTrend + WeightSpacing + WeightSlope +
+                          WeightInteractions + WeightIntegrity + WeightTimeframeContext) ||
+       WeightSwing + WeightTrend + WeightSpacing + WeightSlope + WeightInteractions +
+           WeightIntegrity + WeightTimeframeContext <= 0 ||
+       !MathIsValidNumber(_Point) || _Point <= 0 ||
+       !MathIsValidNumber(ScoreTouchTolerancePoints * _Point) ||
+       !MathIsValidNumber(ScoreBreakTolerancePoints * _Point))
+    {
+        Print("GTLR invalid inputs: check pivot, candidate, scoring and display settings.");
+        return INIT_PARAMETERS_INCORRECT;
+    }
+    if(!SetupLog())
+        return INIT_FAILED;
+    PrintFormat("GTLR rules: left=%d right=%d history=%d deviation=%.8f highMultiplier=%.4f lowMultiplier=%.4f spacing=%d..%d previous=%d major=%s minor=%s noise=%s",
+                PivotLeftBars, PivotRightBars, InitialHistoryBars, PivotMinDeviation,
+                HigherHighThreshold, LowerLowThreshold, CandidateMinSpacingBars,
+                CandidateMaxSpacingBars, CandidatePreviousAnchors,
+                UseMajorAnchors ? "yes" : "no", UseMinorAnchors ? "yes" : "no",
+                UseNoiseAnchors ? "yes" : "no");
     return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason)
 {
-    ClearAllVisuals();
-    Print("Gony Trendline EA Deinitialized");
+    ObjectsDeleteAll(0, PREFIX);
+    if(csvHandle != INVALID_HANDLE)
+        FileClose(csvHandle);
 }
 
-//+------------------------------------------------------------------+
-// MAIN TICK HANDLER
-//+------------------------------------------------------------------+
+bool SetText(const string name, const string text, const color textColor, const int size)
+{
+    return ObjectSetString(0, name, OBJPROP_TEXT, text) &&
+           ObjectSetInteger(0, name, OBJPROP_COLOR, textColor) &&
+           ObjectSetInteger(0, name, OBJPROP_FONTSIZE, size);
+}
+
+bool DrawPivot(const int index)
+{
+    bool visible = (pivots[index].type == PIVOT_MAJOR && ShowMajorPivots) ||
+                   (pivots[index].type == PIVOT_MINOR && ShowMinorPivots) ||
+                   (pivots[index].type == PIVOT_NOISE && ShowNoisePivots);
+    if(!visible)
+        return true;
+    color c = ColorNoise;
+    if(pivots[index].type == PIVOT_MAJOR)
+        c = pivots[index].direction == DIR_HIGH ? ColorMajorHigh : ColorMajorLow;
+    if(pivots[index].type == PIVOT_MINOR)
+        c = pivots[index].direction == DIR_HIGH ? ColorMinorHigh : ColorMinorLow;
+    string id = IntegerToString(index + 1);
+    string marker = PREFIX + "P_" + id;
+    ENUM_OBJECT type = pivots[index].direction == DIR_HIGH ? OBJ_ARROW_DOWN : OBJ_ARROW_UP;
+    if(!ObjectCreate(0, marker, type, 0, pivots[index].time, pivots[index].price) ||
+       !ObjectSetInteger(0, marker, OBJPROP_COLOR, c) ||
+       !ObjectSetInteger(0, marker, OBJPROP_WIDTH, PivotMarkerSize) ||
+       !ObjectSetString(0, marker, OBJPROP_TOOLTIP, pivots[index].reason))
+        return false;
+    if(ShowPivotLabels)
+    {
+        string label = PREFIX + "PL_" + id;
+        string text = "P" + id;
+        if(ShowPivotReason)
+            text += " " + pivots[index].reason;
+        if(!ObjectCreate(0, label, OBJ_TEXT, 0, pivots[index].time, pivots[index].price) ||
+           !SetText(label, text, c, LabelFontSize))
+            return false;
+    }
+    return true;
+}
+
+bool DrawAnchor(const string id, const int index, const string label, const color c)
+{
+    string marker = PREFIX + "A_" + id;
+    string text = PREFIX + "AL_" + id;
+    if(!ObjectCreate(0, marker, OBJ_ARROW, 0, pivots[index].time, pivots[index].price) ||
+       !ObjectSetInteger(0, marker, OBJPROP_ARROWCODE, 159) ||
+       !ObjectSetInteger(0, marker, OBJPROP_COLOR, c) ||
+       !ObjectCreate(0, text, OBJ_TEXT, 0, pivots[index].time, pivots[index].price) ||
+       !SetText(text, label, c, LabelFontSize))
+        return false;
+    return true;
+}
+
+bool DrawCandidate(const int first, const int second, const bool bullish, const int id)
+{
+    if((bullish && !ShowBullishCandidates) || (!bullish && !ShowBearishCandidates))
+        return true;
+    string name = PREFIX + "C_" + IntegerToString(id);
+    color c = bullish ? ColorBullishCandidate : ColorBearishCandidate;
+    string info = StringFormat("C%d %s: P%d to P%d; scoring",
+                               id, bullish ? "bullish" : "bearish", first + 1, second + 1);
+    if(!ObjectCreate(0, name, OBJ_TREND, 0, pivots[first].time, pivots[first].price,
+                     pivots[second].time, pivots[second].price) ||
+       !ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, true) ||
+       !ObjectSetInteger(0, name, OBJPROP_COLOR, c) ||
+       !ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASH) ||
+       !ObjectSetString(0, name, OBJPROP_TOOLTIP, info))
+        return false;
+    if(ShowCandidateAnchors &&
+       (!DrawAnchor(IntegerToString(id) + "_1", first, "C" + IntegerToString(id) + " A", c) ||
+        !DrawAnchor(IntegerToString(id) + "_2", second, "C" + IntegerToString(id) + " B", c)))
+        return false;
+    return true;
+}
+
+bool CandidateVisible(const int index)
+{
+    return candidates[index].bullish ? ShowBullishCandidates : ShowBearishCandidates;
+}
+
+bool RenderScore(const int index)
+{
+    if(!CandidateVisible(index))
+        return true;
+    int id = index + 1;
+    string rank = candidates[index].complete
+                  ? StringFormat("rank #%d", candidates[index].rank)
+                  : "unranked: context unavailable";
+    string score = candidates[index].score >= 0
+                   ? DoubleToString(candidates[index].score, 2)
+                   : "N/A";
+    string summary = StringFormat("C%d score %s%s; %s; unrounded score %.10f; %s", id, score,
+                                  candidates[index].complete ? "" : " provisional",
+                                  rank, candidates[index].score, candidates[index].explanation);
+    string line = PREFIX + "C_" + IntegerToString(id);
+    if(!ObjectSetString(0, line, OBJPROP_TOOLTIP, summary))
+        return false;
+    if(ShowCandidateScores)
+    {
+        string name = PREFIX + "S_" + IntegerToString(id);
+        if(ObjectFind(0, name) < 0 &&
+           !ObjectCreate(0, name, OBJ_TEXT, 0,
+                         pivots[candidates[index].second].time,
+                         pivots[candidates[index].second].price))
+            return false;
+        color c = candidates[index].bullish ? ColorBullishCandidate : ColorBearishCandidate;
+        string label = StringFormat("C%d %s%s %s", id, score,
+                                    candidates[index].complete ? "" : "*", rank);
+        if(!SetText(name, label, c, LabelFontSize) ||
+           !ObjectSetString(0, name, OBJPROP_TOOLTIP, summary))
+            return false;
+    }
+    return true;
+}
+
+bool LogRank(const int index, const datetime decisionTime)
+{
+    int first = candidates[index].first;
+    int second = candidates[index].second;
+    string outcome = candidates[index].complete
+                     ? StringFormat("C%d rank %d score %.10f", index + 1,
+                                    candidates[index].rank, candidates[index].score)
+                     : StringFormat("C%d unranked score %s", index + 1,
+                                    candidates[index].score >= 0
+                                    ? DoubleToString(candidates[index].score, 10) + " provisional"
+                                    : "N/A");
+    return LogDecision("ranking", decisionTime, pivots[first].time, pivots[first].price,
+                       pivots[second].time, pivots[second].price,
+                       candidates[index].bullish ? "bullish" : "bearish",
+                       outcome, candidates[index].explanation);
+}
+
+bool InsertRanking(const int index, const datetime decisionTime)
+{
+    if(!candidates[index].complete)
+        return RenderScore(index) && LogRank(index, decisionTime);
+    if(ArrayResize(rankedCandidates, rankedCount + 1, 128) < 0)
+    {
+        PrintFormat("GTLR ranking allocation failed: %d", GetLastError());
+        return false;
+    }
+    int position = rankedCount;
+    while(position > 0 &&
+          RankBefore(candidates[index].score, index,
+                     candidates[rankedCandidates[position - 1]].score, rankedCandidates[position - 1]))
+    {
+        rankedCandidates[position] = rankedCandidates[position - 1];
+        position--;
+    }
+    rankedCandidates[position] = index;
+    rankedCount++;
+    // Earlier candidate IDs keep priority on an exact score tie.
+    for(int i = position; i < rankedCount; ++i)
+    {
+        int affected = rankedCandidates[i];
+        candidates[affected].rank = i + 1;
+        if(!RenderScore(affected) || !LogRank(affected, decisionTime))
+            return false;
+    }
+    return true;
+}
+
+bool ScoreCandidate(const int first, const int second, const MqlRates &rates[],
+                    const int secondShift, const datetime decisionTime)
+{
+    long spacing = pivots[second].sequence - pivots[first].sequence;
+    int firstShift = secondShift + (int)spacing;
+    int finalShift = secondShift - PivotRightBars;
+    if(firstShift >= ArraySize(rates) || rates[firstShift].time != pivots[first].time ||
+       finalShift < 1)
+    {
+        Print("GTLR scoring stopped: anchor history is missing or changed.");
+        return false;
+    }
+    bool bullish = pivots[second].direction == DIR_LOW;
+    int touches = 0, breaks = 0;
+    double seconds = (double)(pivots[second].time - pivots[first].time);
+    if(seconds <= 0)
+    {
+        Print("GTLR scoring stopped: anchor timestamps are not increasing.");
+        return false;
+    }
+    for(int i = firstShift - 1; i >= finalShift; --i)
+    {
+        if(i == secondShift)
+            continue;
+        double progress = (double)(rates[i].time - pivots[first].time) / seconds;
+        double line = pivots[first].price + (pivots[second].price - pivots[first].price) * progress;
+        if(!MathIsValidNumber(line))
+        {
+            Print("GTLR scoring stopped: line projection is not finite.");
+            return false;
+        }
+        double wick = bullish ? rates[i].low : rates[i].high;
+        int flags = InteractionFlags(bullish, wick, line, ScoreTouchTolerancePoints * _Point,
+                                     ScoreBreakTolerancePoints * _Point);
+        if((flags & 1) != 0)
+            touches++;
+        if((flags & 2) != 0)
+            breaks++;
+    }
+    ScoreFactors values, weights;
+    values.swing = ((double)(pivots[first].type - 1) + (double)(pivots[second].type - 1)) / 4.0;
+    values.trend = DirectionScore(bullish, rates[firstShift].close, rates[finalShift].close);
+    values.spacing = ScoreRatio((double)spacing, (double)ScoreTargetSpacingBars);
+    double slope = MathAbs(pivots[second].price - pivots[first].price) / _Point / (double)spacing;
+    if(!MathIsValidNumber(slope))
+    {
+        Print("GTLR scoring stopped: slope is not finite.");
+        return false;
+    }
+    values.slope = ScoreRatio(slope, ScoreTargetSlopePointsPerBar);
+    values.interactions = ScoreRatio((double)touches, (double)ScoreTargetTouches);
+    values.integrity = 1.0 - ScoreRatio((double)breaks, (double)ScoreBreaksForZero);
+    int contextShift = finalShift + ScoreContextBars;
+    bool hasContext = contextShift < ArraySize(rates);
+    values.context = hasContext ? DirectionScore(bullish, rates[contextShift].close,
+                                                  rates[finalShift].close) : 0;
+    weights.swing = WeightSwing;
+    weights.trend = WeightTrend;
+    weights.spacing = WeightSpacing;
+    weights.slope = WeightSlope;
+    weights.interactions = WeightInteractions;
+    weights.integrity = WeightIntegrity;
+    weights.context = WeightTimeframeContext;
+    bool complete = hasContext || WeightTimeframeContext == 0;
+    double score = WeightedScore(values, weights, hasContext);
+    if(ArrayResize(candidates, candidateCount + 1, 128) < 0)
+    {
+        PrintFormat("GTLR candidate allocation failed: %d", GetLastError());
+        return false;
+    }
+    int index = candidateCount++;
+    candidates[index].first = first;
+    candidates[index].second = second;
+    candidates[index].bullish = bullish;
+    candidates[index].complete = complete;
+    candidates[index].score = score;
+    candidates[index].rank = 0;
+    string context = WeightTimeframeContext == 0 ? "disabled" :
+                     hasContext ? DoubleToString(values.context, 6) : "unavailable";
+    candidates[index].explanation =
+        StringFormat("P%d-P%d; swing=%.6f*%.8g trend=%.6f*%.8g spacing=%.6f*%.8g (%I64d bars) slope=%.6f*%.8g (%.6f points/bar) touches=%.6f*%.8g (%d) integrity=%.6f*%.8g (%d breaks) context=%s*%.8g (%s %d bars); rank: unrounded score descending, earlier ID wins exact ties",
+                     first + 1, second + 1, values.swing, weights.swing, values.trend,
+                     weights.trend, values.spacing, weights.spacing, spacing, values.slope,
+                     weights.slope, slope, values.interactions, weights.interactions, touches,
+                     values.integrity, weights.integrity, breaks, context, weights.context,
+                     EnumToString(_Period), ScoreContextBars);
+    if(!DrawCandidate(first, second, bullish, index + 1) || !InsertRanking(index, decisionTime))
+        return false;
+    return true;
+}
+
+bool Eligible(const PivotType type)
+{
+    return (type == PIVOT_MAJOR && UseMajorAnchors) ||
+           (type == PIVOT_MINOR && UseMinorAnchors) ||
+           (type == PIVOT_NOISE && UseNoiseAnchors);
+}
+
+bool GenerateCandidates(const int second, const datetime decisionTime,
+                        const MqlRates &rates[], const int secondShift)
+{
+    if(!Eligible(pivots[second].type))
+        return true;
+    int considered = 0;
+    bool bullish = pivots[second].direction == DIR_LOW;
+    for(int first = second - 1; first >= 0; --first)
+    {
+        long spacing = pivots[second].sequence - pivots[first].sequence;
+        if(spacing > CandidateMaxSpacingBars)
+            break;
+        if(pivots[first].direction != pivots[second].direction || !Eligible(pivots[first].type))
+            continue;
+        if(considered >= CandidatePreviousAnchors)
+            break;
+        considered++;
+        int result = CandidateRule(bullish, pivots[first].price, pivots[second].price,
+                                   spacing, CandidateMinSpacingBars, CandidateMaxSpacingBars);
+        string why = result == 0 ? "spacing below minimum" :
+                     result == 1 ? "slope does not match direction" :
+                                   "eligible same-direction anchors; directional slope";
+        why += StringFormat("; spacing=%I64d bars; range=%d..%d", spacing,
+                            CandidateMinSpacingBars, CandidateMaxSpacingBars);
+        string direction = bullish ? "bullish" : "bearish";
+        string outcome = result == 2 ? "candidate C" + IntegerToString(candidateCount + 1) : "not generated";
+        if(!LogDecision("pair", decisionTime, pivots[first].time, pivots[first].price,
+                        pivots[second].time, pivots[second].price, direction, outcome, why))
+            return false;
+        if(result == 2)
+        {
+            if(!ScoreCandidate(first, second, rates, secondShift, decisionTime))
+                return false;
+        }
+    }
+    return true;
+}
+
+bool AddPivot(const MqlRates &rates[], const int shift, const PivotDirection direction,
+              const double deviation, const int classification, const datetime decisionTime)
+{
+    if(ArrayResize(pivots, totalPivots + 1, 128) < 0)
+    {
+        PrintFormat("GTLR pivot allocation failed: %d", GetLastError());
+        return false;
+    }
+    int index = totalPivots++;
+    pivots[index].time = rates[shift].time;
+    pivots[index].price = direction == DIR_HIGH ? rates[shift].high : rates[shift].low;
+    pivots[index].direction = direction;
+    pivots[index].type = (PivotType)classification;
+    pivots[index].deviation = deviation;
+    pivots[index].sequence = barSequence;
+    string category = classification == 3 ? "major" : classification == 2 ? "minor" : "noise";
+    string side = direction == DIR_HIGH ? "high" : "low";
+    double major = PivotMinDeviation * (direction == DIR_HIGH ? HigherHighThreshold : LowerLowThreshold);
+    pivots[index].reason = StringFormat("%s %s: deviation %.6f%%; minor >= %.6f%%; major >= %.6f%%",
+                                        category, side, deviation * 100, PivotMinDeviation * 100, major * 100);
+    if(!LogDecision("pivot", decisionTime, pivots[index].time, pivots[index].price,
+                    pivots[index].time, pivots[index].price, side, category, pivots[index].reason) ||
+       !DrawPivot(index) || !GenerateCandidates(index, decisionTime, rates, shift))
+        return false;
+    return true;
+}
+
+bool ProcessBar(const MqlRates &rates[], const int shift)
+{
+    barSequence++;
+    double leftHigh = rates[shift + 1].high, rightHigh = rates[shift - 1].high;
+    double leftLow = rates[shift + 1].low, rightLow = rates[shift - 1].low;
+    for(int i = 2; i <= PivotLeftBars; ++i)
+    {
+        leftHigh = MathMax(leftHigh, rates[shift + i].high);
+        leftLow = MathMin(leftLow, rates[shift + i].low);
+    }
+    for(int i = 2; i <= PivotRightBars; ++i)
+    {
+        rightHigh = MathMax(rightHigh, rates[shift - i].high);
+        rightLow = MathMin(rightLow, rates[shift - i].low);
+    }
+    // The final right-hand bar is closed only when its successor opens.
+    datetime confirmation = rates[shift - PivotRightBars - 1].time;
+    double deviation = 0;
+    int type = PivotRule(true, rates[shift].high, leftHigh, rightHigh,
+                         PivotMinDeviation, HigherHighThreshold, deviation);
+    if(type > 0 && !AddPivot(rates, shift, DIR_HIGH, deviation, type, confirmation))
+        return false;
+    type = PivotRule(false, rates[shift].low, leftLow, rightLow,
+                     PivotMinDeviation, LowerLowThreshold, deviation);
+    if(type > 0 && !AddPivot(rates, shift, DIR_LOW, deviation, type, confirmation))
+        return false;
+    return true;
+}
+
+void UpdateState()
+{
+    if(!ShowDebugInfo)
+        return;
+    string name = PREFIX + "STATE";
+    if(ObjectFind(0, name) < 0 && !ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0))
+    {
+        PrintFormat("GTLR state panel creation failed: %d", GetLastError());
+        return;
+    }
+    string text = StringFormat("Phase 3 | pivots %d | candidates %d | ranked %d | %s",
+                               totalPivots, candidateCount, rankedCount, state);
+    if(!ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 10) ||
+       !ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 10) ||
+       !SetText(name, text, ColorDebugText, DebugFontSize))
+        PrintFormat("GTLR state panel update failed: %d", GetLastError());
+}
 
 void OnTick()
 {
-    // Process new bars only (avoid repainting)
-    if (Bars(_Symbol, _Period) <= lastDetectionBar)
+    if(failed)
         return;
-    
-    // Reset detection if chart zoomed/scrolled significantly
-    int currentBar = iBarShift(_Symbol, _Period, TimeCurrent());
-    if (currentBar < 0 || currentBar > 500)
+    datetime closed = iTime(_Symbol, _Period, 1);
+    if(closed == 0 || closed == lastClosedTime)
         return;
-    
-    // Run detection on latest completed bar
-    DetectPivots();
-    
-    // Redraw all visuals
-    RedrawAllVisuals();
-    
-    // Update debug display
-    UpdateDebugDisplay();
-}
-
-//+------------------------------------------------------------------+
-// PHASE 1: PIVOT DETECTION ENGINE
-//+------------------------------------------------------------------+
-
-void DetectPivots()
-{
-    int barsToProcess = Bars(_Symbol, _Period);
-    
-    // Clear previous pivots (but keep history for reference)
-    int previousCount = totalPivots;
-    
-    // Scan all bars for potential pivots
-    for (int bar = PivotLeftBars; bar < barsToProcess - PivotRightBars - 1; bar++)
+    int available = Bars(_Symbol, _Period);
+    int required = PivotLeftBars + PivotRightBars + 2;
+    if(available < required)
     {
-        // Skip if we already detected a pivot at this bar
-        if (IsPivotDetected(bar))
+        state = "Waiting for sufficient history";
+        UpdateState();
+        return;
+    }
+    int count;
+    int baseCount;
+    if(lastClosedTime == 0)
+    {
+        baseCount = InitialHistoryBars + PivotLeftBars + PivotRightBars + 1;
+        count = (int)MathMin(available, baseCount + ScoreContextBars);
+    }
+    else
+    {
+        int previousShift = iBarShift(_Symbol, _Period, lastClosedTime, true);
+        if(previousShift < 1)
+        {
+            failed = true;
+            state = "History changed; reattach EA";
+            Print("GTLR cannot locate previously processed bar; stopped to avoid missing bars.");
+            UpdateState();
+            return;
+        }
+        baseCount = previousShift + PivotLeftBars + PivotRightBars + 1;
+        if(baseCount > available)
+        {
+            state = "Waiting for history synchronization";
+            UpdateState();
+            return;
+        }
+        count = (int)MathMin(available, baseCount + MathMax(CandidateMaxSpacingBars, ScoreContextBars));
+    }
+    MqlRates rates[];
+    ArraySetAsSeries(rates, true);
+    ResetLastError();
+    int copied = CopyRates(_Symbol, _Period, 0, count, rates);
+    if(copied != count)
+    {
+        state = "Waiting for price history";
+        PrintFormat("GTLR CopyRates returned %d of %d bars: %d", copied, count, GetLastError());
+        UpdateState();
+        return;
+    }
+    for(int i = 0; i < copied; ++i)
+    {
+        if(rates[i].time <= 0 || !MathIsValidNumber(rates[i].high) ||
+           !MathIsValidNumber(rates[i].low) || !MathIsValidNumber(rates[i].close) ||
+           rates[i].low <= 0 || rates[i].close <= 0 ||
+           rates[i].high < rates[i].low)
+        {
+            failed = true;
+            state = "Invalid or non-positive price history";
+            PrintFormat("GTLR unsupported or invalid prices at shift %d; stopped.", i);
+            UpdateState();
+            return;
+        }
+    }
+    if(!configLogged)
+    {
+        string settings = StringFormat("left=%d right=%d history=%d deviation=%.8f highMultiplier=%.4f lowMultiplier=%.4f spacing=%d..%d previous=%d major=%s minor=%s noise=%s",
+                                       PivotLeftBars, PivotRightBars, InitialHistoryBars,
+                                       PivotMinDeviation, HigherHighThreshold, LowerLowThreshold,
+                                       CandidateMinSpacingBars, CandidateMaxSpacingBars,
+                                       CandidatePreviousAnchors, UseMajorAnchors ? "yes" : "no",
+                                       UseMinorAnchors ? "yes" : "no", UseNoiseAnchors ? "yes" : "no");
+        if(!LogDecision("configuration", rates[0].time, 0, 0, 0, 0, "", "active", settings))
+        {
+            failed = true;
+            state = "CSV error; see Experts log";
+            UpdateState();
+            return;
+        }
+        string scoring = StringFormat("weights swing=%.10g trend=%.10g spacing=%.10g slope=%.10g interactions=%.10g integrity=%.10g context=%.10g; spacingTarget=%d slopeTargetPoints=%.10g touchTolerancePoints=%.10g breakTolerancePoints=%.10g touchTarget=%d breaksForZero=%d contextBars=%d timeframe=%s",
+                                      WeightSwing, WeightTrend, WeightSpacing, WeightSlope,
+                                      WeightInteractions, WeightIntegrity, WeightTimeframeContext,
+                                      ScoreTargetSpacingBars, ScoreTargetSlopePointsPerBar,
+                                      ScoreTouchTolerancePoints, ScoreBreakTolerancePoints,
+                                      ScoreTargetTouches, ScoreBreaksForZero, ScoreContextBars,
+                                      EnumToString(_Period));
+        if(!LogDecision("score_configuration", rates[0].time, 0, 0, 0, 0, "", "active", scoring))
+        {
+            failed = true;
+            state = "CSV error; see Experts log";
+            UpdateState();
+            return;
+        }
+        configLogged = true;
+    }
+    int oldest = copied - PivotLeftBars - 1;
+    if(lastClosedTime == 0)
+        oldest = (int)MathMin(oldest, InitialHistoryBars + PivotRightBars);
+    for(int shift = oldest; shift >= PivotRightBars + 1; --shift)
+    {
+        datetime confirmation = rates[shift - PivotRightBars].time;
+        if(confirmation <= lastClosedTime)
             continue;
-        
-        // Check for high pivot
-        PivotType highType = CheckHighPivot(bar);
-        if (highType != PIVOT_NONE)
+        if(!ProcessBar(rates, shift))
         {
-            CreateAndAddHighPivot(bar, highType);
+            failed = true;
+            state = "Processing error; see Experts log";
+            PrintFormat("GTLR processing stopped: %d", GetLastError());
+            UpdateState();
+            return;
         }
-        
-        // Check for low pivot
-        PivotType lowType = CheckLowPivot(bar);
-        if (lowType != PIVOT_NONE)
-        {
-            CreateAndAddLowPivot(bar, lowType);
-        }
+        lastClosedTime = confirmation;
     }
-    
-    lastDetectionBar = barsToProcess - PivotRightBars - 1;
-    
-    if (totalPivots > previousCount && ShowDebugInfo)
-    {
-        int newCount = totalPivots - previousCount;
-        debugMessage = StringFormat("Detected %d new pivot(s) | Total: %d", 
-                                    newCount, totalPivots);
-    }
+    if(csvHandle != INVALID_HANDLE)
+        FileFlush(csvHandle);
+    state = "Frozen scores at confirmation; incomplete context unranked";
+    UpdateState();
+    ChartRedraw();
 }
-
-PivotType CheckHighPivot(int barIndex)
-{
-    double high = High(barIndex);
-    double leftHigh = 0, rightHigh = 0;
-    
-    // Find maximum high in left window
-    for (int i = 1; i <= PivotLeftBars; i++)
-    {
-        if (High(barIndex + i) > leftHigh)
-            leftHigh = High(barIndex + i);
-    }
-    
-    // Find maximum high in right window
-    for (int i = 1; i <= PivotRightBars; i++)
-    {
-        if (High(barIndex - i) > rightHigh)
-            rightHigh = High(barIndex - i);
-    }
-    
-    // Current bar must be higher than left and right windows
-    if (high <= leftHigh || high <= rightHigh)
-        return PIVOT_NONE;
-    
-    // Calculate deviation
-    double minAdjacent = MathMin(leftHigh, rightHigh);
-    double deviation = (high - minAdjacent) / minAdjacent;
-    currentDeviation = deviation;
-    
-    if (deviation < PivotMinDeviation)
-        return PIVOT_NONE;
-    
-    // Classify based on deviation magnitude
-    double majorThreshold = PivotMinDeviation * HigherHighThreshold;
-    
-    if (deviation >= majorThreshold)
-        return PIVOT_MAJOR;
-    else
-        return PIVOT_MINOR;
-}
-
-PivotType CheckLowPivot(int barIndex)
-{
-    double low = Low(barIndex);
-    double leftLow = DBL_MAX, rightLow = DBL_MAX;
-    
-    // Find minimum low in left window
-    for (int i = 1; i <= PivotLeftBars; i++)
-    {
-        if (Low(barIndex + i) < leftLow)
-            leftLow = Low(barIndex + i);
-    }
-    
-    // Find minimum low in right window
-    for (int i = 1; i <= PivotRightBars; i++)
-    {
-        if (Low(barIndex - i) < rightLow)
-            rightLow = Low(barIndex - i);
-    }
-    
-    // Current bar must be lower than left and right windows
-    if (low >= leftLow || low >= rightLow)
-        return PIVOT_NONE;
-    
-    // Calculate deviation
-    double maxAdjacent = MathMax(leftLow, rightLow);
-    double deviation = (maxAdjacent - low) / maxAdjacent;
-    currentDeviation = deviation;
-    
-    if (deviation < PivotMinDeviation)
-        return PIVOT_NONE;
-    
-    // Classify based on deviation magnitude
-    double majorThreshold = PivotMinDeviation * LowerLowThreshold;
-    
-    if (deviation >= majorThreshold)
-        return PIVOT_MAJOR;
-    else
-        return PIVOT_MINOR;
-}
-
-void CreateAndAddHighPivot(int barIndex, PivotType type)
-{
-    if (totalPivots >= ArraySize(pivots))
-        ArrayResize(pivots, totalPivots + 100, 100);
-    
-    pivots[totalPivots].barIndex = barIndex;
-    pivots[totalPivots].time = Time(barIndex);
-    pivots[totalPivots].price = High(barIndex);
-    pivots[totalPivots].direction = DIR_HIGH;
-    pivots[totalPivots].type = type;
-    pivots[totalPivots].deviation = currentDeviation;
-    pivots[totalPivots].pivotIndex = CountPivotsOfType(type);
-    
-    switch (type)
-    {
-        case PIVOT_MAJOR:
-            pivots[totalPivots].reason = StringFormat("Major High | Dev: %.4f%%", currentDeviation * 100);
-            lastMajorHighPrice = pivots[totalPivots].price;
-            break;
-        case PIVOT_MINOR:
-            pivots[totalPivots].reason = StringFormat("Minor High | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        case PIVOT_NOISE:
-            pivots[totalPivots].reason = StringFormat("Noise High | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        default:
-            pivots[totalPivots].reason = "Unknown High";
-    }
-    
-    totalPivots++;
-}
-
-void CreateAndAddLowPivot(int barIndex, PivotType type)
-{
-    if (totalPivots >= ArraySize(pivots))
-        ArrayResize(pivots, totalPivots + 100, 100);
-    
-    pivots[totalPivots].barIndex = barIndex;
-    pivots[totalPivots].time = Time(barIndex);
-    pivots[totalPivots].price = Low(barIndex);
-    pivots[totalPivots].direction = DIR_LOW;
-    pivots[totalPivots].type = type;
-    pivots[totalPivots].deviation = currentDeviation;
-    pivots[totalPivots].pivotIndex = CountPivotsOfType(type);
-    
-    switch (type)
-    {
-        case PIVOT_MAJOR:
-            pivots[totalPivots].reason = StringFormat("Major Low | Dev: %.4f%%", currentDeviation * 100);
-            lastMajorLowPrice = pivots[totalPivots].price;
-            break;
-        case PIVOT_MINOR:
-            pivots[totalPivots].reason = StringFormat("Minor Low | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        case PIVOT_NOISE:
-            pivots[totalPivots].reason = StringFormat("Noise Low | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        default:
-            pivots[totalPivots].reason = "Unknown Low";
-    }
-    
-    totalPivots++;
-}
-
-bool IsPivotDetected(int barIndex)
-{
-    for (int i = 0; i < totalPivots; i++)
-    {
-        if (pivots[i].barIndex == barIndex)
-            return true;
-    }
-    return false;
-}
-
-int CountPivotsOfType(PivotType type)
-{
-    int count = 0;
-    for (int i = 0; i < totalPivots; i++)
-    {
-        if (pivots[i].type == type)
-            count++;
-    }
-    return count;
-}
-
-//+------------------------------------------------------------------+
-// VISUAL RENDERING
-//+------------------------------------------------------------------+
-
-void RedrawAllVisuals()
-{
-    // Remove old pivot markers
-    for (int i = 0; i < totalPivots; i++)
-    {
-        RemovePivotVisuals(i);
-    }
-    
-    // Redraw all pivots based on current settings
-    for (int i = 0; i < totalPivots; i++)
-    {
-        bool shouldDraw = false;
-        color pivotColor = clrNONE;
-        
-        switch (pivots[i].type)
-        {
-            case PIVOT_MAJOR:
-                shouldDraw = ShowMajorPivots;
-                pivotColor = (pivots[i].direction == DIR_HIGH) ? ColorMajorHigh : ColorMajorLow;
-                break;
-            case PIVOT_MINOR:
-                shouldDraw = ShowMinorPivots;
-                pivotColor = (pivots[i].direction == DIR_HIGH) ? ColorMinorHigh : ColorMinorLow;
-                break;
-            case PIVOT_NOISE:
-                shouldDraw = ShowNoisePivots;
-                pivotColor = ColorNoise;
-                break;
-        }
-        
-        if (!shouldDraw)
-            continue;
-        
-        DrawPivotMarker(i, pivotColor);
-        
-        if (ShowPivotLabels)
-            DrawPivotLabel(i);
-    }
-}
-
-void DrawPivotMarker(int pivotIndex, color markerColor)
-{
-    string objName = "PIVOT_MARKER_" + IntegerToString(pivotIndex);
-    
-    // Remove old object if exists
-    ObjectDelete(_Symbol, objName);
-    
-    if (pivots[pivotIndex].direction == DIR_HIGH)
-    {
-        ObjectCreate(_Symbol, objName, OBJ_ARROW_DOWN, 0, pivots[pivotIndex].time, pivots[pivotIndex].price);
-    }
-    else
-    {
-        ObjectCreate(_Symbol, objName, OBJ_ARROW_UP, 0, pivots[pivotIndex].time, pivots[pivotIndex].price);
-    }
-    
-    ObjectSetInteger(_Symbol, objName, OBJPROP_COLOR, markerColor);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_WIDTH, PivotMarkerSize);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_BACK, false);
-}
-
-void DrawPivotLabel(int pivotIndex)
-{
-    string objName = "PIVOT_LABEL_" + IntegerToString(pivotIndex);
-    ObjectDelete(_Symbol, objName);
-    
-    string label = StringFormat("P%d", pivots[pivotIndex].pivotIndex);
-    
-    if (ShowPivotReason)
-        label += "\n" + pivots[pivotIndex].reason;
-    
-    ObjectCreate(_Symbol, objName, OBJ_TEXT, 0, pivots[pivotIndex].time, pivots[pivotIndex].price);
-    ObjectSetString(_Symbol, objName, OBJPROP_TEXT, label);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_COLOR, ColorDebugText);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_FONTSIZE, LabelFontSize);
-}
-
-void RemovePivotVisuals(int pivotIndex)
-{
-    ObjectDelete(_Symbol, "PIVOT_MARKER_" + IntegerToString(pivotIndex));
-    ObjectDelete(_Symbol, "PIVOT_LABEL_" + IntegerToString(pivotIndex));
-}
-
-void UpdateDebugDisplay()
-{
-    if (!ShowDebugInfo)
-        return;
-    
-    string objName = "DEBUG_INFO_PANEL";
-    ObjectDelete(_Symbol, objName);
-    
-    int majorHighCount = CountPivotsOfType(PIVOT_MAJOR);
-    int minorHighCount = CountPivotsOfType(PIVOT_MINOR);
-    int noiseHighCount = CountPivotsOfType(PIVOT_NOISE);
-    
-    string info = StringFormat(
-        "=== PIVOT DETECTION STATE ===\n"
-        "Total Pivots: %d\n"
-        "Major: %d | Minor: %d | Noise: %d\n"
-        "Last Bar Processed: %d\n"
-        "Current Deviation: %.4f%%\n"
-        "Status: %s",
-        totalPivots,
-        majorHighCount + minorHighCount + noiseHighCount,
-        minorHighCount,
-        noiseHighCount,
-        lastDetectionBar,
-        currentDeviation * 100,
-        debugMessage
-    );
-    
-    ObjectCreate(_Symbol, objName, OBJ_LABEL, 0, 0, 0);
-    ObjectSetString(_Symbol, objName, OBJPROP_TEXT, info);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_XDISTANCE, 10);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_YDISTANCE, 10);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_COLOR, ColorDebugText);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_FONTSIZE, DebugFontSize);
-    ObjectSetInteger(_Symbol, objName, OBJPROP_BACK, false);
-}
-
-//+------------------------------------------------------------------+
-// UTILITY FUNCTIONS
-//+------------------------------------------------------------------+
-
-double High(int barIndex)
-{
-    return iHigh(_Symbol, _Period, barIndex);
-}
-
-double Low(int barIndex)
-{
-    return iLow(_Symbol, _Period, barIndex);
-}
-
-datetime Time(int barIndex)
-{
-    return iTime(_Symbol, _Period, barIndex);
-}
-
-void ClearAllVisuals()
-{
-    // Remove all pivot markers and labels
-    for (int i = 0; i < totalPivots; i++)
-    {
-        ObjectDelete(_Symbol, "PIVOT_MARKER_" + IntegerToString(i));
-        ObjectDelete(_Symbol, "PIVOT_LABEL_" + IntegerToString(i));
-    }
-    
-    // Remove debug panel
-    ObjectDelete(_Symbol, "DEBUG_INFO_PANEL");
-}
-
-string StringFill(string character, int count)
-{
-    string result = "";
-    for (int i = 0; i < count; i++)
-        result += character;
-    return result;
-}
-
-//+------------------------------------------------------------------+
-// END OF PHASE 1
-//+------------------------------------------------------------------+
+#endif

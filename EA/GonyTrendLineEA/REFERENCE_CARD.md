@@ -1,3 +1,6 @@
+> Historical document: superseded by [README.md](./README.md). Claims of
+> successful compilation, testing, and Phase 1 correctness were not verified.
+
 # Gony Trendline EA — Quick Reference Card
 
 ## 1-Minute Overview

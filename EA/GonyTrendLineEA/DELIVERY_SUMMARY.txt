@@ -1,3 +1,6 @@
+HISTORICAL DOCUMENT: superseded by README.md. Compilation, testing and Phase 1
+correctness claims below were not verified.
+
 ╔════════════════════════════════════════════════════════════════════════════╗
 ║                                                                            ║
 ║       GONY TRENDLINE VISUAL RESEARCH ENGINE — PHASE 1 DELIVERY            ║

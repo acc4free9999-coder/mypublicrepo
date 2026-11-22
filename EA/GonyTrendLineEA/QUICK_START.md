@@ -1,3 +1,6 @@
+> Historical document: use the current visual test in [README.md](./README.md).
+> Claims of successful compilation and testing below were not verified.
+
 # Quick Start: Swing Detection Testing
 
 ## In 5 Minutes

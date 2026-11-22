@@ -1,3 +1,6 @@
+> Historical document: superseded by [README.md](./README.md). The settings and
+> numerical results below were not verified for this version.
+
 # Tuning Guide: Finding the Right Settings
 
 ## Principle: One Change at a Time

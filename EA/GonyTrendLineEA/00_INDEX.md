@@ -1,3 +1,6 @@
+> Historical document: superseded by [README.md](./README.md). Claims of
+> successful compilation, testing, and Phase 1 correctness were not verified.
+
 # 📋 Gony Trendline Visual Research Engine — Complete Index
 
 ## 🎯 Start Here
