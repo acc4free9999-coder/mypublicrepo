@@ -1,161 +1,143 @@
-# Visual Trendline Research Engine: Phase 4
+# Recent Trendline Research EA
 
-Research-only MT5 EA; it never places orders. Phase 4 shows pivots, scored
-candidates, the selected candidate, and rejected pairs and candidates. The
-selection is for visual research, not a trading signal or recommendation.
-Rules are hypotheses to inspect, not a claim about the correct trendline.
+This self-contained MT5 Expert Advisor is for research and visual simulation
+only. It never submits orders. Its rules and weights are configurable hypotheses,
+not trading advice or a claim that the selected lines are correct. This version
+replaces the previous Phase 4 buttons, pivot layers, and score threshold.
 
-## Rules
+## Detection and eligibility
 
-With the default 3 left and 3 right bars, a high must be strictly higher than
-all six neighbors; a low must be strictly lower. Equal highs or lows do not
-qualify. All right bars must be closed before the pivot appears. An outside
-bar can qualify as both a high and a low.
+The EA evaluates the latest **closed** bar, not the live price, when a new bar
+starts. If it missed bars while running, it processes those bars oldest first,
+using only information available at each decision. On attachment it evaluates
+the current closed-bar snapshot; it does not reconstruct selections from before
+attachment. Reinitialization or revised broker history can change the result.
 
-Deviation uses the more distant of the two neighboring window extremes:
-`(high - min(leftHigh,rightHigh))/min(leftHigh,rightHigh)` for highs and
-`(max(leftLow,rightLow) - low)/max(leftLow,rightLow)` for lows.
-`PivotMinDeviation` is a fraction: `0.0001` means 0.01%. Below it is noise;
-at or above it is minor; at or above the threshold times the corresponding
-high/low multiplier is major. Each pivot's label and tooltip include the
-measured deviation and thresholds.
+A pivot high must be strictly higher than all `PivotLeftBars` older and
+`PivotRightBars` newer bars; a pivot low must be strictly lower. All newer bars
+must already be closed. Equal extremes do not qualify; an outside candle can be
+both types. The fractional deviation is
+`(high - min(leftHigh,rightHigh)) / min(leftHigh,rightHigh)` for highs and
+`(max(leftLow,rightLow) - low) / max(leftLow,rightLow)` for lows. A deviation
+below `PivotMinDeviation` is noise, one below `PivotMinDeviation *
+MajorDeviationMultiplier` is minor, and a larger one is major. Noise anchors
+are excluded unless `UseNoiseAnchors` is true. Individual pivot markers and
+rejected lines are not drawn.
 
-For each newly confirmed eligible pivot, the EA considers up to
-`CandidatePreviousAnchors` most recent eligible pivots of the same direction,
-within `CandidateMaxSpacingBars`. It records the result for each considered
-pair. Both endpoints must be major, minor or noise as enabled by the anchor
-inputs. A pair must meet `CandidateMinSpacingBars`; a bullish line joins two
-lows with a strictly higher second low, and a bearish line joins two highs with
-a strictly lower second high. Horizontal and opposite-slope pairs, and pairs
-closer than the minimum spacing, are shown as rejected segments with their
-reasons. The bounded window and anchor limit explicitly exclude older pairs;
-neither indicates a quality ranking. Every generated candidate is retained,
-including candidates with low scores or incomplete context.
+Pairs of same-type confirmed pivots in `RecentBarsLookback` are considered.
+Both anchor ages, measured from the latest closed bar, must not exceed
+`MaxAnchorAgeBars`; their bar spacing must be between `MinAnchorSpacing` and
+`MaxAnchorSpacing`, inclusive. Bullish lines join strictly higher lows and
+bearish lines strictly lower highs. Lines are interpolated and extended by
+elapsed time, as on the chart.
 
-The dashed line is extended to the right. Candidate anchor labels are `C<n>
-A` and `C<n> B`; its score label shows the score and rank, and the label and
-line tooltips show component values, weights, measurements and ranking rule.
-Low-scoring candidates use the rejected layer, selected candidates use the
-selected layer, and other candidates use their bullish/bearish layer. Rejected
-pair labels use `R` IDs; scored candidates use `C` IDs. Rejected pair lines
-are segments; scored candidate lines extend right.
+ATR is the **simple average** of `ATRPeriod` closed-bar true ranges, each
+including the previous close; it is not Wilder's ATR. The absolute distance
+between the projected line and the latest closed-bar close must not exceed
+`MaxDistanceFromPriceATR` times this ATR.
 
-On a normal MT5 chart, the upper-left buttons toggle major, minor, noise,
-bullish, bearish, selected, rejected, anchors, pivot labels, scores and state.
-The bullish/bearish buttons control alternatives and pending candidates;
-selected and rejected have independent buttons. The anchor toggle applies to
-visible scored candidates and rejected pairs. Rejection reasons are printed
-on rejected pair labels and scored candidate labels/tooltips. The input
-`Show...` settings set the initial visibility; changing inputs reinitializes
-the EA. Button choices last for the current attachment.
+From the first anchor through the latest closed bar:
 
-MT5's Strategy Tester does not deliver `OnChartEvent` events, even in visual
-mode, so interactive buttons are not shown there. Set the `Show...` inputs
-before starting a visual test instead. A crowded chart is possible; hide layers
-or reduce the initial history or previous-anchor limit.
+- Each anchor counts as a touch. Any other candle counts once when its low
+  (bullish) or high (bearish) is within `TouchToleranceATR * ATR` of the line.
+  At least `MinimumTrendlineTouches` are required; the default of 2 includes
+  the two anchors and does not require an additional retest.
+- A bullish close below the line by more than `BreakToleranceATR * ATR`, or a
+  bearish close above it by more than that amount, invalidates the line.
+- A touch is a positive reaction if the *next closed candle's* close is at
+  least `ReactionThresholdATR * ATR` on the valid side of its projected line.
+  The current closed bar has no next closed candle at decision time; its touch
+  still contributes to the reaction denominator.
 
-On attachment, at most `InitialHistoryBars` candidate pivot bars are scanned,
-then newly closed bars are processed in chronological order. Pivots retain
-their recorded time, price and classification during that run; a broker history
-revision or a reinitialization can change a rebuilt view. Existing historical
-markers are plotted at their pivot times but are not available until the final
-right bar closes. Scores are frozen at creation using only bars closed at that
-decision; a line's rank can change when more candidates are created.
-Candidates created at different times therefore reflect different snapshots.
-Full replay tooling remains a later phase.
+No line is forced when none meets these conditions. A zero or invalid ATR
+clears selected lines and records a data issue. Missing history clears
+unvalidated lines and waits. Invalid/non-positive price history or an object,
+allocation, or logging error stops processing and removes the EA's objects;
+see the Experts log.
 
-## Selection and rejection
+## Ranking and stability
 
-The highest-ranked complete candidate is selected only when its frozen score
-is at least `SelectionMinScore`, default **90**. Exact-score ties go to the
-earlier candidate ID. If no complete candidate meets the threshold, the state
-panel says `selected none`. Incomplete-context candidates remain visible as
-pending; they are not silently rejected or selected. Other complete candidates
-at or above the threshold are alternatives; those below it are rejected with
-their score and threshold shown. Selection changes and candidate evaluations
-are logged to CSV.
+Eligible candidates receive a score of 100 times the weighted mean of these
+components. Each weight is configurable; default weights appear in parentheses.
+Components are between 0 and 1:
 
-**Important:** scores are frozen at confirmation. Selection does not expire
-old candidates or check for later line breaks. A selected line can therefore
-be stale or invalid under current market conditions; inspect it visually. The
-threshold is configurable and is not a validated measure of quality.
+1. **Distance** (`WeightDistance=40`): `1 - distanceATR /
+   MaxDistanceFromPriceATR`; when the maximum is zero, an exact match scores 1.
+2. **Recency** (`WeightRecency=25`): `1 - (firstAge + secondAge) /
+   (2 * MaxAnchorAgeBars)`.
+3. **Swing significance** (`WeightSignificance=10`): the mean of noise 0,
+   minor 0.5, and major 1 across the anchors.
+4. **Validity** (`WeightValidity=10`): the minimum closed-price buffer above a
+   bullish line or below a bearish line in ATR units, plus
+   `BreakToleranceATR`, clamped to 0..1.
+5. **Reaction** (`WeightReaction=10`): positive reactions divided by touches.
+6. **Alignment** (`WeightAlignment=5`): compare the latest close to the close
+   `AlignmentLookbackBars` earlier: 1 for matching direction, 0.5 for no
+   change, 0 otherwise. This uses the chart timeframe, not a higher timeframe.
 
-## Scoring and ranking
+Higher scores rank first. Exact ties use smaller distance, newer second anchor,
+newer first anchor, higher significance, validity, reaction and alignment, then
+anchor timestamps and direction. The weights make multiple factors relevant;
+distance is not an absolute precedence rule.
 
-Each component is between 0 and 1. Its configurable `Weight...` input defaults
-to 1; zero disables that component. Total score is 100 times the weighted mean.
-At least one weight must be positive. These defaults are arbitrary research
-choices, not validated measures of trendline quality.
+Previously displayed anchor pairs remain selected while eligible and
+nonduplicate, even if a newer candidate would score higher. Vacant slots are
+filled with the highest-scoring eligible nonduplicates; the displayed set is
+then ranked by score. Therefore the selected set is not necessarily the
+globally highest-scoring set. Lines in the same direction are duplicates when
+their projections differ by at most `DuplicateToleranceATR * ATR` at both the
+latest closed bar and the `AlignmentLookbackBars` earlier bar.
 
-| Component | Explicit rule |
-|---|---|
-| Swing importance | Mean anchor importance: noise 0, minor 0.5, major 1. |
-| Trend direction | Compare first anchor candle close to last closed confirmation candle close: aligned 1, equal 0.5, opposite 0. |
-| Anchor spacing | `min(1, spacingBars / ScoreTargetSpacingBars)`. |
-| Line slope | `min(1, absolutePriceChange / _Point / spacingBars / ScoreTargetSlopePointsPerBar)`. |
-| Price interactions | `min(1, touches / ScoreTargetTouches)`. |
-| Structural integrity | `1 - min(1, breaks / ScoreBreaksForZero)`. |
-| Timeframe context | On the **chart timeframe**, compare the last closed confirmation candle close to the close `ScoreContextBars` bars earlier: aligned 1, equal 0.5, opposite 0. This is not a higher-timeframe analysis. |
+At most `MaxTrendlinesToDisplay` lines appear (default 3, allowed 1..10); each
+rank has a different color. Labels show rank, direction and first/second anchor
+ages in bars. Hover over the line or label for score and component details.
+Objects are keyed by anchor timestamps and direction, updated in place, and
+removed when obsolete. Selection can change only on a newly processed closed
+bar, not on every tick.
 
-Touches and breaks use wicks between the first anchor and the last closed
-confirmation bar, excluding both anchor bars. The line is interpolated or
-extrapolated by elapsed time, matching the time-anchored chart line. A bullish
-touch is a low within `ScoreTouchTolerancePoints * _Point` of the line; a
-bearish touch uses the high. A bullish break is a low strictly below the line
-by more than `ScoreBreakTolerancePoints * _Point`; a bearish break uses the
-high above the line. A candle may count as both a touch and a break when the
-configured tolerances overlap.
+## Inputs and logs
 
-If the context lookback is unavailable, the context weight is excluded from
-the mean. The numeric result is marked `*`/provisional and **unranked**, because
-its denominator differs. If context is the only enabled weight, the score is
-`N/A`. If the context weight is zero, missing context does not affect ranking.
-These snapshots are not automatically rescored when more history arrives.
-Complete scores are ranked descending, with earlier candidate IDs breaking
-exact ties. The EA does not filter candidates by score or break count.
+`PivotLeftBars` and `PivotRightBars` are 1..1000; `RecentBarsLookback` is
+2..2000; `MaxAnchorAgeBars` is 1 through lookback minus 1;
+`MinAnchorSpacing` is at least 1 and `MaxAnchorSpacing` is between it and
+`MaxAnchorAgeBars`. `MinimumTrendlineTouches` is at least 2, `ATRPeriod` is
+1..1000, and `AlignmentLookbackBars` is 1 through lookback minus 1. Deviation
+must be positive, the major multiplier at least 1, ATR distances and tolerances
+nonnegative, and weights finite and nonnegative with a positive finite sum.
+Too little history is a waiting condition, not a signal.
 
-CSV logging defaults on. The file `GTLR_Phase4_<chart-id>.csv` is in the
-terminal's `MQL5/Files` directory, or the tester agent's `MQL5/Files` sandbox.
-Rows include configuration, pivot classifications, every considered pair, and
-ranking and selection changes and evaluations, with decision time, anchors,
-outcome and score breakdown.
-The decision time is the open of the bar
-following the final confirmation bar, not the pivot timestamp. The Experts
-log also reports decisions and failures. Non-positive price histories are
-unsupported and explicitly stop processing.
+`WriteResearchCsv` defaults to true. `GTLR_Recent_<chart-id>.csv` is written in
+the terminal's `MQL5/Files` directory, or the tester agent's `MQL5/Files`
+sandbox. It records settings, weights, displayed candidates with score
+components, removals and no-selection/data events. `DebugMode` additionally
+logs reasons for rejected considered pairs, duplicate lines, and candidates
+omitted due to the limit or stable retention; they are not drawn. Debug output
+can be large. The decision timestamp is the opening time of the bar after the
+closed bar used for the calculation. The Experts log also reports events and
+errors.
 
-## Visual test in MT5
+## Visual test
 
-1. Copy the complete `GonyTrendLineEAVisual.mq5` into `MQL5/Experts`.
-   It contains its own rules and does not need `TrendlineRules.mqh`. If using
-   a differently named EA file, replace the entire contents of that copy.
-   Compile in MetaEditor (F7) and inspect the compiler output.
-2. Select the EA in Strategy Tester, choose a symbol and timeframe such as
-   EURUSD H1, select a date range and enable **visual mode**. Start the test.
-3. Check that the first 3 right-hand candles have closed before a pivot appears,
-   that old markers do not move, and that same-bar highs and lows can both appear.
-   The initial pre-test history is intentionally drawn on startup.
-4. Inspect several dashed lines: blue bullish lines must join higher lows;
-   orange bearish lines must join lower highs. Each pair's `C` anchor labels
-   should identify its endpoints. No line need appear in unclear structure.
-5. Inspect a score label and its tooltip, and check its seven components against
-   the rules above. Compare labels and `ranking` rows in the CSV; candidates
-   with equal scores should rank in ID order.
-6. Set all weights except `WeightSpacing` to zero, restart, and verify a line
-   spaced 10 bars with a 20-bar target scores 50. Change the spacing target and
-   repeat. Test missing context with a lookback larger than available history:
-   affected candidates should be provisional and unranked, not disappear.
-7. With `SelectionMinScore=90`, verify the highest complete score at or above
-   90 is gold and the state shows its ID. If none meets it, verify `selected
-   none`. Lower or raise the threshold and restart to inspect alternatives,
-   score rejections and the CSV evaluation/selection reasons.
-8. In visual testing, restart with individual `Show...` inputs disabled and
-   verify their layers disappear. On a normal chart, test each on-chart button
-   without restarting. Turning a layer back on must restore its objects without
-   changing ranks or selection. Examine rejected pair labels and tooltips.
+1. Copy the complete `GonyTrendLineEAVisual.mq5` into `MQL5/Experts`. No
+   separate include is needed. Compile it in MetaEditor (F7) and inspect the
+   actual compiler output.
+2. In Strategy Tester select the EA, a symbol and timeframe, a sufficiently
+   long date range, and visual mode. Start the test; wait for enough history.
+3. Verify that bullish lines join confirmed higher lows, bearish lines join
+   confirmed lower highs, and neither anchor appears before its configured
+   right-hand confirmation bars have closed. Check ranks, ages and tooltips.
+4. Run with the defaults and confirm that no more than three lines appear.
+   Observe several ticks within a bar: anchors must not change. On subsequent
+   bars, check that still-valid pairs remain and that invalid, too-old, or
+   too-distant lines disappear.
+5. Enable `DebugMode`, restart, and compare rejected reasons and display
+   decisions with the CSV and Experts log. Rejected lines must not be drawn.
+   Try stricter spacing, distance, break and touch settings and verify their
+   boundaries; a requirement above two touches demands additional retests.
+6. Manually annotate examples on the chart and compare the selected lines
+   against them. The EA does not learn from the annotations or change settings
+   automatically.
 
-Compile and visual testing require an MT5 installation; host-side rule tests do
-not verify MT5 chart rendering or runtime behavior.
-
-**Older documentation in this folder describes a previous, unverified Phase 1
-implementation and should not be used as a reference for this version.**
+Host-side C++ rule tests do not compile MQL5 or validate MT5 rendering or
+Strategy Tester behavior. MetaEditor and MT5 are required for those checks.
+Older documents in this folder describe earlier implementations.
