@@ -8,9 +8,6 @@
 #property strict
 #property version   "1.0.0"
 #property description "Visual Trendline Research Engine - Phase 1"
-#property icon      "\\Images\\OfficeConnect.ico"
-
-#include <stdlib.mqh>
 
 //+------------------------------------------------------------------+
 // CONFIGURATION SECTION
@@ -160,16 +157,14 @@ void DetectPivots()
         PivotType highType = CheckHighPivot(bar);
         if (highType != PIVOT_NONE)
         {
-            Pivot pivot = CreateHighPivot(bar, highType);
-            AddPivot(pivot);
+            CreateAndAddHighPivot(bar, highType);
         }
         
         // Check for low pivot
         PivotType lowType = CheckLowPivot(bar);
         if (lowType != PIVOT_NONE)
         {
-            Pivot pivot = CreateLowPivot(bar, lowType);
-            AddPivot(pivot);
+            CreateAndAddLowPivot(bar, lowType);
         }
     }
     
@@ -263,72 +258,67 @@ PivotType CheckLowPivot(int barIndex)
         return PIVOT_MINOR;
 }
 
-Pivot CreateHighPivot(int barIndex, PivotType type)
-{
-    Pivot piv;
-    piv.barIndex = barIndex;
-    piv.time = Time(barIndex);
-    piv.price = High(barIndex);
-    piv.direction = DIR_HIGH;
-    piv.type = type;
-    piv.deviation = currentDeviation;
-    piv.pivotIndex = CountPivotsOfType(type);
-    
-    switch (type)
-    {
-        case PIVOT_MAJOR:
-            piv.reason = StringFormat("Major High | Dev: %.4f%%", currentDeviation * 100);
-            lastMajorHighPrice = piv.price;
-            break;
-        case PIVOT_MINOR:
-            piv.reason = StringFormat("Minor High | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        case PIVOT_NOISE:
-            piv.reason = StringFormat("Noise High | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        default:
-            piv.reason = "Unknown High";
-    }
-    
-    return piv;
-}
-
-Pivot CreateLowPivot(int barIndex, PivotType type)
-{
-    Pivot piv;
-    piv.barIndex = barIndex;
-    piv.time = Time(barIndex);
-    piv.price = Low(barIndex);
-    piv.direction = DIR_LOW;
-    piv.type = type;
-    piv.deviation = currentDeviation;
-    piv.pivotIndex = CountPivotsOfType(type);
-    
-    switch (type)
-    {
-        case PIVOT_MAJOR:
-            piv.reason = StringFormat("Major Low | Dev: %.4f%%", currentDeviation * 100);
-            lastMajorLowPrice = piv.price;
-            break;
-        case PIVOT_MINOR:
-            piv.reason = StringFormat("Minor Low | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        case PIVOT_NOISE:
-            piv.reason = StringFormat("Noise Low | Dev: %.4f%%", currentDeviation * 100);
-            break;
-        default:
-            piv.reason = "Unknown Low";
-    }
-    
-    return piv;
-}
-
-void AddPivot(Pivot piv)
+void CreateAndAddHighPivot(int barIndex, PivotType type)
 {
     if (totalPivots >= ArraySize(pivots))
         ArrayResize(pivots, totalPivots + 100, 100);
     
-    pivots[totalPivots] = piv;
+    pivots[totalPivots].barIndex = barIndex;
+    pivots[totalPivots].time = Time(barIndex);
+    pivots[totalPivots].price = High(barIndex);
+    pivots[totalPivots].direction = DIR_HIGH;
+    pivots[totalPivots].type = type;
+    pivots[totalPivots].deviation = currentDeviation;
+    pivots[totalPivots].pivotIndex = CountPivotsOfType(type);
+    
+    switch (type)
+    {
+        case PIVOT_MAJOR:
+            pivots[totalPivots].reason = StringFormat("Major High | Dev: %.4f%%", currentDeviation * 100);
+            lastMajorHighPrice = pivots[totalPivots].price;
+            break;
+        case PIVOT_MINOR:
+            pivots[totalPivots].reason = StringFormat("Minor High | Dev: %.4f%%", currentDeviation * 100);
+            break;
+        case PIVOT_NOISE:
+            pivots[totalPivots].reason = StringFormat("Noise High | Dev: %.4f%%", currentDeviation * 100);
+            break;
+        default:
+            pivots[totalPivots].reason = "Unknown High";
+    }
+    
+    totalPivots++;
+}
+
+void CreateAndAddLowPivot(int barIndex, PivotType type)
+{
+    if (totalPivots >= ArraySize(pivots))
+        ArrayResize(pivots, totalPivots + 100, 100);
+    
+    pivots[totalPivots].barIndex = barIndex;
+    pivots[totalPivots].time = Time(barIndex);
+    pivots[totalPivots].price = Low(barIndex);
+    pivots[totalPivots].direction = DIR_LOW;
+    pivots[totalPivots].type = type;
+    pivots[totalPivots].deviation = currentDeviation;
+    pivots[totalPivots].pivotIndex = CountPivotsOfType(type);
+    
+    switch (type)
+    {
+        case PIVOT_MAJOR:
+            pivots[totalPivots].reason = StringFormat("Major Low | Dev: %.4f%%", currentDeviation * 100);
+            lastMajorLowPrice = pivots[totalPivots].price;
+            break;
+        case PIVOT_MINOR:
+            pivots[totalPivots].reason = StringFormat("Minor Low | Dev: %.4f%%", currentDeviation * 100);
+            break;
+        case PIVOT_NOISE:
+            pivots[totalPivots].reason = StringFormat("Noise Low | Dev: %.4f%%", currentDeviation * 100);
+            break;
+        default:
+            pivots[totalPivots].reason = "Unknown Low";
+    }
+    
     totalPivots++;
 }
 
