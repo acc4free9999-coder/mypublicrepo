@@ -1,8 +1,8 @@
-// Gony Trendline Visual Research Engine: Phase 3, research only.
+// Gony Trendline Visual Research Engine: Phase 4, research only.
 #ifndef GTLR_RULES_TEST
 #property strict
-#property version "3.00"
-#property description "Confirmed pivots and scored trendline candidates"
+#property version "4.00"
+#property description "Visual debugging of trendline candidates"
 #endif
 
 // Returns 0 for no extremum, 1 noise, 2 minor, 3 major.
@@ -73,6 +73,21 @@ bool RankBefore(const double score, const int id, const double otherScore, const
     return score > otherScore || (score == otherScore && id < otherId);
 }
 
+// 0: incomplete, 1: below threshold, 2: alternative, 3: selected.
+int CandidateState(const bool complete, const double score, const double minimum, const bool selected)
+{
+    if(!complete)
+        return 0;
+    if(score < minimum)
+        return 1;
+    return selected ? 3 : 2;
+}
+
+int SelectBestCandidate(const int best, const bool complete, const double score, const double minimum)
+{
+    return best >= 0 && CandidateState(complete, score, minimum, true) == 3 ? best : -1;
+}
+
 // Missing context is excluded from the denominator, never treated as zero.
 double WeightedScore(const ScoreFactors &values, const ScoreFactors &weights,
                      const bool contextAvailable)
@@ -111,6 +126,11 @@ input bool   ShowBearishCandidates = true;
 input bool   ShowCandidateAnchors = true;
 input color  ColorBullishCandidate = clrDeepSkyBlue;
 input color  ColorBearishCandidate = clrOrangeRed;
+input bool   ShowSelectedCandidate = true;
+input bool   ShowRejectedCandidates = true;
+input color  ColorSelectedCandidate = clrGold;
+input color  ColorRejectedCandidate = clrGray;
+input double SelectionMinScore = 90.0;
 
 input bool   ShowCandidateScores = true;
 input double WeightSwing = 1.0;
@@ -170,19 +190,32 @@ struct Candidate
     string explanation;
 };
 
+struct RejectedPair
+{
+    int first;
+    int second;
+    string reason;
+};
+
 Pivot pivots[];
 Candidate candidates[];
+RejectedPair rejectedPairs[];
 int rankedCandidates[];
 int rankedCount = 0;
 int totalPivots = 0;
 int candidateCount = 0;
+int rejectedPairCount = 0;
+int selectedCandidate = -1;
 long barSequence = 0;
 datetime lastClosedTime = 0;
 int csvHandle = INVALID_HANDLE;
 bool failed = false;
 bool configLogged = false;
+bool interactiveControls = false;
 string state = "Waiting for closed bars";
-const string PREFIX = "GTLR_P3_";
+const string PREFIX = "GTLR_P4_";
+bool layerMajor, layerMinor, layerNoise, layerBull, layerBear;
+bool layerSelected, layerRejected, layerAnchors, layerLabels, layerScores, layerState;
 
 bool LogDecision(const string eventType, const datetime decisionTime,
                  const datetime firstTime, const double firstPrice,
@@ -210,7 +243,7 @@ bool SetupLog()
 {
     if(!WriteResearchCsv)
         return true;
-    string filename = "GTLR_Phase3_" + IntegerToString(ChartID()) + ".csv";
+    string filename = "GTLR_Phase4_" + IntegerToString(ChartID()) + ".csv";
     ResetLastError();
     csvHandle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
     if(csvHandle == INVALID_HANDLE)
@@ -265,6 +298,7 @@ int OnInit()
                           WeightInteractions + WeightIntegrity + WeightTimeframeContext) ||
        WeightSwing + WeightTrend + WeightSpacing + WeightSlope + WeightInteractions +
            WeightIntegrity + WeightTimeframeContext <= 0 ||
+       !MathIsValidNumber(SelectionMinScore) || SelectionMinScore < 0 || SelectionMinScore > 100 ||
        !MathIsValidNumber(_Point) || _Point <= 0 ||
        !MathIsValidNumber(ScoreTouchTolerancePoints * _Point) ||
        !MathIsValidNumber(ScoreBreakTolerancePoints * _Point))
@@ -274,6 +308,23 @@ int OnInit()
     }
     if(!SetupLog())
         return INIT_FAILED;
+    layerMajor = ShowMajorPivots;
+    layerMinor = ShowMinorPivots;
+    layerNoise = ShowNoisePivots;
+    layerBull = ShowBullishCandidates;
+    layerBear = ShowBearishCandidates;
+    layerSelected = ShowSelectedCandidate;
+    layerRejected = ShowRejectedCandidates;
+    layerAnchors = ShowCandidateAnchors;
+    layerLabels = ShowPivotLabels;
+    layerScores = ShowCandidateScores;
+    layerState = ShowDebugInfo;
+    interactiveControls = !MQLInfoInteger(MQL_TESTER);
+    if(interactiveControls && !DrawControls())
+    {
+        PrintFormat("GTLR controls creation failed: %d", GetLastError());
+        return INIT_FAILED;
+    }
     PrintFormat("GTLR rules: left=%d right=%d history=%d deviation=%.8f highMultiplier=%.4f lowMultiplier=%.4f spacing=%d..%d previous=%d major=%s minor=%s noise=%s",
                 PivotLeftBars, PivotRightBars, InitialHistoryBars, PivotMinDeviation,
                 HigherHighThreshold, LowerLowThreshold, CandidateMinSpacingBars,
@@ -299,9 +350,9 @@ bool SetText(const string name, const string text, const color textColor, const 
 
 bool DrawPivot(const int index)
 {
-    bool visible = (pivots[index].type == PIVOT_MAJOR && ShowMajorPivots) ||
-                   (pivots[index].type == PIVOT_MINOR && ShowMinorPivots) ||
-                   (pivots[index].type == PIVOT_NOISE && ShowNoisePivots);
+    bool visible = (pivots[index].type == PIVOT_MAJOR && layerMajor) ||
+                   (pivots[index].type == PIVOT_MINOR && layerMinor) ||
+                   (pivots[index].type == PIVOT_NOISE && layerNoise);
     if(!visible)
         return true;
     color c = ColorNoise;
@@ -317,7 +368,7 @@ bool DrawPivot(const int index)
        !ObjectSetInteger(0, marker, OBJPROP_WIDTH, PivotMarkerSize) ||
        !ObjectSetString(0, marker, OBJPROP_TOOLTIP, pivots[index].reason))
         return false;
-    if(ShowPivotLabels)
+    if(layerLabels)
     {
         string label = PREFIX + "PL_" + id;
         string text = "P" + id;
@@ -343,31 +394,64 @@ bool DrawAnchor(const string id, const int index, const string label, const colo
     return true;
 }
 
-bool DrawCandidate(const int first, const int second, const bool bullish, const int id)
+int StatusOfCandidate(const int index)
 {
-    if((bullish && !ShowBullishCandidates) || (!bullish && !ShowBearishCandidates))
+    return CandidateState(candidates[index].complete, candidates[index].score,
+                          SelectionMinScore, index == selectedCandidate);
+}
+
+string CandidateReason(const int index)
+{
+    int status = StatusOfCandidate(index);
+    if(status == 0)
+        return "pending: context unavailable";
+    if(status == 1)
+        return StringFormat("rejected: score %.10f below minimum %.10f",
+                            candidates[index].score, SelectionMinScore);
+    if(status == 3)
+        return StringFormat("selected: highest complete score >= %.10f", SelectionMinScore);
+    return "alternative: another candidate ranks higher";
+}
+
+bool CandidateVisible(const int index)
+{
+    int status = StatusOfCandidate(index);
+    if(status == 3)
+        return layerSelected;
+    if(status == 1)
+        return layerRejected;
+    return candidates[index].bullish ? layerBull : layerBear;
+}
+
+bool DrawCandidate(const int index)
+{
+    if(!CandidateVisible(index))
         return true;
+    int first = candidates[index].first;
+    int second = candidates[index].second;
+    bool bullish = candidates[index].bullish;
+    int id = index + 1;
+    int status = StatusOfCandidate(index);
     string name = PREFIX + "C_" + IntegerToString(id);
-    color c = bullish ? ColorBullishCandidate : ColorBearishCandidate;
+    color c = status == 3 ? ColorSelectedCandidate :
+              status == 1 ? ColorRejectedCandidate :
+              bullish ? ColorBullishCandidate : ColorBearishCandidate;
     string info = StringFormat("C%d %s: P%d to P%d; scoring",
                                id, bullish ? "bullish" : "bearish", first + 1, second + 1);
     if(!ObjectCreate(0, name, OBJ_TREND, 0, pivots[first].time, pivots[first].price,
                      pivots[second].time, pivots[second].price) ||
        !ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, true) ||
        !ObjectSetInteger(0, name, OBJPROP_COLOR, c) ||
-       !ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASH) ||
+       !ObjectSetInteger(0, name, OBJPROP_WIDTH, status == 3 ? 3 : 1) ||
+       !ObjectSetInteger(0, name, OBJPROP_STYLE, status == 3 ? STYLE_SOLID :
+                         status == 1 ? STYLE_DOT : STYLE_DASH) ||
        !ObjectSetString(0, name, OBJPROP_TOOLTIP, info))
         return false;
-    if(ShowCandidateAnchors &&
+    if(layerAnchors &&
        (!DrawAnchor(IntegerToString(id) + "_1", first, "C" + IntegerToString(id) + " A", c) ||
         !DrawAnchor(IntegerToString(id) + "_2", second, "C" + IntegerToString(id) + " B", c)))
         return false;
     return true;
-}
-
-bool CandidateVisible(const int index)
-{
-    return candidates[index].bullish ? ShowBullishCandidates : ShowBearishCandidates;
 }
 
 bool RenderScore(const int index)
@@ -381,13 +465,14 @@ bool RenderScore(const int index)
     string score = candidates[index].score >= 0
                    ? DoubleToString(candidates[index].score, 2)
                    : "N/A";
-    string summary = StringFormat("C%d score %s%s; %s; unrounded score %.10f; %s", id, score,
+    string summary = StringFormat("C%d score %s%s; %s; %s; unrounded score %.10f; %s", id, score,
                                   candidates[index].complete ? "" : " provisional",
-                                  rank, candidates[index].score, candidates[index].explanation);
+                                  rank, CandidateReason(index), candidates[index].score,
+                                  candidates[index].explanation);
     string line = PREFIX + "C_" + IntegerToString(id);
     if(!ObjectSetString(0, line, OBJPROP_TOOLTIP, summary))
         return false;
-    if(ShowCandidateScores)
+    if(layerScores)
     {
         string name = PREFIX + "S_" + IntegerToString(id);
         if(ObjectFind(0, name) < 0 &&
@@ -395,9 +480,12 @@ bool RenderScore(const int index)
                          pivots[candidates[index].second].time,
                          pivots[candidates[index].second].price))
             return false;
-        color c = candidates[index].bullish ? ColorBullishCandidate : ColorBearishCandidate;
-        string label = StringFormat("C%d %s%s %s", id, score,
-                                    candidates[index].complete ? "" : "*", rank);
+        int status = StatusOfCandidate(index);
+        color c = status == 3 ? ColorSelectedCandidate : status == 1 ? ColorRejectedCandidate :
+                  candidates[index].bullish ? ColorBullishCandidate : ColorBearishCandidate;
+        string label = StringFormat("C%d %s%s %s %s", id, score,
+                                    candidates[index].complete ? "" : "*", rank,
+                                    CandidateReason(index));
         if(!SetText(name, label, c, LabelFontSize) ||
            !ObjectSetString(0, name, OBJPROP_TOOLTIP, summary))
             return false;
@@ -450,6 +538,103 @@ bool InsertRanking(const int index, const datetime decisionTime)
             return false;
     }
     return true;
+}
+
+bool DeleteIfPresent(const string name)
+{
+    return ObjectFind(0, name) < 0 || ObjectDelete(0, name);
+}
+
+bool RefreshCandidate(const int index)
+{
+    string id = IntegerToString(index + 1);
+    if(!DeleteIfPresent(PREFIX + "C_" + id) ||
+       !DeleteIfPresent(PREFIX + "S_" + id) ||
+       !DeleteIfPresent(PREFIX + "A_" + id + "_1") ||
+       !DeleteIfPresent(PREFIX + "A_" + id + "_2") ||
+       !DeleteIfPresent(PREFIX + "AL_" + id + "_1") ||
+       !DeleteIfPresent(PREFIX + "AL_" + id + "_2"))
+        return false;
+    return DrawCandidate(index) && RenderScore(index);
+}
+
+bool UpdateSelection(const datetime decisionTime)
+{
+    int next = -1;
+    if(rankedCount > 0)
+    {
+        int best = rankedCandidates[0];
+        next = SelectBestCandidate(best, candidates[best].complete,
+                                   candidates[best].score, SelectionMinScore);
+    }
+    int previous = selectedCandidate;
+    selectedCandidate = next;
+    if(previous != next)
+    {
+        if(previous >= 0 && !RefreshCandidate(previous))
+            return false;
+        if(next >= 0 && !RefreshCandidate(next))
+            return false;
+    }
+    string outcome = next < 0 ? "none" : "C" + IntegerToString(next + 1);
+    string reason = next < 0 ? StringFormat("no complete score >= %.10f", SelectionMinScore) :
+                               CandidateReason(next);
+    datetime firstTime = 0, secondTime = 0;
+    double firstPrice = 0, secondPrice = 0;
+    string direction = "";
+    if(next >= 0)
+    {
+        int first = candidates[next].first;
+        int second = candidates[next].second;
+        firstTime = pivots[first].time;
+        firstPrice = pivots[first].price;
+        secondTime = pivots[second].time;
+        secondPrice = pivots[second].price;
+        direction = candidates[next].bullish ? "bullish" : "bearish";
+    }
+    return LogDecision("selection", decisionTime, firstTime, firstPrice, secondTime,
+                       secondPrice, direction, outcome, reason);
+}
+
+bool DrawRejectedPair(const int index)
+{
+    if(!layerRejected)
+        return true;
+    int first = rejectedPairs[index].first;
+    int second = rejectedPairs[index].second;
+    string id = IntegerToString(index + 1);
+    string name = PREFIX + "R_" + id;
+    string label = PREFIX + "RL_" + id;
+    string reason = "R" + id + " rejected: " + rejectedPairs[index].reason;
+    if(!ObjectCreate(0, name, OBJ_TREND, 0, pivots[first].time, pivots[first].price,
+                     pivots[second].time, pivots[second].price) ||
+       !ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false) ||
+       !ObjectSetInteger(0, name, OBJPROP_COLOR, ColorRejectedCandidate) ||
+       !ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DOT) ||
+       !ObjectSetString(0, name, OBJPROP_TOOLTIP, reason) ||
+       !ObjectCreate(0, label, OBJ_TEXT, 0, pivots[second].time, pivots[second].price) ||
+       !SetText(label, reason, ColorRejectedCandidate, LabelFontSize) ||
+       !ObjectSetString(0, label, OBJPROP_TOOLTIP, reason))
+        return false;
+    if(layerAnchors &&
+       (!DrawAnchor("R" + id + "_1", first, "R" + id + " A", ColorRejectedCandidate) ||
+        !DrawAnchor("R" + id + "_2", second, "R" + id + " B", ColorRejectedCandidate)))
+        return false;
+    return true;
+}
+
+bool AddRejectedPair(const int first, const int second, const string reason)
+{
+    if(ArrayResize(rejectedPairs, rejectedPairCount + 1, 128) < 0)
+    {
+        PrintFormat("GTLR rejected-pair allocation failed: %d", GetLastError());
+        return false;
+    }
+    int index = rejectedPairCount++;
+    rejectedPairs[index].first = first;
+    rejectedPairs[index].second = second;
+    rejectedPairs[index].reason = reason;
+    return DrawRejectedPair(index);
 }
 
 bool ScoreCandidate(const int first, const int second, const MqlRates &rates[],
@@ -538,7 +723,12 @@ bool ScoreCandidate(const int first, const int second, const MqlRates &rates[],
                      weights.slope, slope, values.interactions, weights.interactions, touches,
                      values.integrity, weights.integrity, breaks, context, weights.context,
                      EnumToString(_Period), ScoreContextBars);
-    if(!DrawCandidate(first, second, bullish, index + 1) || !InsertRanking(index, decisionTime))
+    if(!DrawCandidate(index) || !InsertRanking(index, decisionTime) ||
+       !UpdateSelection(decisionTime) ||
+       !LogDecision("evaluation", decisionTime, pivots[first].time, pivots[first].price,
+                    pivots[second].time, pivots[second].price,
+                    bullish ? "bullish" : "bearish", "C" + IntegerToString(index + 1),
+                    CandidateReason(index)))
         return false;
     return true;
 }
@@ -575,7 +765,8 @@ bool GenerateCandidates(const int second, const datetime decisionTime,
         why += StringFormat("; spacing=%I64d bars; range=%d..%d", spacing,
                             CandidateMinSpacingBars, CandidateMaxSpacingBars);
         string direction = bullish ? "bullish" : "bearish";
-        string outcome = result == 2 ? "candidate C" + IntegerToString(candidateCount + 1) : "not generated";
+        string outcome = result == 2 ? "candidate C" + IntegerToString(candidateCount + 1) :
+                                       "rejected pair R" + IntegerToString(rejectedPairCount + 1);
         if(!LogDecision("pair", decisionTime, pivots[first].time, pivots[first].price,
                         pivots[second].time, pivots[second].price, direction, outcome, why))
             return false;
@@ -584,6 +775,8 @@ bool GenerateCandidates(const int second, const datetime decisionTime,
             if(!ScoreCandidate(first, second, rates, secondShift, decisionTime))
                 return false;
         }
+        else if(!AddRejectedPair(first, second, why))
+            return false;
     }
     return true;
 }
@@ -644,22 +837,148 @@ bool ProcessBar(const MqlRates &rates[], const int shift)
     return true;
 }
 
+string LayerName(const int index)
+{
+    switch(index)
+    {
+        case 0: return "Major";
+        case 1: return "Minor";
+        case 2: return "Noise";
+        case 3: return "Bull";
+        case 4: return "Bear";
+        case 5: return "Selected";
+        case 6: return "Rejected";
+        case 7: return "Anchors";
+        case 8: return "Labels";
+        case 9: return "Scores";
+        case 10: return "State";
+    }
+    return "";
+}
+
+bool LayerEnabled(const int index)
+{
+    switch(index)
+    {
+        case 0: return layerMajor;
+        case 1: return layerMinor;
+        case 2: return layerNoise;
+        case 3: return layerBull;
+        case 4: return layerBear;
+        case 5: return layerSelected;
+        case 6: return layerRejected;
+        case 7: return layerAnchors;
+        case 8: return layerLabels;
+        case 9: return layerScores;
+        case 10: return layerState;
+    }
+    return false;
+}
+
+void ToggleLayer(const int index)
+{
+    switch(index)
+    {
+        case 0: layerMajor = !layerMajor; break;
+        case 1: layerMinor = !layerMinor; break;
+        case 2: layerNoise = !layerNoise; break;
+        case 3: layerBull = !layerBull; break;
+        case 4: layerBear = !layerBear; break;
+        case 5: layerSelected = !layerSelected; break;
+        case 6: layerRejected = !layerRejected; break;
+        case 7: layerAnchors = !layerAnchors; break;
+        case 8: layerLabels = !layerLabels; break;
+        case 9: layerScores = !layerScores; break;
+        case 10: layerState = !layerState; break;
+    }
+}
+
+bool DrawControls()
+{
+    for(int i = 0; i < 11; ++i)
+    {
+        string name = PREFIX + "BTN_" + IntegerToString(i);
+        if(ObjectFind(0, name) < 0 && !ObjectCreate(0, name, OBJ_BUTTON, 0, 0, 0))
+            return false;
+        string text = LayerName(i) + (LayerEnabled(i) ? " ON" : " OFF");
+        if(!ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 10 + (i % 4) * 92) ||
+           !ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 10 + (i / 4) * 24) ||
+           !ObjectSetInteger(0, name, OBJPROP_XSIZE, 88) ||
+           !ObjectSetInteger(0, name, OBJPROP_YSIZE, 20) ||
+           !ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite) ||
+           !ObjectSetInteger(0, name, OBJPROP_BGCOLOR, LayerEnabled(i) ? clrDarkGreen : clrDimGray) ||
+           !ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 8) ||
+           !ObjectSetInteger(0, name, OBJPROP_STATE, false) ||
+           !ObjectSetString(0, name, OBJPROP_TEXT, text))
+            return false;
+    }
+    return true;
+}
+
+bool RebuildVisualLayers()
+{
+    string groups[] = {"P_", "PL_", "C_", "S_", "A_", "AL_", "R_", "RL_"};
+    for(int i = 0; i < ArraySize(groups); ++i)
+    {
+        if(ObjectsDeleteAll(0, PREFIX + groups[i]) < 0)
+            return false;
+    }
+    for(int i = 0; i < totalPivots; ++i)
+        if(!DrawPivot(i))
+            return false;
+    for(int i = 0; i < candidateCount; ++i)
+        if(!DrawCandidate(i) || !RenderScore(i))
+            return false;
+    for(int i = 0; i < rejectedPairCount; ++i)
+        if(!DrawRejectedPair(i))
+            return false;
+    return true;
+}
+
 void UpdateState()
 {
-    if(!ShowDebugInfo)
-        return;
     string name = PREFIX + "STATE";
+    if(!layerState)
+    {
+        if(!DeleteIfPresent(name))
+            PrintFormat("GTLR state panel removal failed: %d", GetLastError());
+        return;
+    }
     if(ObjectFind(0, name) < 0 && !ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0))
     {
         PrintFormat("GTLR state panel creation failed: %d", GetLastError());
         return;
     }
-    string text = StringFormat("Phase 3 | pivots %d | candidates %d | ranked %d | %s",
-                               totalPivots, candidateCount, rankedCount, state);
+    string selected = selectedCandidate < 0 ? "none" : "C" + IntegerToString(selectedCandidate + 1);
+    string text = StringFormat("Phase 4 | pivots %d | candidates %d | rejected pairs %d | selected %s | min %.2f | %s",
+                               totalPivots, candidateCount, rejectedPairCount,
+                               selected, SelectionMinScore, state);
     if(!ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 10) ||
-       !ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 10) ||
+       !ObjectSetInteger(0, name, OBJPROP_YDISTANCE, interactiveControls ? 84 : 10) ||
        !SetText(name, text, ColorDebugText, DebugFontSize))
         PrintFormat("GTLR state panel update failed: %d", GetLastError());
+}
+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+    if(id != CHARTEVENT_OBJECT_CLICK)
+        return;
+    for(int i = 0; i < 11; ++i)
+    {
+        if(sparam != PREFIX + "BTN_" + IntegerToString(i))
+            continue;
+        ToggleLayer(i);
+        ResetLastError();
+        if(!DrawControls() || !RebuildVisualLayers())
+        {
+            failed = true;
+            state = "Visual error; see Experts log";
+            PrintFormat("GTLR layer update failed: %d", GetLastError());
+        }
+        UpdateState();
+        ChartRedraw();
+        return;
+    }
 }
 
 void OnTick()
@@ -744,13 +1063,13 @@ void OnTick()
             UpdateState();
             return;
         }
-        string scoring = StringFormat("weights swing=%.10g trend=%.10g spacing=%.10g slope=%.10g interactions=%.10g integrity=%.10g context=%.10g; spacingTarget=%d slopeTargetPoints=%.10g touchTolerancePoints=%.10g breakTolerancePoints=%.10g touchTarget=%d breaksForZero=%d contextBars=%d timeframe=%s",
+        string scoring = StringFormat("weights swing=%.10g trend=%.10g spacing=%.10g slope=%.10g interactions=%.10g integrity=%.10g context=%.10g; spacingTarget=%d slopeTargetPoints=%.10g touchTolerancePoints=%.10g breakTolerancePoints=%.10g touchTarget=%d breaksForZero=%d contextBars=%d timeframe=%s selectionMinimum=%.10g",
                                       WeightSwing, WeightTrend, WeightSpacing, WeightSlope,
                                       WeightInteractions, WeightIntegrity, WeightTimeframeContext,
                                       ScoreTargetSpacingBars, ScoreTargetSlopePointsPerBar,
                                       ScoreTouchTolerancePoints, ScoreBreakTolerancePoints,
                                       ScoreTargetTouches, ScoreBreaksForZero, ScoreContextBars,
-                                      EnumToString(_Period));
+                                      EnumToString(_Period), SelectionMinScore);
         if(!LogDecision("score_configuration", rates[0].time, 0, 0, 0, 0, "", "active", scoring))
         {
             failed = true;
@@ -780,7 +1099,7 @@ void OnTick()
     }
     if(csvHandle != INVALID_HANDLE)
         FileFlush(csvHandle);
-    state = "Frozen scores at confirmation; incomplete context unranked";
+    state = "Frozen scores; incomplete context pending";
     UpdateState();
     ChartRedraw();
 }

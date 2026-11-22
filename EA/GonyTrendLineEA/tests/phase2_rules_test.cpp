@@ -38,6 +38,17 @@ int main()
     assert(RankBefore(80, 2, 70, 1));
     assert(RankBefore(80, 1, 80, 2));
     assert(!RankBefore(80, 2, 80, 1));
+    assert(CandidateState(false, 99, 90, true) == 0);
+    assert(CandidateState(true, 89.99, 90, false) == 1);
+    assert(CandidateState(true, 89.99, 90, true) == 1);
+    assert(CandidateState(true, 90, 90, false) == 2);
+    assert(CandidateState(true, 90, 90, true) == 3);
+    assert(CandidateState(true, 0, 0, true) == 3);
+    assert(CandidateState(true, 100, 100, true) == 3);
+    assert(SelectBestCandidate(-1, true, 100, 90) == -1);
+    assert(SelectBestCandidate(4, false, 100, 90) == -1);
+    assert(SelectBestCandidate(4, true, 89.99, 90) == -1);
+    assert(SelectBestCandidate(4, true, 90, 90) == 4);
     ScoreFactors values = {1, 0, 0.5, 1, 0, 1, 1};
     ScoreFactors weights = {1, 1, 1, 1, 1, 1, 1};
     assert(std::fabs(WeightedScore(values, weights, true) - 64.28571428571429) < 1e-10);

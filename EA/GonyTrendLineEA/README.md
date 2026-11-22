@@ -1,9 +1,9 @@
-# Visual Trendline Research Engine: Phase 3
+# Visual Trendline Research Engine: Phase 4
 
-Research-only MT5 EA; it never places orders. Phase 3 scores and ranks
-generated trendline candidates. It does not select a trading signal or
-recommend a trade. Rules are hypotheses to inspect, not a claim about the
-correct trendline.
+Research-only MT5 EA; it never places orders. Phase 4 shows pivots, scored
+candidates, the selected candidate, and rejected pairs and candidates. The
+selection is for visual research, not a trading signal or recommendation.
+Rules are hypotheses to inspect, not a claim about the correct trendline.
 
 ## Rules
 
@@ -26,18 +26,33 @@ within `CandidateMaxSpacingBars`. It records the result for each considered
 pair. Both endpoints must be major, minor or noise as enabled by the anchor
 inputs. A pair must meet `CandidateMinSpacingBars`; a bullish line joins two
 lows with a strictly higher second low, and a bearish line joins two highs with
-a strictly lower second high. Horizontal and opposite-slope pairs produce no
-line. The bounded window and anchor limit explicitly exclude older pairs;
+a strictly lower second high. Horizontal and opposite-slope pairs, and pairs
+closer than the minimum spacing, are shown as rejected segments with their
+reasons. The bounded window and anchor limit explicitly exclude older pairs;
 neither indicates a quality ranking. Every generated candidate is retained,
 including candidates with low scores or incomplete context.
 
 The dashed line is extended to the right. Candidate anchor labels are `C<n>
 A` and `C<n> B`; its score label shows the score and rank, and the label and
 line tooltips show component values, weights, measurements and ranking rule.
-`ShowCandidateScores` controls score labels. High and low
-markers, noise, labels, bullish/bearish lines and candidate anchors have input
-toggles. Changing inputs reinitializes the EA and rebuilds the view. A crowded
-chart is possible; reduce the initial history or previous-anchor limit.
+Low-scoring candidates use the rejected layer, selected candidates use the
+selected layer, and other candidates use their bullish/bearish layer. Rejected
+pair labels use `R` IDs; scored candidates use `C` IDs. Rejected pair lines
+are segments; scored candidate lines extend right.
+
+On a normal MT5 chart, the upper-left buttons toggle major, minor, noise,
+bullish, bearish, selected, rejected, anchors, pivot labels, scores and state.
+The bullish/bearish buttons control alternatives and pending candidates;
+selected and rejected have independent buttons. The anchor toggle applies to
+visible scored candidates and rejected pairs. Rejection reasons are printed
+on rejected pair labels and scored candidate labels/tooltips. The input
+`Show...` settings set the initial visibility; changing inputs reinitializes
+the EA. Button choices last for the current attachment.
+
+MT5's Strategy Tester does not deliver `OnChartEvent` events, even in visual
+mode, so interactive buttons are not shown there. Set the `Show...` inputs
+before starting a visual test instead. A crowded chart is possible; hide layers
+or reduce the initial history or previous-anchor limit.
 
 On attachment, at most `InitialHistoryBars` candidate pivot bars are scanned,
 then newly closed bars are processed in chronological order. Pivots retain
@@ -47,7 +62,23 @@ markers are plotted at their pivot times but are not available until the final
 right bar closes. Scores are frozen at creation using only bars closed at that
 decision; a line's rank can change when more candidates are created.
 Candidates created at different times therefore reflect different snapshots.
-No candidate is selected. Full replay tooling remains a later phase.
+Full replay tooling remains a later phase.
+
+## Selection and rejection
+
+The highest-ranked complete candidate is selected only when its frozen score
+is at least `SelectionMinScore`, default **90**. Exact-score ties go to the
+earlier candidate ID. If no complete candidate meets the threshold, the state
+panel says `selected none`. Incomplete-context candidates remain visible as
+pending; they are not silently rejected or selected. Other complete candidates
+at or above the threshold are alternatives; those below it are rejected with
+their score and threshold shown. Selection changes and candidate evaluations
+are logged to CSV.
+
+**Important:** scores are frozen at confirmation. Selection does not expire
+old candidates or check for later line breaks. A selected line can therefore
+be stale or invalid under current market conditions; inspect it visually. The
+threshold is configurable and is not a validated measure of quality.
 
 ## Scoring and ranking
 
@@ -83,10 +114,11 @@ These snapshots are not automatically rescored when more history arrives.
 Complete scores are ranked descending, with earlier candidate IDs breaking
 exact ties. The EA does not filter candidates by score or break count.
 
-CSV logging defaults on. The file `GTLR_Phase3_<chart-id>.csv` is in the
+CSV logging defaults on. The file `GTLR_Phase4_<chart-id>.csv` is in the
 terminal's `MQL5/Files` directory, or the tester agent's `MQL5/Files` sandbox.
 Rows include configuration, pivot classifications, every considered pair, and
-ranking changes, with decision time, anchors, outcome and score breakdown.
+ranking and selection changes and evaluations, with decision time, anchors,
+outcome and score breakdown.
 The decision time is the open of the bar
 following the final confirmation bar, not the pivot timestamp. The Experts
 log also reports decisions and failures. Non-positive price histories are
@@ -113,9 +145,14 @@ unsupported and explicitly stop processing.
    spaced 10 bars with a 20-bar target scores 50. Change the spacing target and
    repeat. Test missing context with a lookback larger than available history:
    affected candidates should be provisional and unranked, not disappear.
-7. Disable a direction or anchor type in Inputs and restart. Examine the
-   Experts log and CSV for considered pairs and reasons. Adjust spacing and
-   anchor limits and compare results.
+7. With `SelectionMinScore=90`, verify the highest complete score at or above
+   90 is gold and the state shows its ID. If none meets it, verify `selected
+   none`. Lower or raise the threshold and restart to inspect alternatives,
+   score rejections and the CSV evaluation/selection reasons.
+8. In visual testing, restart with individual `Show...` inputs disabled and
+   verify their layers disappear. On a normal chart, test each on-chart button
+   without restarting. Turning a layer back on must restore its objects without
+   changing ranks or selection. Examine rejected pair labels and tooltips.
 
 Compile and visual testing require an MT5 installation; host-side rule tests do
 not verify MT5 chart rendering or runtime behavior.
